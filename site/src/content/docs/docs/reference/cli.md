@@ -21,7 +21,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm launch [--no-open]` | Starts the broker and gateway if needed, and opens the local page. While Tailscale Funnel is on for port 443 or 8443, it first prints a warning with the command that turns Funnel off. |
 | `pterm stop` | Stops only the gateway. Sessions keep running, but phones cannot connect. |
 | `pterm shutdown` | Asks first, ends all sessions, and stops the broker and gateway. |
-| `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. |
+| `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. **Next beta, macOS/Linux:** tries saved GitHub login revocation first; retains an empty private ownership folder. |
 | `pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>] [--preview-listen <addr>\|off]` | Development only: an isolated test copy that leaves your real setup alone. |
 
 `--dev` and `--runtime-dir <folder>` are for development tests only.
@@ -38,6 +38,8 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm revoke <device-id>` | Asks first, then removes a phone's access at once. |
 
 The pairing link and QR code are secret. Do not share them.
+
+**Next beta:** Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
 
 ## Use several computers
 

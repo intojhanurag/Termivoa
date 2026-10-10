@@ -113,19 +113,50 @@ The switches are saved on that computer, for every phone.
 
 **Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
 
+## Which agents can I start?
+
+**Next beta:** Termivoa offers up to 16 agent kinds that herdr supports starting,
+with kinds already running listed first. You can start an installed agent in
+**New worktree** or **New tab** without starting it manually first.
+
+| Situation | What appears |
+| --- | --- |
+| The agent command is installed and herdr supports starting it | The kind can appear even with no running agents |
+| The last agent of that kind stops | Its installed kind remains eligible for the 16 choices |
+| An agent already runs through a shell alias or custom launcher | Its supported kind can appear while it runs |
+| A command is newly installed or removed | Choices refresh within about 30 seconds; **Check again** requests a fresh check |
+| The agent is installed only through settings in herdr's shell | It may need to run once in herdr before it appears |
+
+Termivoa checks command presence without running an agent. An offered kind may
+still fail to start if herdr's shell has different settings, the installation
+is broken, or the agent needs sign-in. Open the new terminal to see the cause.
+
 ## How do I create a worktree?
 
 A worktree is a second folder of a git repository on its own branch. herdr makes it and can start an agent in it.
 
 1. In the **herdr** tab, tap **+** on a git project row.
 2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts, and cannot end in `.lock`.
-3. Under **Start an agent in it**, tap an agent that already runs in this herdr (such as `claude` or `codex`), or **No agent**. The sheet reads the list again when it opens, so it shows the agents that run there now. If the agent you picked left herdr in the meantime, the sheet goes to **No agent** and says so, for example "codex is not running in herdr now." It never starts another agent in its place.
+3. Under **Start an agent in it**, tap an available agent (such as `claude` or `codex`), or **No agent**. **Next beta:** installed agents can appear before any agent runs in herdr, and stay listed after their last running agent stops. The sheet reads the choices again when it opens. If your choice is no longer available, the sheet goes to **No agent** and says, for example, "codex is not available in herdr now." It never starts another agent in its place.
 4. Optional: write a **First prompt (optional)**. It cannot have control characters such as Esc.
 5. Tap **Create and start** (or **Create** with **No agent**).
 
 ![The New worktree sheet for herdr · shop · on mac: Branch name fix-login, the note herdr makes the folder and a new branch from where shop is now., Start an agent in it with claude selected, codex and No agent, First prompt (optional) Fix the login redirect after sign-in., and the Create and start button.](../../../../assets/docs/phone-herdr-create.webp)
 
 The sheet says "herdr makes the folder and a new branch from where shop is now." It takes up to about 45 seconds. Then the new terminal opens. Termivoa sends the first prompt when herdr says that the agent is ready for input.
+
+### When does a create use my allowance?
+
+**Next beta:** Termivoa allows three attempted creates per minute for each
+phone on each computer, shared by **New worktree** and **New tab** with an
+agent. A refusal before creation starts keeps that allowance. Correct the
+choice and try again yourself; Termivoa does not retry a create automatically.
+
+| What happened | Uses the create allowance? |
+| --- | --- |
+| A project or workspace is gone, a kind is unavailable, or herdr is busy before creation | No |
+| Creation was attempted, even if it failed or the answer was lost | Yes |
+| A tab or worktree exists but its agent or first prompt failed | Yes; open the existing terminal to continue |
 
 If something goes wrong, the app says why:
 
@@ -134,7 +165,7 @@ If something goes wrong, the app says why:
 | “fix-login” already exists in shop. Pick another name. | Use another branch name. |
 | shop is not in git, so it cannot have worktrees. | Use a project that is in git. |
 | herdr could not make the worktree. Nothing was opened. Try again or pick another name. | Try again, or pick another name. |
-| too many requests; wait a minute and try again | This phone asked for more than 3 new worktrees or agent tabs in a minute. Wait a minute. |
+| too many requests; wait a minute and try again | This phone has 3 pending or attempted creates in a minute, shared by new worktrees and agent tabs. Wait a minute. |
 | herdr is busy with another change; try again | Another change runs in herdr on that computer. Try again in a few seconds. |
 | herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again. | The same two causes, on a computer that you added. Wait a minute. |
 | The worktree is ready, but the agent did not start. | Open the worktree and start the agent yourself. If its terminal says "command not found", install that agent on the computer. |
@@ -161,7 +192,7 @@ What Termivoa never does:
 
 - **It never removes work that is not committed.** The app then says "silver-meadow has changes that are not committed. Commit or discard them first." and nothing changes.
 - **It never closes two workspaces in one tap.** For a project's main checkout with open worktrees, **Close workspace** is off and says "Close its worktrees first." When herdr lists two workspaces under one project and both are at that project's main folder (herdr has its worktree record of the same repository for each), it is off for both and says "herdr closes the workspaces at this project's main folder only together. Close them in herdr on mac." A second workspace in the same folder that herdr lists as its own project closes alone.
-- **It checks the name again.** If the list changed after you looked, the app says "The list changed. Look again, then try again." and nothing changes.
+- **It checks the name again.** If the list changed after you looked, nothing changes. **Remove worktree** then says "The list changed. Look again, then try again." **Close workspace** on a workspace that is still there says "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer."
 
 **Remove worktree** deletes files that git ignores, such as `.env` and build output, with the folder. The branch and its commits stay.
 
@@ -222,3 +253,17 @@ No. Termivoa never takes a pane over from another herdr client. See [What does t
 ### Does this work with several computers?
 
 Yes. Each computer reads its own herdr. The **herdr** tab shows all of them in **All computers**, each computer under its own header, or one computer that you choose in the side menu. See [Use several computers](/docs/guides/computers/#how-do-i-add-a-computer) to add one.
+
+## Why does starting an agent wait for a check?
+
+**Next beta:** Termivoa checks that computer's offered agents when **New worktree** opens, when its workspace menu opens, and when **New tab** opens.
+
+| What you see | What to do |
+| --- | --- |
+| **Checking available agents…** | Wait for the check before **Create and start** or **Start**. **No agent** and **Shell** remain available. |
+| “claude is not available in herdr now.” | The selected agent is no longer offered. Choose an available agent; Termivoa does not pick another one for you. |
+| The check could not complete | The last known choices remain. A start may still be refused if that agent no longer runs. Look at herdr on the computer before trying again. |
+| **Close workspace** is off and the workspace shares the project's main folder | Close those workspaces in herdr on the computer. The last tab ends with its workspace. |
+| A close says the list changed | Inspect the list again. Close linked worktrees first; workspaces sharing the main folder must be closed in herdr on the computer. |
+
+An agent can stop after a successful check. Termivoa still checks each requested action on the computer and never retries an agent start by itself.

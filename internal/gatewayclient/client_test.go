@@ -782,7 +782,7 @@ func TestDeadIdleConnectionRedialsOnceBeforeDelivery(t *testing.T) {
 							CredentialID: testCredID, DeviceID: testDevice, DeviceLabel: "Phone", ExpiresAt: "2026-10-27T00:00:00Z",
 						})
 					} else {
-						response = reply(t, request.RequestID, protocol.GatewaySessionCreateResult,
+						response = reply(t, request.RequestID, protocol.GatewaySessionRenameResult,
 							protocol.HTTPSessionMutationResponse{OperationID: testOperation, Session: testRecord()})
 					}
 					if err := writer.WriteFrame(response); err != nil {
@@ -810,15 +810,15 @@ func TestDeadIdleConnectionRedialsOnceBeforeDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-firstClosed
-	request := protocol.HTTPSessionCreateRequest{OperationID: testOperation, ProjectID: testProject, ShellProfileID: testProfile}
-	if _, err := client.CreateSession(ctx, testCredential, request); err != nil {
+	request := protocol.HTTPSessionRenameRequest{OperationID: testOperation, Generation: testGeneration, Title: "Fixture"}
+	if _, err := client.RenameSession(ctx, testCredential, testSession, request); err != nil {
 		t.Fatalf("call after broker restart = %v", err)
 	}
 	if dials.Load() != 2 || requests.Load() != 2 {
 		t.Fatalf("dials = %d, requests = %d; want 2, 2", dials.Load(), requests.Load())
 	}
 	// Written but unanswered: uncertain, and not retried.
-	if _, err := client.CreateSession(ctx, testCredential, request); !errors.Is(err, ErrDeliveryUncertain) {
+	if _, err := client.RenameSession(ctx, testCredential, testSession, request); !errors.Is(err, ErrDeliveryUncertain) {
 		t.Fatalf("unanswered mutation = %v, want delivery uncertain", err)
 	}
 	if dials.Load() != 2 || requests.Load() != 3 {

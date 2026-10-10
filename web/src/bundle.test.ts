@@ -2,10 +2,11 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import react from '@vitejs/plugin-react';
 import { build } from 'vite';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { protocolValidators, serviceWorker } from '../vite.config';
+import { precompressAssets, protocolValidators, serviceWorker } from '../vite.config';
 
 const root = new URL('..', import.meta.url).pathname;
 const work = mkdtempSync(join(tmpdir(), 'pterm-bundle-'));
@@ -20,16 +21,26 @@ describe('bundle file list for the service worker', () => {
       root,
       configFile: false,
       logLevel: 'silent',
-      plugins: [react(), serviceWorker(pathToFileURL(template)), protocolValidators()],
+      plugins: [react(), serviceWorker(pathToFileURL(template)), protocolValidators(), precompressAssets()],
       build: { outDir, emptyOutDir: true, sourcemap: 'hidden' },
     });
     const sw = readFileSync(join(outDir, 'sw.js'), 'utf8');
     const bundle = JSON.parse(/self\.BUNDLE = (.*);/u.exec(sw)?.[1] ?? '') as { build: string; files: string[] };
     const onDisk = readdirSync(outDir, { recursive: true, encoding: 'utf8' })
-      .filter((name) => name.includes('.') && !name.endsWith('.map') && name !== 'sw.js')
+      .filter((name) => name.includes('.') && !name.endsWith('.map') && !name.endsWith('.gz') && name !== 'sw.js')
       .map((name) => `/${name}`)
       .sort();
     expect(bundle.files).toEqual(onDisk);
+    const compressed = readdirSync(join(outDir, 'assets')).filter((name) => name.endsWith('.gz'));
+    expect(compressed.length).toBeGreaterThan(0);
+    for (const name of compressed) {
+      const encoded = readFileSync(join(outDir, 'assets', name));
+      const original = readFileSync(join(outDir, 'assets', name.slice(0, -3)));
+      expect(gunzipSync(encoded)).toEqual(original);
+      expect(encoded.length).toBeLessThan(original.length);
+      expect(bundle.files).not.toContain(`/assets/${name}`);
+    }
+    expect(readdirSync(outDir).some((name) => name.endsWith('.gz'))).toBe(false);
     expect(bundle.files).toContain('/index.html');
     expect(bundle.files).toContain('/manifest.webmanifest');
     expect(bundle.files.some((name) => name.startsWith('/assets/Wall-'))).toBe(true);
@@ -68,7 +79,7 @@ describe('release gate: open an unvisited Wall while home is offline', () => {
       root,
       configFile: false,
       logLevel: 'silent',
-      plugins: [react(), serviceWorker(), protocolValidators()],
+      plugins: [react(), serviceWorker(), protocolValidators(), precompressAssets()],
       build: { outDir, emptyOutDir: true, sourcemap: 'hidden', manifest: true },
     });
     // The real built /sw.js in a fake worker global; the network is home's files until home goes offline.

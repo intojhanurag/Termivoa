@@ -625,7 +625,8 @@ export async function herdrSteps(ctx) {
   // ---- manage herdr from the phone (docs/herdr-manage.md, sections 3, 6 and 7) ----
   const ITEM = 'item-menu-title';
   const WORKSPACE = 'workspace-title';
-  const CHANGED = 'The list changed. Look again, then try again.';
+  // Close workspace names its own conflict causes (issue 210).
+  const CLOSE_CHANGED = 'The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer.';
   const INSTALL = 'curl -fsSL https://herdr.dev/install.sh | sh';
   const manageUrl = `${mac.origin}/api/v1/providers/herdr/manage`;
   const manageApi = (body) => api(tool, manageUrl, 'POST', body);
@@ -855,14 +856,14 @@ export async function herdrSteps(ctx) {
     const last = await manageApi({ action: 'closeTab', itemId: lucky.id, targetId: lucky.targets[0].id });
     const foreign = await manageApi({ action: 'closeTab', itemId: lucky.id, targetId: shop.targets[0].id });
     const code = (r) => `${r.status} ${r.json?.error?.code ?? ''}`.trim();
-    check('H-closetab', 'shop has two tabs: the Tabs list shows "1 · claude" and "logs", each with Close tab; Close tab on logs asks "Close tab logs? Its terminals end."; confirming makes one tab.close of that tab, and shop shows one tab within 10 s; an item with one terminal shows "Close the workspace to end its last tab." and no Close tab; the API refuses the last tab (409) and a terminal of another item (404)',
+    check('H-closetab', 'shop has two tabs: the Tabs list shows "1 · claude" and "logs", each with Close tab; Close tab on logs asks "Close tab logs? Its terminals end."; confirming makes one tab.close of that tab, and shop shows one tab within 10 s; an item with one terminal shows "Close the workspace to end its last tab." (shop, with linked worktrees: "Close its worktrees first, then close this workspace to end its last tab.") and no Close tab; the API refuses the last tab (409) and a terminal of another item (404)',
       JSON.stringify(two.tabs) === '[{"name":"1 · claude","close":"Close tab"},{"name":"logs","close":"Close tab"}]' && two.tabHint === null
         && asked.confirm === 'Close tab logs? Its terminals end.' && JSON.stringify(asked.confirmButtons) === '["Cancel","Close tab"]'
         && logged(mark, 'tab.close').join() === `tab.close ${tabId}` && gone <= 10000 && !shop.targets.some((x) => x.id === target) && shop.targets.length === 1
         && JSON.stringify(one.tabs) === '[{"name":"1 · claude","close":""}]' && one.tabHint === 'Close the workspace to end its last tab.'
-        && JSON.stringify(after.tabs) === '[{"name":"1 · claude","close":""}]' && after.tabHint === 'Close the workspace to end its last tab.'
+        && JSON.stringify(after.tabs) === '[{"name":"1 · claude","close":""}]' && after.tabHint === 'Close its worktrees first, then close this workspace to end its last tab.'
         && code(last) === '409 operation_conflict' && code(foreign) === '404 session_missing' && workspaceIn('lucky-valley') !== undefined && workspaceIn('shop') !== undefined,
-      `shop tabs ${JSON.stringify(two.tabs)}; confirmation "${asked.confirm}" ${JSON.stringify(asked.confirmButtons)}; fake: ${logged(mark, 'tab.close').join(' | ')}; gone after ${gone} ms; lucky-valley tabs ${JSON.stringify(one.tabs)} "${one.tabHint}"; last tab ${code(last)} "${last.json?.error?.message}"; another item's terminal ${code(foreign)}`);
+      `shop tabs ${JSON.stringify(two.tabs)}; confirmation "${asked.confirm}" ${JSON.stringify(asked.confirmButtons)}; fake: ${logged(mark, 'tab.close').join(' | ')}; gone after ${gone} ms; lucky-valley tabs ${JSON.stringify(one.tabs)} "${one.tabHint}"; shop after ${JSON.stringify(after.tabs)} "${after.tabHint}"; last tab ${code(last)} "${last.json?.error?.message}"; another item's terminal ${code(foreign)}`);
   });
 
   let newTab;
@@ -994,9 +995,9 @@ export async function herdrSteps(ctx) {
     await closeSheet(ITEM);
     const listed = await until(async () => (await unfold(), await groups()).find((g) => g.name === 'acme-web' && g.items.some((i) => i.name === 'late-tree')), { what: 'the list read again: late-tree under acme-web', timeout: 10000 });
     const kept = logged(mark, 'workspace.close').length === 0 && logged(mark, 'worktree.remove').length === 0 && workspaceIn('acme-web') !== undefined && workspaceIn('fix-login') !== undefined;
-    check('H-stale', 'closeItem and removeItem with a name that is not the item\'s: 409 operation_conflict; in the app, Close workspace on acme-web after a worktree opened in it: "The list changed. Look again, then try again." and the list is read again; the fake closed and removed nothing',
+    check('H-stale', 'closeItem and removeItem with a name that is not the item\'s: 409 operation_conflict; in the app, Close workspace on acme-web after a worktree opened in it: "The list changed. Look again before closing. …" and the list is read again; the fake closed and removed nothing',
       wrong.status === 409 && wrong.json?.error?.code === 'operation_conflict' && wrongRemove.status === 409 && wrongRemove.json?.error?.code === 'operation_conflict'
-        && late.status === 200 && JSON.stringify(said.notes) === JSON.stringify([CHANGED]) && said.buttons.length === 0 && said.confirm === null && kept,
+        && late.status === 200 && JSON.stringify(said.notes) === JSON.stringify([CLOSE_CHANGED]) && said.buttons.length === 0 && said.confirm === null && kept,
       `wrong name: close ${wrong.status} ${wrong.json?.error?.code} "${wrong.json?.error?.message}", remove ${wrongRemove.status} ${wrongRemove.json?.error?.code}; late worktree ${late.status}; app ${JSON.stringify(said.notes)}; rows ${JSON.stringify(listed.items.map((i) => i.name))}; nothing closed or removed ${kept}`);
 
     const body = JSON.stringify({ action: 'newTab', itemId: acme.id });

@@ -295,9 +295,15 @@ computer lists.
   history and worktree requests are refused for it. It ends 10 s after its
   last viewer leaves (the first 10 s count as viewed).
 - `POST /api/v1/providers/{provider}/create` (at most 3 per minute per
-  device, one at a time per computer) makes a worktree in a group and may
-  start an agent of one of `agentKinds` with a first prompt. It runs in the
-  broker's own context, so a phone that disconnects does not cut it short.
+  device, counting pending or attempted changes; refusals before a mutating
+  operation return their reservation; one at a time per computer) makes a
+  worktree in a group and may
+  start an agent of one of `agentKinds` with a first prompt. These are herdr's
+  advertised start kinds with an installed canonical command or a currently
+  running agent, at most 16, ordered by running count then name. Discovery
+  never executes an agent; installation is a hint, not a successful-launch
+  guarantee. The create runs in the broker's own context, so a phone that
+  disconnects does not cut it short.
   An agent that does not start is not an error: `agentStarted` is `false`
   with `problem`.
 - `POST /api/v1/providers/{provider}/manage` (revision 5; at most 30 per
@@ -310,7 +316,7 @@ computer lists.
   | --- | --- | --- |
   | `closeItem` | `itemId`, `name` | Closes the workspace: its terminals end, no file is deleted. Refused for a main checkout while a linked worktree of its group is open. |
   | `removeItem` | `itemId`, `name` | Removes a linked worktree (`linked`), never with force: the workspace closes and its folder is deleted, also files that git ignores; the branch stays. |
-  | `newTab` | `itemId`; revision 6: optional `agent`, and `prompt` only with `agent` | Makes a tab in the item (at most 32 terminals in an item). With `agent` (one of `agentKinds`), it then starts that agent in the tab and sends `prompt`, as create does; this also counts as one of the device's 3 creates per minute. |
+  | `newTab` | `itemId`; revision 6: optional `agent`, and `prompt` only with `agent` | Makes a tab in the item (at most 32 terminals in an item). With `agent` (one of `agentKinds`), it then starts that agent in the tab and sends `prompt`, as create does; this reserves one of the device's 3 creates per minute, returned if refused before any mutating operation is attempted. |
   | `closeTab` | `itemId`, `targetId` | Closes the tab that holds that terminal of the item (all terminals of the tab). Refused for the item's last tab. |
   | `newWorkspace` | `projectId` | Makes a workspace in that Termivoa project's folder, named after the project (at most 64 groups). The phone never sends a path. |
   | `startServer` | – | Starts herdr's server; only with `state: notRunning` and `canStart`. The host waits up to 5 s for `ready`. |

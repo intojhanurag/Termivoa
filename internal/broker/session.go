@@ -177,6 +177,9 @@ type Session struct {
 	shutdownErr        error
 	viewers            map[string]*viewerActorState
 	published          *publishedFrame
+	// captureAfter is the first dirty output's coalescing deadline. It stays
+	// pending while every viewer is throttled, sending, or awaiting a snapshot.
+	captureAfter       time.Time
 	retiring           bool
 	retirementRevision uint64
 	publishedControl   ControlState
@@ -656,6 +659,7 @@ func (session *Session) run(columns, rows int) {
 	var shutdownTerminationHandled bool
 	var publishTimer *time.Timer
 	var publishDeadline <-chan time.Time
+	var publishAt time.Time
 	var viewerAckTimer *time.Timer
 	var viewerAckDeadline <-chan time.Time
 	var viewerAckAt time.Time
@@ -763,11 +767,24 @@ func (session *Session) run(columns, rows int) {
 		viewerAckDeadline = viewerAckTimer.C
 		viewerAckAt = next
 	}
-	schedulePublish := func() {
-		if len(session.viewers) == 0 || publishDeadline != nil {
+	refreshPublishTimer := func() {
+		at := session.nextViewerCaptureAt()
+		if at.Equal(publishAt) {
 			return
 		}
-		publishTimer = time.NewTimer(framePublishInterval)
+		if publishTimer != nil {
+			publishTimer.Stop()
+		}
+		publishAt = at
+		if at.IsZero() {
+			publishDeadline = nil
+			return
+		}
+		if publishTimer == nil {
+			publishTimer = time.NewTimer(max(time.Until(at), 0))
+		} else {
+			publishTimer.Reset(max(time.Until(at), 0))
+		}
 		publishDeadline = publishTimer.C
 	}
 	beginShutdown := func() {
@@ -834,6 +851,7 @@ func (session *Session) run(columns, rows int) {
 		session.publishViewerEvents(status)
 		refreshControllerTimer()
 		refreshViewerAckTimer()
+		refreshPublishTimer()
 		if shuttingDown && session.termination.finished && !shutdownTerminationHandled {
 			shutdownTerminationHandled = true
 			if err := session.termination.err; err != nil {
@@ -948,7 +966,9 @@ func (session *Session) run(columns, rows int) {
 					session.markLost(&status)
 				} else {
 					session.lastOutput = time.Now()
-					schedulePublish()
+					if session.captureAfter.IsZero() {
+						session.captureAfter = session.lastOutput.Add(framePublishInterval)
+					}
 					armAgent(session.lastOutput.Add(agentScanInterval))
 					armPreview(later(session.lastOutput.Add(previewScanDelay), previewLastScan.Add(previewScanEvery)))
 					armCwd(session.lastOutput)
@@ -1055,7 +1075,7 @@ func (session *Session) run(columns, rows int) {
 			}
 		case <-publishDeadline:
 			publishDeadline = nil
-			publishTimer = nil
+			publishAt = time.Time{}
 			if err := session.capturePublished(); err != nil {
 				session.markLost(&status)
 			}

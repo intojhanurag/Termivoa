@@ -6,6 +6,12 @@ lastUpdated: 2026-10-10
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
 
+## What changes for busy terminals?
+
+| Version | Watching output |
+| --- | --- |
+| **Next beta** | Live and Wall use less CPU and temporary memory on the computer while output changes. The terminal controls and display stay the same. |
+
 ## Take control to type
 
 Many devices can watch a session; only the one with **control** can type.
@@ -21,6 +27,20 @@ Termivoa never queues or resends typing. If the connection breaks while you type
 ## Switch sessions with the tabs
 
 The tab bar at the top shows your running sessions. Tap a tab to switch; each opens read-only. A dot marks new output; an amber dot means it waits for you. **+** starts a new session.
+
+## What limits apply to the terminal screen?
+
+Termivoa keeps terminal screens bounded while you read and type.
+
+| Item | Limit |
+| --- | --- |
+| Screen width | Up to 400 columns |
+| Screen height | Up to 200 rows |
+| Screen updates | Rows must stay within the allowed screen bounds |
+
+**Next beta:** the computer also rejects malformed row positions in received
+terminal screen updates. The phone already applies that limit. No setting is
+needed.
 
 ## Use the agent keys and key bar
 
@@ -49,6 +69,19 @@ With the phone keyboard open, all keys fold into one scrolling row, and the term
 
 Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with more than one line asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
 
+## Use sheets with a keyboard
+
+**Next beta.** Termivoa keeps your keyboard place when a sheet closes.
+
+| Action | Focus after the sheet closes |
+| --- | --- |
+| Use **Close** or Escape | Returns to the control that opened the sheet, if it is still available. |
+| Close a sheet opened inside another sheet | Returns to its control inside the previous sheet. |
+| Move focus to another control before the sheet closes | Stays on the control you chose. |
+
+If the opening control disappeared or became unavailable, pick another
+control with Tab. This focus change does not send anything to the terminal.
+
 ## Save and send snippets
 
 Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snippets sheet.
@@ -65,10 +98,28 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 
 ## Copy from history
 
+| Version | Preparing History |
+| --- | --- |
+| **Next beta** | Uses less CPU and temporary memory on your computer. Tap **history** as usual; the reading and copying steps stay the same. |
+
 1. Tap **history**.
 2. Select text.
 3. Tap **Copy N lines**, for example **Copy 3 lines**.
 4. Tap **Done**.
+
+**Next beta:** Termivoa loads all retained History rows even when colored
+output needs more pages. It shows a complete frozen view, or says
+**History unavailable right now. Return to live and try again.**
+
+| What you see | What to do |
+| --- | --- |
+| **Loading history…** | Wait for the frozen view. |
+| **History unavailable right now. Return to live and try again.** | Tap **Done** and open **history** again. Try when output has slowed. |
+| **New output · Return to live** | Your selection stays frozen; tap the button to see the new output. |
+
+Termivoa keeps up to 5,000 history rows and 32 MiB on the computer. A loading
+attempt stops after a minute or when its limits are reached; it shows unavailable
+rather than joining an incomplete history to the current screen.
 
 ## Change the text size
 

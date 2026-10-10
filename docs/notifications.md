@@ -53,15 +53,24 @@ and a same-origin path.
   from …". `waiting` is sent with `Urgency: high` and a 5-minute
   TTL; `done` with `normal` and 2 minutes.
 - **Fan-out.** One delivery sends to its subscriptions (at most 64) with 4
-  requests open at once (`deliverFanOut`), under one 60 s deadline; each
-  request has the client's 10 s timeout. So a push endpoint that hangs
-  holds one of the 4 workers for 10 s and the other phones still get their
-  push. A delivery waits for its workers before it ends, and no request
-  starts after the deadline, so no goroutine is left. The bound on open
+  requests open at once (`deliverFanOut`), under one 60 s deadline. After
+  subscriptions are listed, the request deadline is the smaller of 10 s
+  and half the remaining delivery time divided by the number of four-request
+  waves. The other half leaves time for encryption, scheduling and cleanup.
+  For 25 subscriptions this is at most about 4.3 s each; for 64, 1.875 s. A group of
+  hung endpoints cannot spend the entire window on the first waves while
+  a later healthy phone gets no attempt (#207). The request context is
+  canceled when each send returns; the HTTP client's 10 s timeout remains
+  an additional bound. Timeouts and cancellation keep subscriptions for
+  the next notification; only 404/410 and invalid endpoints or keys remove
+  them. A delivery waits for its workers before it ends, and no request
+  starts after the shared deadline, so no goroutine is left. The bound on open
   push requests in the broker is 4 × (24 session + 12 provider + 12 test
   deliveries) = 192: each kind has at most two minutes of its budget alive
-  together (see "Hook for the detector"). Known limit: 24 hung endpoints
-  ahead of a phone (6 rounds of 4 × 10 s) still use the whole deadline.
+  together (see "Hook for the detector"). Delivery remains best effort:
+  a slow but working service may exceed its share, and a saturated host can
+  consume the reserved overhead time. No immediate retry or failure counter
+  is added.
 
 ## Several computers
 

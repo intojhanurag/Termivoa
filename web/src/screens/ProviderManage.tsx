@@ -8,9 +8,10 @@ import {
 import { checkAgain } from './allSessions';
 import type { ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
-import { droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
+import { CheckingAgents, droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
 import type { ProviderEntry, ProviderSource } from './providers';
 import { Sheet } from './Sheet';
+import { useAgentKinds, type ReadAgentKinds } from './useAgentKinds';
 
 /** From GitHub shows where that computer has a GitHub row (revision 7): the same gate as GitHub.tsx's githubInfo, kept here so this sheet does not load GitHub's code. */
 export const githubShown = (settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'github'>): boolean =>
@@ -32,6 +33,12 @@ export const CHANGED = 'The list changed. Look again, then try again.';
 export const LAST_TAB = 'This is the workspace\'s last tab. Close the workspace.';
 /** Shown in place of the Close tab buttons while an item has one terminal. */
 export const LAST_TAB_HINT = 'Close the workspace to end its last tab.';
+/** LAST_TAB_HINT's place when the workspace must close its worktrees first. */
+export const WORKTREES_FIRST_TAB_HINT = 'Close its worktrees first, then close this workspace to end its last tab.';
+/** LAST_TAB_HINT's place when the workspace closes only together with the others at the main folder. */
+export const TOGETHER_TAB_HINT = 'End this last tab by closing its workspace in herdr on the computer.';
+/** Fixed app words, also for a peer whose error detail is deliberately hidden. */
+export const CLOSE_CHANGED = 'The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer.';
 
 type Manage = (body: HTTPProviderManageRequest) => Promise<HTTPProviderManageResponse>;
 
@@ -49,8 +56,8 @@ export type ManageStep =
   /** Done, and the list was read again. */
   | { readonly kind: 'done' }
   | { readonly kind: 'note'; readonly note: ManageNote }
-  /** CHANGED, and the list was read again. */
-  | { readonly kind: 'changed' };
+  /** CHANGED (or `text`), and the list was read again. */
+  | { readonly kind: 'changed'; readonly text?: string };
 
 export const SLOW = 'This takes longer than the phone waits. Look at the list before you try again.';
 
@@ -77,6 +84,7 @@ export async function manageStep(
     if (error instanceof ApiError && error.code === 'operation_conflict' && body.action === 'closeTab') return { kind: 'note', note: { kind: 'error', text: LAST_TAB } };
     if (error instanceof ApiError && (error.code === 'operation_conflict' || error.code === 'session_missing')) {
       await reload();
+      if (error.code === 'operation_conflict' && body.action === 'closeItem') return { kind: 'changed', text: CLOSE_CHANGED };
       return { kind: 'changed' };
     }
     return { kind: 'note', note: { kind: 'error', text: words(error) } };
@@ -149,9 +157,6 @@ export const closeWorktreesFirst = (group: Pick<HTTPProviderGroup, 'items'>, ite
 export const closesTogether = (group: Pick<HTTPProviderGroup, 'items'>, item: Pick<HTTPProviderItem, 'linked'>): boolean =>
   item.linked !== true && group.items.length > 1 && !closeWorktreesFirst(group, item);
 
-/** The settings are read again when the menu opens and when the New tab chooser opens, never when it closes. */
-export const readsKinds = (chooser: boolean, first: boolean): boolean => chooser || first;
-
 /** One action at a time per sheet, also when two taps land before the re-render; an answer after the sheet left does nothing. */
 export function useAction<Busy>() {
   const [busy, setBusy] = useState<Busy>();
@@ -173,12 +178,6 @@ export function useAction<Busy>() {
     });
   }
   return { busy, running, run };
-}
-
-/** Focus returns to the button that opened the sheet when it closes, if that button is still in the page. */
-function useReturnFocus(): void {
-  const [opener] = useState(() => globalThis.document?.activeElement);
-  useEffect(() => () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus(); }, [opener]);
 }
 
 export function NoteLine({ note, name, provider }: { readonly note: ManageNote; readonly name: string; readonly provider: string }) {
@@ -213,7 +212,7 @@ export type ItemMenuMode = 'menu' | 'newTab' | 'close' | 'remove' | 'changed' | 
 type ItemBusy = 'newTab' | 'closeItem' | 'removeItem' | 'closeTab';
 
 /** The item menu and its confirmations. State comes from props, so each state renders on its own. */
-export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped, prompt = '', onMode, onAction, onAgent = () => undefined, onPrompt = () => undefined, onClose }: {
+export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped, checkingKinds = false, prompt = '', onMode, onAction, onAgent = () => undefined, onPrompt = () => undefined, onClose }: {
   readonly entry: Pick<ProviderEntry, 'computer' | 'info' | 'agentTab'>;
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
@@ -224,6 +223,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
   readonly agent?: string | undefined;
   /** droppedAgent's words. */
   readonly dropped?: string | undefined;
+  readonly checkingKinds?: boolean;
   readonly prompt?: string;
   readonly onMode: (mode: ItemMenuMode) => void;
   readonly onAction: (action: ItemAction) => void;
@@ -261,7 +261,8 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
         busy={off}
         onClose={onClose}
       />
-      {mode === 'changed' && <Notice tone="danger" role="alert" title={CHANGED} />}
+      {/* An error note in this mode carries the changed words of that action (CLOSE_CHANGED). */}
+      {mode === 'changed' && <Notice tone="danger" role="alert" title={note?.kind === 'error' ? note.text : CHANGED} />}
       {mode !== 'changed' && note !== undefined && <NoteLine note={note} name={item.name} provider={info.name} />}
       {mode === 'menu' && (
         <>
@@ -282,7 +283,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
                 </li>
               ))}
             </ul>
-            {item.targets.length < 2 && <p className="hint-text">{LAST_TAB_HINT}</p>}
+            {item.targets.length < 2 && <p className="hint-text">{first ? WORKTREES_FIRST_TAB_HINT : together ? TOGETHER_TAB_HINT : LAST_TAB_HINT}</p>}
           </section>
           <ul className="menu-list">
             <li>
@@ -306,12 +307,13 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
               <button key={kind} type="button" aria-pressed={agent === kind} disabled={off} onClick={() => onAgent(kind)}><bdi>{kind}</bdi></button>
             ))}
           </div>
+          <CheckingAgents checking={checkingKinds} />
           {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
           {agent !== undefined && <PromptField prompt={prompt} busy={off} onPrompt={onPrompt} />}
           <div className="row confirm-pair">
             <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
             {agent !== undefined && (
-              <Button className="primary" busy={busy === 'newTab'} busyLabel="Starting…" disabled={promptProblem(prompt) !== undefined} onClick={() => onAction({ agent, prompt })}>Start</Button>
+              <Button className="primary" busy={busy === 'newTab'} busyLabel="Starting…" disabled={checkingKinds || promptProblem(prompt) !== undefined} onClick={() => onAction({ agent, prompt })}>Start</Button>
             )}
           </div>
         </div>
@@ -336,7 +338,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   /** Reads this provider's list again; never rejects. */
   readonly onReload: () => Promise<void>;
   /** Reads that computer's settings again, quietly: `entry` then has the agent kinds it offers now. */
-  readonly onKinds?: (() => void) | undefined;
+  readonly onKinds?: ReadAgentKinds | undefined;
   /** Words a failure of this computer (a peer's 401 says pair again; it never sends the user to Setup). */
   readonly onFailure: (error: unknown, from: Computer) => string;
   readonly onClose: () => void;
@@ -350,26 +352,21 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   const agent = offeredAgent(picked, entry.info.agentKinds);
   const [prompt, setPrompt] = useState('');
   const { busy, running, run } = useAction<ItemBusy>();
-  useReturnFocus();
-  // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
+  // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the menu opens (New tab asks only when there is a kind) and when the chooser opens.
   const chooser = mode === 'newTab';
-  const first = useRef(true);
-  useEffect(() => {
-    if (readsKinds(chooser, first.current)) onKinds?.();
-    first.current = false;
-  }, [chooser]);
+  const checkingKinds = useAgentKinds(onKinds, chooser);
   const close = () => { if (!running.current) onClose(); };
 
   function act(action: ItemAction) {
     const agentTab = typeof action === 'object' && 'agent' in action;
-    if (agentTab && promptProblem(action.prompt) !== undefined) return;
+    if (agentTab && (checkingKinds || promptProblem(action.prompt) !== undefined)) return;
     setNote(undefined);
     run(typeof action !== 'object' ? action : agentTab ? 'newTab' : 'closeTab', () => manageStep(itemRequest(action, item), manage, onReload, (error) => onFailure(error, entry.computer)), (step) => {
       switch (step.kind) {
         case 'open': onOpened({ computer: entry.computer, provider: entry.info.id, targetId: step.targetId }, step.notice); break;
         case 'done': onDone(action); break;
-        case 'changed': setMode('changed'); break;
+        case 'changed': if (step.text !== undefined) setNote({ kind: 'error', text: step.text }); setMode('changed'); break;
         // A refused agent tab stays in the chooser, with its prompt.
         case 'note': setNote(step.note); setMode(agentTab ? 'newTab' : 'menu'); break;
       }
@@ -386,6 +383,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
           mode={mode}
           busy={busy}
           note={note}
+          checkingKinds={checkingKinds}
           agent={agent}
           dropped={droppedAgent(picked, entry.info.agentKinds, entry.info.name)}
           prompt={prompt}
@@ -489,7 +487,6 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   const [note, setNote] = useState<ManageNote>();
   const [checking, setChecking] = useState(false);
   const { busy, running, run } = useAction<string>();
-  useReturnFocus();
   const close = () => { if (!running.current) onClose(); };
   const words = (error: unknown) => onFailure(error, entry.computer);
 

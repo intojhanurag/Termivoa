@@ -566,3 +566,14 @@ Open the pairing link in a browser, compare the code and answer `y` (or use
 `pterm pair pending` and `pterm pair approve <pending-id>` with `--no-wait`).
 Start a session and tap **Take control**. `pterm attach` starts read-only;
 `--control` takes control. Ctrl+] detaches without ending the session.
+
+
+### Next beta: how is the GitHub login removed during uninstall?
+
+On macOS/Linux, confirmed `pterm uninstall --delete-data` tries to revoke the
+saved pair before removing local data. A request-only outage prints the
+manual GitHub applications hint; canceling stops local deletion. The private
+empty data directory and ownership marker remain after removal, so another
+broker cannot replace its lock during cleanup. No database, paired device,
+project, setting or login remains there. See [uninstall-github.md](uninstall-github.md)
+for the private design and pending owner-review gate.

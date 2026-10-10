@@ -6,6 +6,28 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance
+
+- **History uses less host CPU and memory** (#219). Host: page construction
+  measures each normalized row once instead of encoding a growing page
+  repeatedly, while preserving the row and message limits. Phone: no app
+  change; the same **history** action reads the same pages.
+
+### Changed
+
+- **Smaller phone downloads** (#223). Phone: first-open and update downloads
+  use gzip for immutable app assets when the browser accepts it. Host: serves
+  build-time compressed files with representation-specific validators,
+  correct HEAD and range behavior, preserving raw assets and source-map
+  exclusions. API bodies and the app document remain uncompressed.
+
+- Fix (host): confirmed `pterm uninstall --delete-data` on macOS/Linux tries
+  to revoke its stored GitHub pair before removing data. Request-only outages
+  show a manual-revocation hint; parent cancellation preserves the login.
+  Keep the private empty data directory/ownership marker during cleanup.
+  Phone: the GitHub Disconnect/manual-revocation guidance covers this host
+  cleanup too. No new pairing or database is required. Owner review pending.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,
@@ -132,6 +154,11 @@ All notable changes are documented here. The format follows
   "Tap the mic", "git missing", "Connected"). Geist and Geist Mono (SIL Open
   Font License 1.1) come with the app; nothing loads from the internet. No
   protocol or stored-data change. Host: no change.
+- **Lower host overhead while watching a busy terminal** (#220). Host: typed
+  terminal messages use the same semantic validators before serialization,
+  without parsing their own JSON again. Incoming messages remain strictly
+  validated. Phone: Live and Wall use the same controls and terminal frames.
+
 - Phone, UI consistency (no feature removed; less text): every
   confirmation of a destructive or multi-line action (Terminate session,
   Send N lines, Paste N lines, Remove worktree, Remove anyway, Remove a
@@ -152,6 +179,105 @@ All notable changes are documented here. The format follows
   Safari." Host: no change.
 
 ### Fixed
+
+- Terminal screen bounds (#237). Host: strict decoding rejects snapshot row
+  positions outside the existing 0–199 range before doing coordinate
+  arithmetic, including oversized integers that could overflow the old
+  check. Valid chunks ending at 200 remain accepted. Phone: its existing
+  row-position limit is unchanged. No protocol fields or revision change.
+
+- Phone: no change. Host: desktop attach rejects invalid snapshot row ranges
+  safely and requests a fresh screen instead of allowing integer overflow
+  in its row assembler (#247). Valid screens and protocol are unchanged.
+
+- Wall performance (#221). Host: screen publication waits for the next frame
+  a viewer can receive, avoiding Live-rate screen copies for a thumbnail-only
+  session or a blocked viewer. Phone: Wall tiles still update up to 5 times
+  per second and reach the final screen; an open Live terminal keeps its rate.
+- Phone: notifications can reach a healthy phone even when many other push
+  subscriptions do not answer. Host: each request gets a bounded share of
+  the delivery window; each delivery keeps at most four requests open. Temporary failures
+  keep the subscription, while expired subscriptions are still removed
+  (#207). No protocol or database change.
+
+- Git write cleanup (#222). Phone: a timed-out commit, push or worktree
+  creation no longer leaves ordinary hook children running after failure.
+  Host: own each write's process group or Windows Job before it starts,
+  kill its remaining children and wait for git before returning or rolling
+  a failed worktree back. Successful hooks and git settings remain in use;
+  detached programs on Unix remain outside this cleanup boundary.
+
+- Worktree creation (#236). Host: one create is admitted at a time without
+  a waiting queue; extra calls receive a definite limit refusal instead of
+  leaving canceled handlers behind. Accepted work still finishes and stores
+  its original receipt after disconnect, so replay cannot create it twice.
+  Phone: the limit message now explains waiting for another create or
+  removing a finished worktree, rather than always claiming there are too
+  many worktrees. No protocol, pairing or database change.
+- Host: slow session/worktree creation, termination, notification tests
+  and herdr terminal opens use bounded independent
+  exchanges, so they no longer hold up session lists or new Live
+  authentication (#218). Phone: other sessions can be opened during a slow
+  worktree create; excess simultaneous slow actions report a limit instead
+  of claiming that the repository has too many worktrees. Authorization,
+  request correlation and uncertain-delivery rules remain in place.
+- herdr agent choices before the first launch (#208). Phone: **New worktree**
+  and **New tab** offer installed coding agents even when none runs in herdr,
+  and keep an installed choice after its last agent stops. A removed choice
+  says "codex is not available in herdr now." Host: a bounded, cached Go
+  check of canonical executable presence augments herdr's start-kind
+  allowlist; no agent command is executed during discovery.
+
+- herdr create allowance (#209). Phone: a stale project, unavailable agent
+  kind or another refusal before creation starts no longer uses one of the
+  3 creates per minute; **New worktree** and agent **New tab** can be tried
+  again after correcting the choice. Host: reserve a unit before calling
+  herdr and return it only for a marked preflight refusal, once, in its
+  original window. Attempted changes still count even if they fail.
+
+- **Private-file permission repair (#255).** Host: validate the opened file
+  before repairing its permissions; refuse final links, shared hard links,
+  unsafe types and disallowed owners without changing their targets. Keep
+  legitimate files on the same identity, including the Windows broker lock.
+  Phone: a linked or unsafe saved login remains unavailable rather than
+  changing another file. No new command, protocol or database change.
+
+- GitHub login removal (#256). Host: remove the saved login's filename
+  without overwriting another file that shares its stored contents. Phone:
+  **Disconnect** uses this safer cleanup with its current confirmation and
+  GitHub revocation warning. Local deletion does not securely erase copies
+  or backups.
+- Phone: **History** reads all retained rows when styled output makes each
+  page smaller, instead of skipping recent rows after 25 pages (#217).
+  An incomplete or over-budget read shows **History unavailable right now**;
+  it never joins partial history to the current screen. Host: no runtime or
+  protocol change; retention remains 5,000 rows and 32 MiB.
+
+- Sheet focus (#214). Phone: closing a sheet with **Close**, Escape or an
+  unmount returns keyboard focus to the control that opened it, when that
+  control remains available. Nested sheets return to their own trigger;
+  cleanup preserves focus deliberately moved elsewhere. Focus restoration
+  is shared across sheets rather than duplicated in herdr menus.
+  Host: no change; no input, protocol, pairing or database change.
+- **herdr agent choices and close guidance (#210).** Phone: **New worktree**
+  and **New tab** show **Checking available agents…** and wait before starting
+  an agent while their quiet settings read runs. **No agent** and **Shell**
+  stay available. Removed choices stay unselected; close conflicts explain
+  shared main-folder workspaces without showing peer error details. Last-tab
+  guidance follows the available close action. Host: existing create/manage
+  validation and mutation behavior remain in place; no host change.
+
+- **Readable old timestamps (#215).** Phone: GitHub repository pushes,
+  session ages and last-seen labels now use weeks (`wk`), months (`mo`) and
+  years (`yr`) instead of long day counts, such as `3 yr ago` for a
+  three-year-old push. Months and years are approximate elapsed units.
+  Host: timestamps and data are unchanged; no host behavior change.
+
+- **GitHub repository rows survive an unusable push date (#254).** Phone:
+  an optional last-push timestamp that cannot be displayed omits only its
+  age; repository names, metadata and available actions still render.
+  Valid dates keep their existing labels. Host: no timestamp, protocol,
+  access or stored-data change.
 
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at

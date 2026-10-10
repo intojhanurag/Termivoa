@@ -5,6 +5,7 @@ import type { HTTPProviderCreateRequest, HTTPProviderCreateResponse, HTTPProvide
 import type { ProviderTap } from './Herdr';
 import type { ProviderEntry } from './providers';
 import { Sheet } from './Sheet';
+import { useAgentKinds, type ReadAgentKinds } from './useAgentKinds';
 import { Button, Notice } from './ui';
 
 /*
@@ -81,7 +82,12 @@ export const offeredAgent = (picked: string | undefined, kinds: ReadonlyArray<st
 
 /** Said when a fresh settings read took the picked agent away, so the change to no agent is not silent. */
 export const droppedAgent = (picked: string | undefined, kinds: ReadonlyArray<string>, provider: string): string | undefined =>
-  picked !== undefined && !kinds.includes(picked) ? `${picked} is not running in ${provider} now.` : undefined;
+  picked !== undefined && !kinds.includes(picked) ? `${picked} is not available in ${provider} now.` : undefined;
+
+/** A live region that stays mounted, so screen readers announce the check when its text appears. */
+export const CheckingAgents = ({ checking }: { readonly checking: boolean }) => (
+  <p role="status" className={checking ? 'hint-text' : 'visually-hidden'}>{checking ? 'Checking available agents…' : ''}</p>
+);
 
 /** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. `prompted`: a first prompt was sent with the request. */
 export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, prompted: boolean, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
@@ -144,7 +150,7 @@ export function PromptField({ prompt, busy, onPrompt }: { readonly prompt: strin
 }
 
 /** The fields, the button and what went wrong. State comes from props, so each state renders on its own. */
-export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, error, slow = false, onName, onAgent, onPrompt, onCreate, onClose }: {
+export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, error, slow = false, checkingKinds = false, onName, onAgent, onPrompt, onCreate, onClose }: {
   readonly entry: ProviderEntry;
   readonly group: HTTPProviderGroup;
   readonly name: string;
@@ -157,6 +163,7 @@ export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, e
   readonly error: string | undefined;
   /** The create took longer than the phone waits (stillWorking). */
   readonly slow?: boolean;
+  readonly checkingKinds?: boolean;
   readonly onName: (name: string) => void;
   readonly onAgent: (agent: string | undefined) => void;
   readonly onPrompt: (prompt: string) => void;
@@ -165,7 +172,7 @@ export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, e
 }) {
   const { info, computer } = entry;
   const nameProblem = name === '' ? undefined : branchProblem(name);
-  const ready = createRequest(group.id, name, agent, prompt) !== undefined;
+  const ready = createRequest(group.id, name, agent, prompt) !== undefined && !(checkingKinds && agent !== undefined);
   const kinds = [...info.agentKinds.map((kind) => ({ id: kind as string | undefined, label: kind })), { id: undefined, label: 'No agent' }];
   return (
     <form
@@ -216,6 +223,7 @@ export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, e
             ><bdi>{kind.label}</bdi></button>
           ))}
         </div>
+        <CheckingAgents checking={checkingKinds} />
         {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
       </div>
       {agent !== undefined && <PromptField prompt={prompt} busy={busy} onPrompt={onPrompt} />}
@@ -238,7 +246,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
   /** Reads this provider again, so a slow create shows in the list. */
   readonly onReload?: () => void;
   /** Reads that computer's settings again, quietly: `entry` then has the agent kinds it offers now. */
-  readonly onKinds?: (() => void) | undefined;
+  readonly onKinds?: ReadAgentKinds | undefined;
   readonly onClose: () => void;
   readonly create?: (body: HTTPProviderCreateRequest) => Promise<HTTPProviderCreateResponse>;
 }) {
@@ -256,13 +264,13 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
+  // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the sheet opens.
-  useEffect(() => { onKinds?.(); }, []);
+  const checkingKinds = useAgentKinds(onKinds);
 
   function submit() {
     const body = createRequest(group.id, name, agent, prompt);
-    if (body === undefined || running.current) return;
+    if (body === undefined || running.current || (checkingKinds && agent !== undefined)) return;
     running.current = true;
     setBusy(true);
     setError(undefined);
@@ -290,6 +298,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
           agent={agent}
           dropped={droppedAgent(picked, entry.info.agentKinds, entry.info.name)}
           prompt={prompt}
+          checkingKinds={checkingKinds}
           busy={busy}
           error={error}
           slow={slow}
