@@ -85,7 +85,8 @@ func (provider *Provider) apply(ctx context.Context, snapshot wireSnapshot, now 
 	}
 	// An empty snapshot keeps the baseline: a restarted herdr can bring its panes back a poll later.
 	provider.tracks, provider.baseline = tracks, len(result.live) == 0
-	kinds := agentKinds(provider.caps.kinds, result.kinds)
+	provider.refreshAvailability(now)
+	kinds := agentKinds(provider.caps.kinds, result.kinds, provider.available)
 	provider.publish(func(current *view) {
 		current.installed, current.binary = true, provider.binary
 		current.state, current.caps = result.response.State, provider.caps
@@ -98,12 +99,12 @@ func (provider *Provider) apply(ctx context.Context, snapshot wireSnapshot, now 
 	}
 }
 
-// agentKinds is design Q2: kinds herdr can start that already run in this
-// herdr, most used first (ties by name), at most 16.
-func agentKinds(startable []string, running map[string]int) []string {
+// agentKinds offers advertised kinds whose canonical command is installed
+// or whose agent already runs here, most used first (ties by name), at most 16.
+func agentKinds(startable []string, running map[string]int, available map[string]bool) []string {
 	var kinds []string
 	for _, kind := range startable {
-		if running[kind] > 0 {
+		if running[kind] > 0 || available[kind] {
 			kinds = append(kinds, kind)
 		}
 	}

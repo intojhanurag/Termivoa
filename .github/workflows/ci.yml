@@ -173,3 +173,8 @@ jobs:
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - run: govulncheck ./...
       - run: pnpm audit --audit-level high
+      - name: Install and build the separate static docs site
+        working-directory: site
+        run: pnpm install --frozen-lockfile --ignore-workspace && pnpm build
+      - name: Audit the separate site lockfile and review known build-only findings
+        run: node --test scripts/audit-site.test.mjs && node scripts/audit-site.mjs

@@ -24,6 +24,7 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `@xterm/addon-unicode-graphemes` | 0.4.0 | MIT |
 | `@tanstack/react-virtual` | 3.14.13 | MIT |
 | Ajv | 8.20.0 | MIT |
+| `geist` (Geist and Geist Mono variable fonts, bundled into the web app) | 1.7.2 | SIL Open Font License 1.1 (Copyright 2023 Vercel, in collaboration with basement.studio); text in `third_party/geist/LICENSE`; the two woff2 files are in `web/src/styles/fonts/` (SHA-256 `a369fcf5…` Geist, `fba8f577…` Geist Mono) |
 | `qr` (QR decoder, `qr/decode.js` only) | 0.7.0 | MIT OR Apache-2.0 (Copyright Paul Miller; contains code inspired by ZXing, Apache-2.0, Copyright ZXing authors) |
 | quicktype | 26.0.0 | Apache-2.0 |
 

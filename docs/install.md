@@ -9,7 +9,7 @@
 > [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is
 > written and tested in containers, but not yet on a real Linux computer. The
 > short version of this guide is the
-> [quick start](https://termivoa.vercel.app/docs/quick-start/).
+> [quick start](https://termivoa.com/docs/quick-start/).
 
 ## Private beta
 
@@ -51,7 +51,7 @@ gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd6
 Keep the executable where it is after setup: the startup entries point to its
 path. `SHA256SUMS` in the release lists the checksum of every file
 (`shasum -a 256 -c SHA256SUMS --ignore-missing`). Then continue with
-[Pair your phone](https://termivoa.vercel.app/docs/pair-your-phone/).
+[Pair your phone](https://termivoa.com/docs/pair-your-phone/).
 
 Termivoa runs two per-user processes from one `pterm` executable:
 
@@ -566,3 +566,14 @@ Open the pairing link in a browser, compare the code and answer `y` (or use
 `pterm pair pending` and `pterm pair approve <pending-id>` with `--no-wait`).
 Start a session and tap **Take control**. `pterm attach` starts read-only;
 `--control` takes control. Ctrl+] detaches without ending the session.
+
+
+### Next beta: how is the GitHub login removed during uninstall?
+
+On macOS/Linux, confirmed `pterm uninstall --delete-data` tries to revoke the
+saved pair before removing local data. A request-only outage prints the
+manual GitHub applications hint; canceling stops local deletion. The private
+empty data directory and ownership marker remain after removal, so another
+broker cannot replace its lock during cleanup. No database, paired device,
+project, setting or login remains there. See [uninstall-github.md](uninstall-github.md)
+for the private design and pending owner-review gate.

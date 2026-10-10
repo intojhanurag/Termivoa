@@ -42,6 +42,7 @@ func worktreeFixture(t *testing.T) (*managementFixture, map[string]*Session, *sy
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("HOME", t.TempDir())
 	fixture := newManagementFixture(t)
 	fixture.server.config.WorktreeRoot = filepath.Join(t.TempDir(), "worktrees")
 	ids := []string{sourceSessionID, sourceSessionGen, rpcSessionID, rpcSessionGen}
@@ -120,6 +121,14 @@ func TestWorktreeCreateStartsTheSessionInTheWorktree(t *testing.T) {
 	replay, err := fixture.server.createSession(ctx, request)
 	if err != nil || replay.Session.ID != result.Session.ID || replay.Session.Worktree == nil {
 		t.Fatalf("replay = %+v, %v", replay.Session, err)
+	}
+	// A replay while another create holds the slot still returns the
+	// receipt, not limit_exceeded (review of #244).
+	fixture.server.worktreeCreates.Lock()
+	busyReplay, err := fixture.server.createSession(ctx, request)
+	fixture.server.worktreeCreates.Unlock()
+	if err != nil || busyReplay.Session.ID != result.Session.ID {
+		t.Fatalf("replay during another create = %+v, %v", busyReplay.Session, err)
 	}
 	mu.Lock()
 	count := len(sessions)

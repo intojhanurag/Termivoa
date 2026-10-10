@@ -12,8 +12,8 @@ What it does. From the phone, for a computer's herdr:
 | A3b | **Close tab** (added on the owner's request during the build) | item menu, after a confirmation |
 | A4 | **Remove worktree** (a linked worktree; never with force) | item menu, after a confirmation |
 | A5 | **New workspace** in a Termivoa project folder, opened at once | herdr tab |
-| A6 | **Start herdr** when it is installed and not running | Settings → Integrations, and the herdr tab's "not running" notice |
-| A7 | **Install herdr** when it is not installed (macOS, Linux): opens a Termivoa session on that computer with herdr's official install command typed, not run | Settings → Integrations |
+| A6 | **Start herdr** when it is installed and not running | Settings → (the computer) → herdr, and the herdr tab's "not running" notice |
+| A7 | **Install herdr** when it is not installed (macOS, Linux): opens a Termivoa session on that computer with herdr's official install command typed, not run | Settings → (the computer) → herdr |
 
 **Upgrade:** no SQLite schema change. Protocol revision 5. Pairing, devices and settings stay.
 
@@ -140,7 +140,7 @@ Trust statement (unchanged): a paired phone can already run any command in a ses
 - **Close tab**: the item menu lists the item's terminals by tab label; each has **Close tab**, with the confirmation "Close tab 2? Its terminals end." An item with one terminal has the line "Close the workspace to end its last tab." In every confirmation **Cancel** comes first, and a tap in the first 400 ms does nothing, so a double tap on the menu row cannot confirm.
 - **Remove** confirmation: "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." `problem: uncommitted`: "silver-meadow has changes that are not committed. Commit or discard them first."
 - **New workspace**: a button on the herdr tab (also when the list is empty) opens a sheet with that computer's Termivoa projects; a tap makes the workspace and opens its terminal. With no projects the sheet says how to add one, as New session does.
-- **Integrations**: `notInstalled` shows "Not installed"; with `canInstall`, **Install herdr** and the line "Opens a terminal on mac with herdr's install command. Press Enter there to run it."; without it, "Run `pterm doctor` on mac." `notRunning` with `canStart` shows **Start herdr** (also on the herdr tab's "herdr is not running on mac" notice). A `notInstalled` card has no switches.
+- **Settings → (the computer) → herdr** (the old Integrations card): `notInstalled` shows "Not installed"; with `canInstall`, **Install herdr** and the line "Opens a terminal on mac with herdr's install command. Press Enter there to run it."; without it, "Run `pterm doctor` on mac." `notRunning` with `canStart` shows **Start herdr** (also on the herdr tab's "herdr is not running on mac" notice). A `notInstalled` card has no switches.
 - The app does not poll a `notInstalled` provider and shows no tab for it.
 - Every button shows that it works (busy, result, error), as the rest of the app. For a manage error the app shows the host's fixed message.
 
@@ -399,11 +399,46 @@ One adversarial review of the branch `fix/herdr-bugs`. No critical or high findi
 | L3 | A start with no prompt answered `agentNotReady` for an agent at a question, and the phone said "Your prompt was not sent." though none was typed | Host: with no prompt, an agent that is there is "started". Phone: `startNotice` knows whether a prompt was sent; without one it says "The agent started and waits at a question." |
 | L4 | Any `agent.get` failure other than `agent_not_found` and `agent_not_running` became `agentFailed` at the step limit: a herdr without `agent.get` made every start "failed" | Another error code from herdr ends the wait with the behaviour from before the wait: started, and the prompt is tried once |
 | L5 | Probe edges: a run that a signal ended counted as "ended" and kept "cannot attach" for good; the back-off was not reset for another binary or version; a new discovery ran the probe before its wait was over | Only a real exit code counts; the wait starts again for a new key; only the poll loop's timer runs a probe again (`TestProbeBackOffEdges`) |
+| L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`readsKinds`) |
+| O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (originally `providerLimits.giveBack`; issue #209 replaces it with the one-shot reservations below). The manage limit is as before (`TestProviderCreateRoute`) |
+
 | L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`useAgentKinds`) |
 | O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (`providerLimits.giveBack`; it changes only the window that the take counted in, so the bound stays exact). The manage limit is as before (`TestProviderCreateRoute`) |
 | Rule 21, last round | The **New worktree** sheet said "Too many new worktrees just now. Wait a minute, then try again." also when herdr was busy with another change (both are `limit_exceeded`) | The home computer's own fixed words show ("herdr is busy with another change; try again" or "too many requests; wait a minute and try again"). A peer's words are never shown, so for a peer the app says what is true for both: "herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again." |
 | e2e | `H-newtab-quiet`, never run before, failed: "this herdr terminal's folder cannot be read" still showed in a new herdr terminal outside git. A product defect: the read-ahead of the files root (see row 194) | The read-ahead's refusal is quiet; a listing that the user opened still shows the host's words (`Connection.test.ts`) |
 | Docs | The site said "herdr 0.8" and "herdr 0.9", and "two workspaces at the main folder of one repository" without the exact rule | The site names herdr 0.8.2 and herdr 0.9.3, and the rule as the host has it: two workspaces that herdr lists under one project as that project's main folder (each has herdr's worktree record for the same repository). The new lab case above shows that a second workspace without the record closes alone on both versions, so the host refuses nothing more |
+
+## Starting an installed kind with no running agents (issue #208)
+
+The **New tab** and **New worktree** choices now include herdr's advertised
+start kinds whose canonical commands are installed, as well as kinds already
+running. Stopping the last agent does not remove its installed kind. The
+poll-loop cache and bounds are specified in [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
+
+This supersedes the running-only selection rule recorded in the issue #195
+and L1 historical reviews above. The sheets still refresh settings when they
+open and never silently substitute another agent. A choice that becomes
+unavailable says, for example, "codex is not available in herdr now." and
+falls back to no agent. Create and newTab still check the exact offered kind
+before making anything, and launch only through herdr's existing methods.
+The broker requests a ready-state availability refresh on settings reads,
+under the existing 2 s throttle; it rescans agent commands only and keeps
+the lookup and retry timers; the response stays a nonblocking cache read.
+
+## Agent-tab create allowance (issue #209)
+
+An agent **New tab** shares the three-create allowance with **New worktree**.
+A pending reservation counts before the provider runs. A marked local
+preflight refusal (missing workspace, unavailable kind/state, busy, or tab
+limit reached) returns that create reservation, exactly once in its original
+window. Its separate 30/manage-attempts-per-minute budget remains charged.
+
+Once `tab.create` is attempted, the create unit stays consumed even when
+the response says the workspace is missing; a network failure or partial
+success must not create a new allowance for retrying ambiguous work. The
+full boundary and concurrency rules are in
+[herdr-provider.md](herdr-provider.md#create-admission-accounting-issue-209-2026-10-08).
+There is no automatic retry or new operation ID / protocol field.
 
 ## How are fresh choices and close hints verified? (#210)
 

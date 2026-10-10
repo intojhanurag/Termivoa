@@ -85,6 +85,9 @@ func TestSoakThrottledPhones(t *testing.T) {
 	for _, phone := range phones {
 		phone.collect()
 		lat := summarize(phone.latencies)
+		if len(phone.latencies) == 0 {
+			t.Errorf("phone %s received no complete status records for staleness measurement", phone.name)
+		}
 		t.Logf("phone %-8s disconnects=%d frames/s=%.1f snapshots=%d json=%.3f MiB/s wire=%.3f MiB/s staleness %s lastErr=%v",
 			phone.name, phone.disconnects, float64(phone.patches)/elapsed.Seconds(), phone.snapshots,
 			mib(phone.bytes)/elapsed.Seconds(), mib(phone.wire.Load())/elapsed.Seconds(), lat, phone.lastErr)
