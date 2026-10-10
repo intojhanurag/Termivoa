@@ -43,6 +43,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   returning or worktree rollback (#222). Real macOS hook/PID tests and
   cross-platform fixture tests are added; native Linux/Windows and hosted
   checks remain pending, as do existing owner phone gates.
+
+- Broker worktree admission (#236): one active create and no waiting queue.
+  Closed callers do not accumulate handlers; accepted work and its receipt
+  survive disconnect. Concurrent calls get a limit response. Design:
+  [worktrees.md](worktrees.md); evidence: [issue-236](evidence/issue-236/verification.md).
+  Real-phone and native Windows checks remain pending.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

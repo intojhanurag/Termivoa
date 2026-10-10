@@ -307,6 +307,17 @@ Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<na
 
 Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
 
+## New worktree says "Termivoa reached a limit on this computer"
+
+**Next beta.** Termivoa creates one worktree at a time on each computer.
+Wait for any earlier create to finish, then try **Create** again. If no
+create is running, remove a finished worktree or end a finished session to
+make room. Extra requests are refused immediately and do not run later.
+
+If the app closed while a create was already running, check Sessions for
+its worktree before making another. The computer can still finish that
+create after the phone leaves.
+
 ## New worktree says "git worktree add failed"
 
 Fix the cause in git's message, then reuse the same name; Termivoa cleans up what it made. Often a repository hook (for example husky or lefthook) fails on checkout.

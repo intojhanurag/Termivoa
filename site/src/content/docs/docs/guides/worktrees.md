@@ -53,7 +53,13 @@ If the folder has uncommitted changes, new files, or files that git ignores (suc
 
 ## What are the limits?
 
-One repository can have up to 50 worktrees in `~/termivoa/worktrees`. Remove one to make more.
+| Limit | What to do |
+| --- | --- |
+| 50 Termivoa worktrees per repository | Remove a finished worktree to make another. |
+| **Next beta:** one worktree creation at a time per computer | Wait for the current create to finish, then tap **Create** again. Extra requests receive a limit message immediately. |
+
+Closing the sheet or app after a create started can leave the computer
+finishing it. Check Sessions for that worktree before creating it again.
 
 ## Common questions
 
