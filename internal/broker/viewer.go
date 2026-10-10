@@ -484,26 +484,19 @@ func (subscription *ViewerSubscription) hostMessage(messageType protocol.Message
 }
 
 func (subscription *ViewerSubscription) hostMessageForRequest(messageType protocol.MessageType, payload any, requestID string) ([]byte, error) {
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("broker: encode %s payload: %w", messageType, err)
-	}
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
 	sessionID, generation := subscription.session.id, subscription.session.generation
-	message, err := json.Marshal(protocol.Envelope{
+	message, err := protocol.EncodeHost(protocol.Envelope{
 		Version: protocol.Version, Type: messageType, RequestID: requestID,
-		SessionID: &sessionID, Generation: &generation, Payload: payloadJSON,
-	})
+		SessionID: &sessionID, Generation: &generation,
+	}, payload)
+	if errors.Is(err, protocol.ErrOutboundMessageTooLarge) {
+		return nil, fmt.Errorf("%w: %w", errOutboundMessageTooLarge, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("broker: encode %s envelope: %w", messageType, err)
-	}
-	if len(message) > protocol.MaxOutboundMessageBytes {
-		return nil, fmt.Errorf("%w: %s is %d bytes", errOutboundMessageTooLarge, messageType, len(message))
-	}
-	if _, err := protocol.DecodeHost(message); err != nil {
-		return nil, fmt.Errorf("broker: validate %s envelope: %w", messageType, err)
 	}
 	return message, nil
 }

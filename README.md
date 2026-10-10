@@ -25,22 +25,24 @@ the old working name "Phone Terminal" so existing installs keep working (see
 ## Features
 
 - **Many live sessions.** Start shells or coding agents on your computer and
-  switch between them with tabs. A dot shows new output.
+  switch between them with tabs. A dot shows new output. Screens are bounded
+  to 400 columns and 200 rows; next beta also rejects malformed screen-update
+  row positions on the computer.
 - **Files.** Browse, search and read your project's files on the phone, and
   tap a path like `src/app.ts:42` in the terminal to open it there.
 - **Worktrees.** Start a task in its own folder and branch from `main` (or
   any branch) with one tap, with a random name you can edit, and Claude or
   Codex already running in it.
 - **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
-  its projects and worktrees with BLOCKED, DONE and WORKING, buzzes when an
+  its projects and worktrees with blocked, done and working, buzzes when an
   agent is blocked or finished, opens one herdr terminal in Live and makes new
   worktrees. From the phone you can also open a tab or a workspace, close a tab or a
   workspace, remove a worktree (never one with uncommitted changes) and start
   herdr. A new tab can start a coding agent with a first prompt, a closed
-  worktree shows as CLOSED with **Open**, and a herdr terminal has the same
+  worktree shows as closed with **Open**, and a herdr terminal has the same
   **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
-- **GitHub.** Connect each computer to GitHub from **Settings →
-  Integrations** with a code, see your repositories, and clone one onto a
+- **GitHub.** Connect each computer to GitHub from its page in
+  **Settings** with a code, see your repositories, and clone one onto a
   computer with one tap, ready for a new session. No `gh` needed, only git;
   a folder that is already there is never deleted or overwritten. Pull and
   push work in the clone. macOS and Linux, github.com only; next beta.
@@ -49,10 +51,11 @@ the old working name "Phone Terminal" so existing installs keep working (see
   drag it to arrange the Wall your way. Tiles over the live limit show one
   snapshot of their screen, marked Paused. Next beta: Wall-only sessions
   avoid preparing screen updates faster than their tiles can show them.
-- **Computer health.** Each computer's version and last answer in
-  Settings, with Check again.
+- **Computer health.** Each computer's version and last answer on its page
+  in Settings, with Check again.
 - **Several computers.** Use a Mac, a Linux server and a VPS
-  from one phone app: one Sessions list with a chip per computer, one Wall,
+  from one phone app: one Sessions list with a side menu to pick a computer (or
+  all of them), Settings with one page for each computer, one Wall,
   and new sessions on any of them. Each computer approves the phone itself,
   and **Log out** signs out of every computer it can reach. Not yet tested
   on a real phone; choose an always-on, trusted computer as home, because a
@@ -62,7 +65,7 @@ the old working name "Phone Terminal" so existing installs keep working (see
   or by tapping it in a Termivoa session.
 - **Found on your network.** Run `pterm setup` or
   `pterm pair --via <home>` on a new computer, then tap **Add** next to it in
-  **Settings → Computers**: no link to move. You still compare the code and
+  **Settings**: no link to move. You still compare the code and
   type `y` on the new computer. Not yet tested on a real phone.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts (Down sits next to Up while you type), plus a key
@@ -75,6 +78,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   and start it in one tap.
 - **Composer.** Write long or multi-line text before you send it.
 - **History and copy.** Scroll back through bounded history and copy text.
+  Next beta: preparing History pages uses less CPU and temporary memory on
+  your computer.
   In full-screen apps such as Claude Code, swipe on the terminal to scroll.
 - **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
   **Your turn**. Answer Claude Code and Codex questions with one tap; a
@@ -96,6 +101,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   from other computers.
 - **Desktop attach.** `pterm attach` opens the same session from any desktop
   terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
+- **Watching busy terminals.** Next beta reduces CPU and temporary memory
+  used on the computer while Live or Wall shows changing output.
+  **Next beta:** invalid snapshot row ranges request a fresh screen safely.
 - **Sessions survive the phone.** Close the app or lose signal; the session
   keeps running on the computer. Input is never queued or resent on its own.
 - **Pairing you can check.** Scan a QR code, compare a short code on both
@@ -125,7 +133,7 @@ dist/linux/pterm-linux-amd64` (or `-arm64`): it installs `~/.local/bin/pterm`
 and runs `pterm setup`. Servers, WSL and the Tailscale operator step:
 [docs/install.md](docs/install.md#linux-desktop-server-and-wsl).
 
-Then the three steps from the [quick start](https://termivoa.vercel.app/docs/quick-start/):
+Then the three steps from the [quick start](https://termivoa.com/docs/quick-start/):
 
 1. Install [Tailscale](https://tailscale.com/download) on the computer and the
    phone, signed in to the same account.
@@ -228,7 +236,7 @@ You need Go 1.27.1, Node.js 24.11.0 and pnpm 10.33.0. Run
 
 ## Documentation
 
-- [User docs](https://termivoa.vercel.app/docs/) — quick start, guides, CLI and troubleshooting
+- [User docs](https://termivoa.com/docs/) — quick start, guides, CLI and troubleshooting
 - [Install, update and uninstall](docs/install.md)
 - [Architecture](docs/architecture.md), [decision records](docs/decisions/), [multi-computer design](docs/multi-computer.md) and [preview on other computers](docs/peer-preview.md)
 - [Threat model](docs/threat-model.md) and [authentication design](docs/p4-authentication-design.md)

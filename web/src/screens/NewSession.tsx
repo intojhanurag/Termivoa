@@ -151,9 +151,8 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
           <ComputerChips
             computers={entries.map((entry) => entry.computer)}
             chosen={computer?.host}
-            all={false}
             disabled={(host) => entries.find((entry) => entry.computer.host === host)?.status.kind !== 'ok'}
-            onChoose={(host) => { if (host !== undefined) { setComputer(host); setNote(undefined); } }}
+            onChoose={(host) => { setComputer(host); setNote(undefined); }}
           />
           {unavailable.map((text) => <p key={text} className="hint-text">{text}</p>)}
         </section>

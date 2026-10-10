@@ -14,10 +14,13 @@ import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 import { NewSessionHelp } from './NewSession';
 import { StartButton } from './ProviderManage';
 import { INSTALL_COMMANDS, providerKey, providerSources, startInstall, type ProviderEntry, type ProviderSource } from './providers';
+import { ComputerHead, initialPage, MAIN_PAGE, PAGE_KEY, pageFromHistory, shownPage, type SettingsPage } from './SettingsComputer';
 import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
-const ComputersSection = lazy(() => loadChunk(() => import('./Computers')).then((module) => ({ default: module.ComputersSection })));
+const computersChunk = () => loadChunk(() => import('./Computers'));
+const ComputersSection = lazy(() => computersChunk().then((module) => ({ default: module.ComputersSection })));
+const ComputerActions = lazy(() => computersChunk().then((module) => ({ default: module.ComputerActions })));
 
 export type DeviceNameResult =
   | { readonly kind: 'saved'; readonly device: HTTPDeviceSummary }
@@ -166,7 +169,7 @@ export function NotificationSettings({ onFailure, onPush }: {
   );
 }
 
-/** The state word and its one line for Settings → Integrations (docs/herdr-provider.md, section 8). */
+/** The state word and its one line for Settings → (computer) (docs/herdr-provider.md, section 8). */
 export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, label: string, canStart = false): {
   readonly word: string;
   readonly tone: 'green' | 'amber' | 'muted';
@@ -248,9 +251,11 @@ export function InstallCard({ source, command, help, busy, error, onInstall, onC
 
 /** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
 export function IntegrationRow({
-  source, entry, settings, push, onFailure, onSaved, onInstall, onCheck, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body),
+  source, entry, settings, push, onFailure, onSaved, onInstall, onCheck, onNotifications, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body),
 }: {
   readonly source: ProviderSource;
+  /** The "no buzz" line's link: opens Notifications. */
+  readonly onNotifications?: (() => void) | undefined;
   /** This phone's push state: a card whose buzz is on says when no buzz can reach this phone. */
   readonly push?: PushState | undefined;
   /** That computer's settings: the project and shell Install starts its session with. */
@@ -379,8 +384,7 @@ export function IntegrationRow({
               tone="warning"
               role="status"
               title="This phone gets no buzz yet."
-              // Focus moves with the view, so a screen reader lands on Notifications too.
-              action={<button type="button" className="link" onClick={() => { const to = document.getElementById('notifications'); to?.scrollIntoView(); to?.focus({ preventScroll: true }); }}>{BUZZ_LINKS[gap]}</button>}
+              action={<button type="button" className="link" onClick={onNotifications}>{BUZZ_LINKS[gap]}</button>}
             />
           )}
           <div role="status" className="field-note">
@@ -392,119 +396,98 @@ export function IntegrationRow({
   );
 }
 
-/** Settings → Integrations: only where a computer lists a provider or offers GitHub. */
-export function IntegrationsSection({ entries, providers = [], push, onFailure, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened }: {
-  readonly entries: ReadonlyArray<ComputerEntry>;
-  readonly push?: PushState | undefined;
-  /** The providers' latest reads, for their state. */
+/**
+ * One computer's page (docs/ui-revamp.md, section 5): each provider it lists (herdr) with its switches, GitHub where
+ * it offers it, and This computer. Back goes to the main page.
+ */
+export function ComputerPage({
+  entry, providers = [], push, onBack, onFailure, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onNotifications, onComputersChanged, onRemoved,
+}: {
+  readonly entry: ComputerEntry;
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
+  readonly push?: PushState | undefined;
+  readonly onBack: () => void;
   readonly onFailure: (error: unknown, from?: Computer) => string;
-  readonly onCheck?: (origin: string) => Promise<void>;
+  readonly onCheck: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
   readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
-  /** GitHub's New session made a session: open it in Live. */
   readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
-  /** GitHub's New workspace in herdr opened a terminal. */
   readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
+  readonly onNotifications?: (() => void) | undefined;
+  readonly onComputersChanged: () => void;
+  readonly onRemoved: (text: string) => void;
 }) {
-  const sources = providerSources(entries);
-  // A computer whose GitHub sheet is open keeps its row (and the sheet) through a failed settings read.
+  const { origin } = entry.computer;
+  const settings = entry.status.kind === 'ok' ? entry.status.settings : undefined;
+  const sources = providerSources([entry]);
+  // An open GitHub sheet keeps its row (and the sheet) through a failed settings read.
   const keptGitHub = useRef(new Map<string, GitHubSource>());
-  const [openGitHub, setOpenGitHub] = useState<ReadonlySet<string>>(new Set());
-  const github = githubSources(entries, keptGitHub.current, openGitHub);
-  const settingsOf = (origin: string) => {
-    const status = entries.find((entry) => entry.computer.origin === origin)?.status;
-    return status?.kind === 'ok' ? status.settings : undefined;
-  };
-  if (sources.length === 0 && github.length === 0) return null;
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const github = githubSources([entry], keptGitHub.current, sheetOpen ? new Set([origin]) : new Set());
   return (
-    <section className="group stack" aria-labelledby="integrations-heading">
-      <h2 id="integrations-heading" className="caps">Integrations</h2>
-      <ul className="computer-list">
-        {sources.map((source) => (
-          <IntegrationRow
-            key={`${source.computer.origin} ${source.info.id}`}
-            source={source}
-            entry={providers.find((entry) => entry.key === providerKey(source.computer.origin, source.info.id))}
-            settings={settingsOf(source.computer.origin)}
-            push={push}
-            onInstall={onInstall}
-            {...(onCheck === undefined ? {} : { onCheck: () => onCheck(source.computer.origin) })}
-            onFailure={onFailure}
-            onSaved={async () => {
-              await Promise.all([
-                onCheck?.(source.computer.origin).catch(() => undefined),
-                onProviderReload?.(providerKey(source.computer.origin, source.info.id)).catch(() => undefined),
-              ]);
-            }}
-          />
-        ))}
-        {github.map((source) => (
-          <GitHubRow
-            key={`${source.computer.origin} github`}
-            source={source}
-            provider={readyProvider(providers, source.computer.origin)}
-            handlers={{
-              onFailure,
-              onChanged: () => onCheck?.(source.computer.origin) ?? Promise.resolve(),
-              onOpenSession,
-              onTypeIn: onInstall,
-              onProviderOpened,
-              onProviderReload,
-            }}
-            onSheet={(open) => setOpenGitHub((current) => {
-              const next = new Set(current);
-              if (open) next.add(source.computer.origin);
-              else next.delete(source.computer.origin);
-              return next;
-            })}
-          />
-        ))}
-      </ul>
-    </section>
+    <>
+      <ComputerHead entry={entry} now={Date.now()} onBack={onBack} />
+      {sources.map((source) => (
+        <section key={source.info.id} className="group stack" aria-label={source.info.name}>
+          <h2 className="caps">{source.info.name}</h2>
+          <ul className="computer-list sc-block">
+            <IntegrationRow
+              source={source}
+              entry={providers.find((one) => one.key === providerKey(origin, source.info.id))}
+              settings={settings}
+              push={push}
+              onInstall={onInstall}
+              onCheck={() => onCheck(origin)}
+              onNotifications={onNotifications}
+              onFailure={onFailure}
+              onSaved={async () => {
+                await Promise.all([
+                  onCheck(origin).catch(() => undefined),
+                  onProviderReload?.(providerKey(origin, source.info.id)).catch(() => undefined),
+                ]);
+              }}
+            />
+          </ul>
+        </section>
+      ))}
+      {github.map((source) => (
+        <section key="github" className="group stack" aria-label="GitHub">
+          <h2 className="caps">GitHub</h2>
+          <ul className="computer-list sc-block">
+            <GitHubRow
+              source={source}
+              provider={readyProvider(providers, origin)}
+              handlers={{
+                onFailure,
+                onChanged: () => onCheck(origin),
+                onOpenSession,
+                onTypeIn: onInstall,
+                onProviderOpened,
+                onProviderReload,
+              }}
+              onSheet={setSheetOpen}
+            />
+          </ul>
+        </section>
+      ))}
+      <ErrorBoundary>
+        <Suspense fallback={<p role="status" className="muted">Loading…</p>}>
+          <ComputerActions entry={entry} projects={settings?.projects.length} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} onRemoved={onRemoved} />
+        </Suspense>
+      </ErrorBoundary>
+    </>
   );
 }
 
-/** Brings a section into view once the Computers section over it has its full height. */
-function ScrollTo({ id }: { readonly id: string }) {
-  useEffect(() => { document.getElementById(id)?.scrollIntoView(); }, [id]);
-  return null;
-}
-
-export function Settings({
-  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onComputersChanged,
-}: {
-  /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
-  readonly settings: HTTPSettingsResponse | undefined;
-  /** Opens scrolled to this section. */
-  readonly section?: 'notifications';
-  readonly entries: ReadonlyArray<ComputerEntry>;
-  /** Providers (herdr) of every computer, read while Settings shows, for Integrations. */
-  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
-  readonly fontSize: number;
-  readonly onFontSize: (size: number) => void;
-  readonly onBack: () => void;
+/** This phone's name on home (`pterm devices`): today's form, opened from the Name row. */
+export function DeviceNameForm({ current, onRenamed, onFailure }: {
+  readonly current: string;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
-  readonly onFailure: (error: unknown, from?: Computer) => string;
-  readonly onLogout: () => Promise<void>;
-  readonly onCheck: (origin: string) => Promise<void>;
-  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
-  /** Install herdr made a session on a computer: open it in Live with the install command typed, not run. */
-  readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
-  /** GitHub's New session made a session: open it in Live. */
-  readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
-  /** GitHub's New workspace in herdr opened a terminal; `key` is the provider read's. */
-  readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
-  readonly onComputersChanged: () => void;
+  readonly onFailure: (error: unknown) => string;
 }) {
-  const [logoutError, setLogoutError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [push, setPush] = useState<PushState>();
-  const current = settings?.device.label ?? '';
   // Follows home's label (home may answer after this screen opened) until the user types.
   const [draft, setDraft] = useState<string>();
   const name = draft ?? current;
-  const multi = entries.length > 1;
   const [nameState, setNameState] = useState<NameState>({ kind: 'idle' });
   const nameProblem = deviceLabelProblem(name.trim());
   const unchanged = name.trim() === current;
@@ -528,100 +511,223 @@ export function Settings({
   }
 
   return (
-    <main className="page screen settings-screen">
-      <header className="screen-header">
-        <h1 className="display">Settings</h1>
-        <button type="button" className="link strong" onClick={onBack}>Done</button>
-      </header>
-      <ErrorBoundary>
-        <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
-          <ComputersSection entries={entries} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} />
-          {section !== undefined && <ScrollTo id={section} />}
-        </Suspense>
-      </ErrorBoundary>
+    <form
+      id="device-name-form"
+      className="stack sc-inline"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void rename();
+      }}
+    >
+      <label htmlFor="device-name">Device name</label>
+      <input
+        id="device-name"
+        value={name}
+        maxLength={64}
+        autoComplete="off"
+        aria-describedby="device-name-help device-name-status"
+        aria-invalid={nameProblem !== undefined}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setNameState({ kind: 'idle' });
+        }}
+      />
+      <p id="device-name-help" className="hint-text">
+        Your computer shows this name in <code>pterm devices</code>.
+      </p>
+      <p id="device-name-status" role="status" className={nameState.kind === 'error' || nameProblem !== undefined ? 'error field-note' : 'muted field-note'}>
+        {nameProblem ?? (nameState.kind === 'error' ? nameState.message
+          : nameState.kind === 'saving' ? 'Saving…'
+            : nameState.kind === 'saved' ? 'Name saved.' : '')}
+      </p>
+      <Button
+        type="submit"
+        className="secondary"
+        busy={nameState.kind === 'saving'}
+        disabled={nameProblem !== undefined || unchanged}
+      >Save name</Button>
+    </form>
+  );
+}
 
-      {settings === undefined && (
-        <Notice tone="warning">Your home computer cannot be reached. Device name, notifications and log out need it.</Notice>
-      )}
-      {settings !== undefined && (
-      <section className="group stack" aria-labelledby="device-heading">
-        <h2 id="device-heading" className="caps">This device</h2>
-        <form
-          className="stack"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void rename();
-          }}
-        >
-          <label htmlFor="device-name">Device name</label>
-          <input
-            id="device-name"
-            value={name}
-            maxLength={64}
-            autoComplete="off"
-            aria-describedby="device-name-help device-name-status"
-            aria-invalid={nameProblem !== undefined}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setNameState({ kind: 'idle' });
-            }}
-          />
-          <p id="device-name-help" className="hint-text">
-            Your computer shows this name in <code>pterm devices</code>.
-          </p>
-          <p id="device-name-status" role="status" className={nameState.kind === 'error' || nameProblem !== undefined ? 'error field-note' : 'muted field-note'}>
-            {nameProblem ?? (nameState.kind === 'error' ? nameState.message
-              : nameState.kind === 'saving' ? 'Saving…'
-                : nameState.kind === 'saved' ? 'Name saved.' : '')}
-          </p>
-          <Button
-            type="submit"
-            className="secondary"
-            busy={nameState.kind === 'saving'}
-            disabled={nameProblem !== undefined || unchanged}
-          >Save name</Button>
-        </form>
-      </section>
-      )}
+/** "On", "Off", or nothing while the browser has not answered: the Notifications row's value. */
+export function pushWord(push: PushState | undefined): 'On' | 'Off' | '' {
+  if (push === undefined) return '';
+  if (push.support !== 'available') return 'Off';
+  return push.enabled === undefined ? '' : push.enabled ? 'On' : 'Off';
+}
 
-      <section className="group stack" aria-labelledby="font-heading">
-        <h2 id="font-heading" className="caps">Terminal text size</h2>
-        <div className="font-row" role="group" aria-labelledby="font-heading">
-          <button type="button" className="key" aria-label="Smaller text" disabled={fontSize <= MIN_FONT_SIZE}
-            onClick={() => onFontSize(fontSize - 1)}>A−</button>
-          <output aria-live="polite" className="font-size">{fontSize} px</output>
-          <button type="button" className="key" aria-label="Larger text" disabled={fontSize >= MAX_FONT_SIZE}
-            onClick={() => onFontSize(fontSize + 1)}>A+</button>
-        </div>
-      </section>
+export function Settings({
+  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onComputersChanged,
+}: {
+  /** Home's settings; undefined while home cannot be reached (only Computers, text size and build then). */
+  readonly settings: HTTPSettingsResponse | undefined;
+  /** Opens at Notifications, or with Add a computer open. */
+  readonly section?: 'notifications' | 'add-computer';
+  readonly entries: ReadonlyArray<ComputerEntry>;
+  /** Providers (herdr) of every computer, read while Settings shows. */
+  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
+  readonly fontSize: number;
+  readonly onFontSize: (size: number) => void;
+  readonly onBack: () => void;
+  readonly onRenamed: (device: HTTPDeviceSummary) => void;
+  readonly onFailure: (error: unknown, from?: Computer) => string;
+  readonly onLogout: () => Promise<void>;
+  readonly onCheck: (origin: string) => Promise<void>;
+  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
+  /** Install herdr made a session on a computer: open it in Live with the install command typed, not run. */
+  readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
+  /** GitHub's New session made a session: open it in Live. */
+  readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
+  /** GitHub's New workspace in herdr opened a terminal; `key` is the provider read's. */
+  readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
+  readonly onComputersChanged: () => void;
+}) {
+  const [logoutError, setLogoutError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [push, setPush] = useState<PushState>();
+  const [naming, setNaming] = useState(false);
+  const [note, setNote] = useState<{ readonly text: string; readonly error: boolean }>();
+  const [wanted, setWanted] = useState<SettingsPage>(() => initialPage(section, globalThis.history?.state));
+  const page = shownPage(wanted, entries, settings !== undefined);
+  const main = useRef<HTMLElement>(null);
+  const multi = entries.length > 1;
 
-      {settings !== undefined && <NotificationSettings onFailure={onFailure} onPush={setPush} />}
+  // The phone's Back goes from a computer page (or Notifications) to the main page. App's own popstate reads the
+  // address, which stays /settings: it shows Settings again, and this keeps the page of the entry.
+  useEffect(() => {
+    const pop = () => setWanted(pageFromHistory(window.history.state));
+    window.addEventListener('popstate', pop);
+    return () => window.removeEventListener('popstate', pop);
+  }, []);
+  // A new level starts at its top, with focus on its title (or the Notifications section).
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    main.current?.scrollTo?.(0, 0);
+    main.current?.querySelector<HTMLElement>(page.kind === 'notifications' ? '#notifications' : 'h1')?.focus({ preventScroll: true });
+  }, [page.kind, page.kind === 'computer' ? page.origin : '']);
 
-      {/* Without home there is no Notifications section to point at. */}
-      <IntegrationsSection entries={entries} providers={providers} push={settings === undefined ? undefined : push} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} onOpenSession={onOpenSession} onProviderOpened={onProviderOpened} />
+  const go = (next: SettingsPage) => {
+    window.history.pushState({ [PAGE_KEY]: next }, '', window.location.pathname + window.location.search);
+    setWanted(next);
+  };
+  const back = () => {
+    if (pageFromHistory(window.history.state).kind === 'main') setWanted(MAIN_PAGE);
+    else window.history.back();
+  };
+  const openNotifications = settings === undefined ? undefined : () => go({ kind: 'notifications' });
+  const word = pushWord(push);
+  const computer = page.kind === 'computer' ? entries.find((entry) => entry.computer.origin === page.origin) : undefined;
 
-      <section className="group stack" aria-labelledby="build-heading">
-        <h2 id="build-heading" className="caps">Build</h2>
-        <dl className="facts">
-          {settings !== undefined && <><dt>Host build</dt><dd>{settings.hostBuild}</dd></>}
-          <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
-        </dl>
-      </section>
-
-      {settings !== undefined && (
-        <LogoutSection
-          multi={multi}
-          busy={busy}
-          error={logoutError}
-          onLogout={() => {
-            setBusy(true);
-            setLogoutError(undefined);
-            onLogout().catch((failure: unknown) => {
-              setLogoutError(failure instanceof Error ? failure.message : 'Logout failed');
-              setBusy(false);
-            });
-          }}
+  return (
+    <main ref={main} className="page screen settings-screen">
+      {computer !== undefined && (
+        <ComputerPage
+          entry={computer}
+          providers={providers}
+          // Without home there is no Notifications page to point at.
+          push={settings === undefined ? undefined : push}
+          onBack={back}
+          onFailure={onFailure}
+          onCheck={onCheck}
+          onProviderReload={onProviderReload}
+          onInstall={onInstall}
+          onOpenSession={onOpenSession}
+          onProviderOpened={onProviderOpened}
+          onNotifications={openNotifications}
+          onComputersChanged={onComputersChanged}
+          onRemoved={(text) => { setNote({ text, error: false }); back(); }}
         />
+      )}
+      {page.kind === 'notifications' && (
+        <header className="sc-page-head">
+          <button type="button" className="link accent sc-back" onClick={back}>‹ Settings</button>
+        </header>
+      )}
+      {page.kind === 'main' && (
+        <>
+          <header className="screen-header">
+            <h1 className="display" tabIndex={-1}>Settings</h1>
+            <button type="button" className="link strong" onClick={onBack}>Done</button>
+          </header>
+          <ErrorBoundary>
+            <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
+              <ComputersSection
+                entries={entries}
+                providers={providers}
+                adding={section === 'add-computer'}
+                note={note}
+                onCheck={onCheck}
+                onFailure={onFailure}
+                onOpen={(origin) => { setNote(undefined); go({ kind: 'computer', origin }); }}
+              />
+            </Suspense>
+          </ErrorBoundary>
+
+          <section className="group stack" aria-labelledby="phone-heading">
+            <h2 id="phone-heading" className="caps">This phone</h2>
+            {settings === undefined && (
+              <Notice tone="warning">Your home computer cannot be reached. Device name, notifications and log out need it.</Notice>
+            )}
+            <ul className="sc-list">
+              {settings !== undefined && (
+                <li className="sc-item">
+                  <button type="button" className="sc-row" aria-expanded={naming} aria-controls="device-name-form" onClick={() => setNaming(!naming)}>
+                    <span>Name</span><span className="sc-value">{settings.device.label} ›</span>
+                  </button>
+                  {naming && <DeviceNameForm current={settings.device.label} onRenamed={onRenamed} onFailure={onFailure} />}
+                </li>
+              )}
+              {openNotifications !== undefined && (
+                <li className="sc-item">
+                  <button type="button" className="sc-row" onClick={openNotifications}>
+                    <span>Notifications</span><span className={word === 'On' ? 'sc-value green' : 'sc-value'}>{word} ›</span>
+                  </button>
+                </li>
+              )}
+              <li className="sc-row" role="group" aria-labelledby="font-heading">
+                <span id="font-heading">Terminal text size</span>
+                <span className="font-row">
+                  <button type="button" className="key" aria-label="Smaller text" disabled={fontSize <= MIN_FONT_SIZE}
+                    onClick={() => onFontSize(fontSize - 1)}>A−</button>
+                  <output aria-live="polite" className="font-size">{fontSize} px</output>
+                  <button type="button" className="key" aria-label="Larger text" disabled={fontSize >= MAX_FONT_SIZE}
+                    onClick={() => onFontSize(fontSize + 1)}>A+</button>
+                </span>
+              </li>
+              <li className="sc-row">
+                <span id="build-heading">Build</span>
+                <dl className="facts sc-facts" aria-labelledby="build-heading">
+                  <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
+                  {settings !== undefined && <><dt>Host build</dt><dd>{settings.hostBuild}</dd></>}
+                </dl>
+              </li>
+            </ul>
+          </section>
+
+          {settings !== undefined && (
+            <LogoutSection
+              multi={multi}
+              busy={busy}
+              error={logoutError}
+              onLogout={() => {
+                setBusy(true);
+                setLogoutError(undefined);
+                onLogout().catch((failure: unknown) => {
+                  setLogoutError(failure instanceof Error ? failure.message : 'Logout failed');
+                  setBusy(false);
+                });
+              }}
+            />
+          )}
+        </>
+      )}
+      {/* Always there, so the rows know whether push is on; it shows on its own page. */}
+      {settings !== undefined && (
+        <div className="stack" hidden={page.kind !== 'notifications'}>
+          <NotificationSettings onFailure={onFailure} onPush={setPush} />
+        </div>
       )}
     </main>
   );

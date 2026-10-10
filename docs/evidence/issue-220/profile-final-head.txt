@@ -1,0 +1,194 @@
+File: soak.test
+Type: cpu
+Time: 2026-10-08 22:57:04 IST
+Duration: 16.04s, Total samples = 3.90s (24.31%)
+Showing nodes accounting for 3.73s, 95.64% of 3.90s total
+Dropped 140 nodes (cum <= 0.02s)
+      flat  flat%   sum%        cum   cum%
+         0     0%     0%      1.57s 40.26%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).run
+         0     0%     0%      1.57s 40.26%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).stream
+     1.31s 33.59% 33.59%      1.31s 33.59%  runtime.memclrNoHeapPointers
+         0     0% 33.59%      1.17s 30.00%  runtime.growslice
+         0     0% 33.59%      1.01s 25.90%  runtime.systemstack
+     0.01s  0.26% 33.85%      0.92s 23.59%  runtime.mallocgc
+         0     0% 33.85%      0.74s 18.97%  encoding/json.Marshal (inline)
+         0     0% 33.85%      0.74s 18.97%  encoding/json/v2.Marshal
+         0     0% 33.85%      0.74s 18.97%  runtime.mallocgcSmallScanHeader
+         0     0% 33.85%      0.71s 18.21%  runtime.gcBgMarkWorker.func2
+         0     0% 33.85%      0.71s 18.21%  runtime.gcDrain
+         0     0% 33.85%      0.65s 16.67%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).hostMessage (inline)
+         0     0% 33.85%      0.65s 16.67%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).hostMessageForRequest
+         0     0% 33.85%      0.63s 16.15%  github.com/intojhanurag/phone-terminal/internal/protocol.EncodeHost
+         0     0% 33.85%      0.62s 15.90%  runtime.gcBgMarkWorker
+         0     0% 33.85%      0.61s 15.64%  github.com/intojhanurag/phone-terminal/internal/terminal.(*Core).run
+         0     0% 33.85%      0.57s 14.62%  runtime.mcall
+         0     0% 33.85%      0.57s 14.62%  runtime.schedule
+         0     0% 33.85%      0.56s 14.36%  runtime.park_m
+         0     0% 33.85%      0.55s 14.10%  syscall.syscalln
+         0     0% 33.85%      0.54s 13.85%  runtime.findRunnable
+     0.54s 13.85% 47.69%      0.54s 13.85%  syscall.rawsyscalln
+         0     0% 47.69%      0.51s 13.08%  github.com/charmbracelet/x/ansi.(*Parser).Advance
+         0     0% 47.69%      0.51s 13.08%  github.com/charmbracelet/x/ansi.(*Parser).advance
+         0     0% 47.69%      0.51s 13.08%  github.com/charmbracelet/x/ansi.(*Parser).performAction
+         0     0% 47.69%      0.51s 13.08%  github.com/charmbracelet/x/vt.(*Emulator).WriteStream (inline)
+         0     0% 47.69%      0.50s 12.82%  encoding/json/v2.makeStructArshaler.func2
+         0     0% 47.69%      0.50s 12.82%  encoding/json/v2.marshalEncode
+     0.11s  2.82% 50.51%      0.49s 12.56%  runtime.scanObject
+         0     0% 50.51%      0.48s 12.31%  encoding/json/v2.makeSliceArshaler.func2
+         0     0% 50.51%      0.46s 11.79%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).send
+         0     0% 50.51%      0.46s 11.79%  github.com/intojhanurag/phone-terminal/internal/broker.(*ViewerSubscription).sendReserved
+         0     0% 50.51%      0.46s 11.79%  github.com/intojhanurag/phone-terminal/internal/broker.(*sessionWriter).sendReserved
+         0     0% 50.51%      0.46s 11.79%  github.com/intojhanurag/phone-terminal/internal/broker.reservedViewerSink.Send
+         0     0% 50.51%      0.45s 11.54%  internal/poll.(*FD).Writev
+         0     0% 50.51%      0.45s 11.54%  net.(*Buffers).WriteTo
+         0     0% 50.51%      0.45s 11.54%  net.(*conn).writeBuffers
+         0     0% 50.51%      0.45s 11.54%  net.(*netFD).writeBuffers
+         0     0% 50.51%      0.45s 11.54%  syscall.syscallX
+         0     0% 50.51%      0.45s 11.54%  syscall.writev
+         0     0% 50.51%      0.44s 11.28%  github.com/intojhanurag/phone-terminal/internal/protocol.PatchPayload
+         0     0% 50.51%      0.43s 11.03%  github.com/intojhanurag/phone-terminal/internal/protocol.terminalRow
+         0     0% 50.51%      0.40s 10.26%  runtime.gcDrainMarkWorkerIdle (inline)
+     0.36s  9.23% 59.74%      0.39s 10.00%  runtime.tryDeferToSpanScan
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Emulator).handleControl
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Emulator).index
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Emulator).linefeed
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Emulator).registerDefaultCcHandlers.func5
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Screen).DeleteLine
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*Screen).ScrollUp
+         0     0% 59.74%      0.35s  8.97%  github.com/charmbracelet/x/vt.(*handlers).handleCc
+         0     0% 59.74%      0.32s  8.21%  github.com/charmbracelet/x/vt.(*Scrollback).Push
+         0     0% 59.74%      0.32s  8.21%  github.com/charmbracelet/x/vt.(*Scrollback).PushN
+     0.32s  8.21% 67.95%      0.32s  8.21%  runtime.kevent
+         0     0% 67.95%      0.32s  8.21%  runtime.netpoll
+         0     0% 67.95%      0.31s  7.95%  runtime.gcDrainMarkWorkerDedicated (inline)
+         0     0% 67.95%      0.30s  7.69%  slices.Clone[go.shape.[]github.com/charmbracelet/ultraviolet.Cell,go.shape.struct { Content string; Style github.com/charmbracelet/ultraviolet.Style; Link github.com/charmbracelet/ultraviolet.Link; Width int }] (inline)
+         0     0% 67.95%      0.25s  6.41%  runtime.makeslice
+         0     0% 67.95%      0.24s  6.15%  runtime.stopm
+         0     0% 67.95%      0.23s  5.90%  bytes.Clone (inline)
+     0.23s  5.90% 73.85%      0.23s  5.90%  runtime.pthread_cond_wait
+         0     0% 73.85%      0.23s  5.90%  runtime.semasleep
+         0     0% 73.85%      0.22s  5.64%  runtime.mPark (inline)
+         0     0% 73.85%      0.22s  5.64%  runtime.notesleep
+     0.22s  5.64% 79.49%      0.22s  5.64%  runtime.pthread_cond_signal
+         0     0% 79.49%      0.22s  5.64%  runtime.semawakeup
+         0     0% 79.49%      0.21s  5.38%  runtime.notewakeup
+         0     0% 79.49%      0.21s  5.38%  runtime.startm
+         0     0% 79.49%      0.21s  5.38%  runtime.wakep
+         0     0% 79.49%      0.16s  4.10%  _.goready.func1
+     0.16s  4.10% 83.59%      0.16s  4.10%  runtime.memmove
+         0     0% 83.59%      0.16s  4.10%  runtime.ready
+         0     0% 83.59%      0.14s  3.59%  github.com/charmbracelet/x/vt.(*Emulator).handlePrint
+         0     0% 83.59%      0.11s  2.82%  github.com/intojhanurag/phone-terminal/internal/protocol.boundEncodedRow
+         0     0% 83.59%      0.10s  2.56%  github.com/charmbracelet/x/vt.(*Emulator).handleGrapheme
+         0     0% 83.59%      0.10s  2.56%  github.com/intojhanurag/phone-terminal/internal/terminal.captureFrame
+     0.01s  0.26% 83.85%      0.09s  2.31%  github.com/charmbracelet/x/vt.(*Emulator).extendPreviousGrapheme
+         0     0% 83.85%      0.09s  2.31%  github.com/intojhanurag/phone-terminal/internal/terminal.normalizeRow
+         0     0% 83.85%      0.09s  2.31%  runtime.(*mheap).alloc.func1
+         0     0% 83.85%      0.09s  2.31%  runtime.(*mheap).allocSpan
+     0.08s  2.05% 85.90%      0.09s  2.31%  runtime.mallocgcTinySC2
+         0     0% 85.90%      0.08s  2.05%  runtime.lock (partial-inline)
+         0     0% 85.90%      0.08s  2.05%  runtime.lock2
+         0     0% 85.90%      0.08s  2.05%  runtime.lockWithRank (inline)
+     0.03s  0.77% 86.67%      0.08s  2.05%  runtime.scanObjectsSmall
+         0     0% 86.67%      0.08s  2.05%  runtime.scanSpan
+         0     0% 86.67%      0.07s  1.79%  encoding/json/jsontext.stateMachine.MayAppendDelim
+         0     0% 86.67%      0.07s  1.79%  github.com/intojhanurag/phone-terminal/internal/broker.(*Session).run.func9
+         0     0% 86.67%      0.07s  1.79%  github.com/intojhanurag/phone-terminal/internal/broker.(*previewScanner).scan
+         0     0% 86.67%      0.07s  1.79%  github.com/intojhanurag/phone-terminal/internal/ptyhost.(*Process).ListeningPorts
+         0     0% 86.67%      0.07s  1.79%  github.com/intojhanurag/phone-terminal/internal/ptyhost.sessionListeners
+         0     0% 86.67%      0.06s  1.54%  runtime.(*gcControllerState).enlistWorker
+         0     0% 86.67%      0.06s  1.54%  runtime.osyield (inline)
+         0     0% 86.67%      0.06s  1.54%  runtime.rawbyteslice
+         0     0% 86.67%      0.06s  1.54%  runtime.stringtoslicebyte
+     0.06s  1.54% 88.21%      0.06s  1.54%  runtime.usleep
+         0     0% 88.21%      0.06s  1.54%  syscall.syscall
+         0     0% 88.21%      0.05s  1.28%  encoding/json/v2.makeStringArshaler.func1
+     0.02s  0.51% 88.72%      0.05s  1.28%  runtime.(*sweepLocked).sweep
+     0.05s  1.28% 90.00%      0.05s  1.28%  runtime.madvise
+         0     0% 90.00%      0.05s  1.28%  runtime.pollWork
+         0     0% 90.00%      0.05s  1.28%  runtime.preemptM
+         0     0% 90.00%      0.05s  1.28%  runtime.preemptone
+     0.05s  1.28% 91.28%      0.05s  1.28%  runtime.pthread_kill
+         0     0% 91.28%      0.05s  1.28%  runtime.signalM (inline)
+         0     0% 91.28%      0.05s  1.28%  runtime.sysUsed (inline)
+         0     0% 91.28%      0.05s  1.28%  runtime.sysUsedOS (inline)
+         0     0% 91.28%      0.04s  1.03%  encoding/json/v2.makeBoolArshaler.func1
+         0     0% 91.28%      0.04s  1.03%  github.com/intojhanurag/phone-terminal/internal/ptyhost.liveProcesses
+         0     0% 91.28%      0.04s  1.03%  github.com/intojhanurag/phone-terminal/internal/ptyhost.sessionTree
+         0     0% 91.28%      0.04s  1.03%  golang.org/x/sys/unix.SysctlKinfoProcSlice
+         0     0% 91.28%      0.04s  1.03%  golang.org/x/sys/unix.sysctl
+         0     0% 91.28%      0.04s  1.03%  runtime.(*mcache).nextFree
+         0     0% 91.28%      0.04s  1.03%  runtime.(*mcache).refill
+         0     0% 91.28%      0.04s  1.03%  runtime.(*mcentral).cacheSpan
+         0     0% 91.28%      0.04s  1.03%  runtime.(*mcentral).grow
+         0     0% 91.28%      0.04s  1.03%  runtime.bgsweep
+         0     0% 91.28%      0.04s  1.03%  runtime.intstring
+         0     0% 91.28%      0.04s  1.03%  runtime.mallocgcSmallNoscan
+         0     0% 91.28%      0.04s  1.03%  runtime.rawstring (inline)
+         0     0% 91.28%      0.04s  1.03%  runtime.sweepone
+     0.04s  1.03% 92.31%      0.04s  1.03%  runtime.typePointers.next
+         0     0% 92.31%      0.04s  1.03%  syscall.syscall6
+     0.01s  0.26% 92.56%      0.03s  0.77%  github.com/charmbracelet/ultraviolet.(*Buffer).DeleteLineArea
+         0     0% 92.56%      0.03s  0.77%  github.com/charmbracelet/ultraviolet.(*RenderBuffer).DeleteLineArea
+         0     0% 92.56%      0.03s  0.77%  github.com/intojhanurag/phone-terminal/internal/ptyhost.runLsof
+     0.03s  0.77% 93.33%      0.03s  0.77%  internal/runtime/atomic.(*Int64).Add (inline)
+         0     0% 93.33%      0.03s  0.77%  internal/runtime/maps.newGroups (inline)
+         0     0% 93.33%      0.03s  0.77%  internal/runtime/maps.newarray
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mcache).prepareForSweep
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mcache).releaseAll
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mcentral).uncacheSpan
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mheap).alloc
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mheap).freeSpan.func1
+         0     0% 93.33%      0.03s  0.77%  runtime.(*mheap).initSpan
+     0.03s  0.77% 94.10%      0.03s  0.77%  runtime.(*mspan).init
+         0     0% 94.10%      0.03s  0.77%  runtime.newarray
+         0     0% 94.10%      0.03s  0.77%  runtime.resetspinning
+         0     0% 94.10%      0.02s  0.51%  encoding/json/jsontext.(*Encoder).WriteValue (inline)
+         0     0% 94.10%      0.02s  0.51%  encoding/json/jsontext.(*encoderState).WriteValue
+         0     0% 94.10%      0.02s  0.51%  encoding/json/jsontext.(*encoderState).reformatArray
+         0     0% 94.10%      0.02s  0.51%  encoding/json/jsontext.(*encoderState).reformatObject
+         0     0% 94.10%      0.02s  0.51%  encoding/json/jsontext.(*encoderState).reformatValue
+         0     0% 94.10%      0.02s  0.51%  encoding/json/v2.makeMethodArshaler.func3
+     0.01s  0.26% 94.36%      0.02s  0.51%  github.com/charmbracelet/ultraviolet.(*Buffer).FillArea
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*Emulator).handleCsi
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*Emulator).isModeSet (inline)
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*Emulator).registerDefaultCsiHandlers.func12
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*Screen).FillArea
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*Scrollback).enforceByteLimit
+         0     0% 94.36%      0.02s  0.51%  github.com/charmbracelet/x/vt.(*handlers).handleCsi
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/broker.(*Session).run.func10
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/ptyhost.(*Process).WorkingDirectory
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/ptyhost.(*Process).foregroundGroup
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/ptyhost.(*Process).foregroundGroup.func1
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/ptyhost.(*Process).foregroundProcess
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/terminal.Diff
+         0     0% 94.36%      0.02s  0.51%  github.com/intojhanurag/phone-terminal/internal/terminal.cloneRow (inline)
+         0     0% 94.36%      0.02s  0.51%  golang.org/x/sys/unix.IoctlGetInt (inline)
+         0     0% 94.36%      0.02s  0.51%  golang.org/x/sys/unix.ioctlPtr
+         0     0% 94.36%      0.02s  0.51%  internal/poll.(*FD).RawControl
+         0     0% 94.36%      0.02s  0.51%  internal/poll.ignoringEINTRIO
+     0.02s  0.51% 94.87%      0.02s  0.51%  internal/runtime/atomic.(*UnsafePointer).StoreNoWB (inline)
+         0     0% 94.87%      0.02s  0.51%  internal/runtime/maps.(*table).reset
+         0     0% 94.87%      0.02s  0.51%  internal/runtime/maps.NewMap
+         0     0% 94.87%      0.02s  0.51%  internal/runtime/maps.newTable
+         0     0% 94.87%      0.02s  0.51%  internal/strconv.AppendBool (inline)
+         0     0% 94.87%      0.02s  0.51%  os.(*rawConn).Control
+         0     0% 94.87%      0.02s  0.51%  os/exec.(*Cmd).Start
+         0     0% 94.87%      0.02s  0.51%  runtime.(*atomicMSpanPointer).StoreNoWB (inline)
+         0     0% 94.87%      0.02s  0.51%  runtime.(*mheap).freeSpan (inline)
+         0     0% 94.87%      0.02s  0.51%  runtime.(*mheap).nextSpanForSweep
+         0     0% 94.87%      0.02s  0.51%  runtime.(*mspan).initHeapBits
+         0     0% 94.87%      0.02s  0.51%  runtime.(*spanQueue).drain
+         0     0% 94.87%      0.02s  0.51%  runtime.(*spanQueue).put
+     0.02s  0.51% 95.38%      0.02s  0.51%  runtime.(*spanQueue).tryDrain
+         0     0% 95.38%      0.02s  0.51%  runtime.(*spanSet).pop
+         0     0% 95.38%      0.02s  0.51%  runtime.bulkBarrierPreWrite
+         0     0% 95.38%      0.02s  0.51%  runtime.gcFlushBgCredit
+     0.01s  0.26% 95.64%      0.02s  0.51%  runtime.interhash
+         0     0% 95.64%      0.02s  0.51%  runtime.makemap
+         0     0% 95.64%      0.02s  0.51%  runtime.mallocgcLarge
+         0     0% 95.64%      0.02s  0.51%  runtime.mapaccess2
+         0     0% 95.64%      0.02s  0.51%  runtime.markroot
+         0     0% 95.64%      0.02s  0.51%  runtime.wbMove
+         0     0% 95.64%      0.02s  0.51%  slices.Clone[go.shape.[]github.com/intojhanurag/phone-terminal/internal/terminal.Cell,go.shape.struct { Text string; Width int; Continuation bool; Foreground github.com/intojhanurag/phone-terminal/internal/terminal.RGBA; Background github.com/intojhanurag/phone-terminal/internal/terminal.RGBA; UnderlineColor github.com/intojhanurag/phone-terminal/internal/terminal.RGBA; Bold bool; Faint bool; Italic bool; Blink bool; Reverse bool; Conceal bool; Strikethrough bool; Underline int; Link string; ContentClipped bool }] (inline)
+         0     0% 95.64%      0.02s  0.51%  strconv.AppendBool
