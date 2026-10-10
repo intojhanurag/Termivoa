@@ -591,6 +591,12 @@ button.item-menu:last-child { margin-right: -12px; }
 .terminal-area.dim { opacity: 0.35; }
 /* The swipe scrolls the full-screen app, so the page must not pan or bounce. */
 .terminal-area.app-scroll { touch-action: none; }
+/* Hold-and-slide arms after a still hold: no iOS callout or loupe on that hold. Scrolling stays; pinch zoom of the page does not (Android has no gesture events). */
+.terminal-area.gestures { -webkit-touch-callout: none; }
+.terminal-area.gestures:not(.app-scroll) { touch-action: pan-x pan-y; }
+/* The trackpad and pinch pill, pinned to the top of the terminal while it scrolls. No animation, so reduced motion needs nothing. */
+.gesture-pill-anchor { position: sticky; top: 0; left: 0; height: 0; z-index: 5; }
+.gesture-pill { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--raised); color: var(--text); font: 600 15px/1.2 var(--mono); pointer-events: none; white-space: nowrap; }
 .terminal-host { display: inline-block; }
 .terminal-input {
   position: absolute;

@@ -14,7 +14,7 @@ import {
   byChip, cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, sameSession, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
-import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
+import { useFontSize, useGestures, useServiceWorkerUpdate, useVisualViewport } from './hooks';
 import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
@@ -626,6 +626,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   // True during a Next move: it replaces the history entry, so Back from any item of a run goes to the "Needs you" tab.
   const queueMove = useRef(false);
   const [fontSize, setFontSize] = useFontSize();
+  const [gestures, setGestures] = useGestures();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
 
@@ -1169,6 +1170,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               settings={liveStatus?.kind === 'ok' ? liveStatus.settings : view.session.computer.home ? settings : undefined}
               multi={computers.length > 1}
               fontSize={fontSize}
+              gestures={gestures}
+              onFontSize={setFontSize}
               queue={queue}
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
               {...(view.compose === true ? { openComposer: true } : {})}
@@ -1214,6 +1217,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               {...(view.notice === undefined ? {} : { notice: view.notice })}
               entry={providers.entries.find((entry) => entry.computer.origin === view.computer.origin && entry.info.id === view.provider)}
               fontSize={fontSize}
+              gestures={gestures}
+              onFontSize={setFontSize}
               multi={computers.length > 1}
               onChip={(target) => openTarget({ computer: view.computer, provider: view.provider, targetId: target })}
               onGone={() => {
@@ -1250,6 +1255,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               providers={providers.entries}
               fontSize={fontSize}
               onFontSize={setFontSize}
+              gestures={gestures}
+              onGestures={setGestures}
               onBack={toSessions}
               onRenamed={(device) => { if (settings !== undefined) setSettings({ ...settings, device }); }}
               onFailure={handleFailure}

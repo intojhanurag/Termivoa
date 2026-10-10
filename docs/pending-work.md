@@ -6,6 +6,14 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Touch gestures on the Live terminal ([gestures.md](gestures.md), next
+  beta): hold and slide for arrow keys, tap to place the cursor, swipe on the
+  status line to switch session, pinch for text size, two-finger tap for Esc,
+  and the per-phone switch **Settings → This phone → Terminal gestures** (on
+  by default). WebKit end-to-end checks GE1–GE7 pass
+  (`scripts/e2e-multicomputer/gestures.mjs`). Follow-ups are under
+  **Polish next**, item 8.
+
 - Test tooling #260: owned browser teardown waits for child exit and WebSocket
   closure within explicit bounds, clears pending CDP timers and rejects failed
   teardown. Ten focused cases pass, including actual installed Chromium profile
@@ -316,6 +324,15 @@ designed in Paper first and shown to the owner before any code.
      with a load-then-measure step.
    - **The service worker's offline page** (`web/src/sw.js`) still uses
      the system font.
+8. **Touch gestures follow-ups** ([gestures.md](gestures.md)):
+   - **Real-iPhone checks** of all five gestures in iOS Safari and the
+     home-screen app (hold timing, page zoom off on the terminal, no callout,
+     the click after a gesture); the end-to-end run uses WebKit on macOS
+     with synthetic touches.
+   - **Auto-repeat at the screen edge** for hold and slide, so a long line
+     does not need many slides.
+   - **Tap to place in `vim` and other full-screen apps** (today only the
+     normal screen with a visible cursor).
 
 ## Later
 

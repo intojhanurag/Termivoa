@@ -1,4 +1,4 @@
-import { Terminal, type IDisposable } from '@xterm/xterm';
+import { Terminal, type IBufferCell, type IDisposable } from '@xterm/xterm';
 import { clampGrid } from './Connection';
 import { FrameRenderer } from './FrameRenderer';
 import { bufferRow, joinedRowLinks, rowLinks, overlaps, type Cell, type PathLink } from './pathLinks';
@@ -45,24 +45,52 @@ export class TerminalView {
 
   /** Grid that fits the available CSS box, measured from xterm's own cells. */
   fit(width: number, height: number): { columns: number; rows: number } | undefined {
+    const cell = this.cellSize();
+    return cell === undefined ? undefined : fitGrid(width, height, cell.width, cell.height);
+  }
+
+  private screen(): HTMLElement | undefined {
     const screen = this.terminal.element?.querySelector<HTMLElement>('.xterm-screen');
-    if (screen === null || screen === undefined || screen.clientWidth === 0 || screen.clientHeight === 0) {
-      return undefined;
-    }
-    const cellWidth = screen.clientWidth / this.terminal.cols;
-    const cellHeight = screen.clientHeight / this.terminal.rows;
-    return fitGrid(width, height, cellWidth, cellHeight);
+    return screen === null || screen === undefined || screen.clientWidth === 0 || screen.clientHeight === 0 ? undefined : screen;
+  }
+
+  /** One cell in CSS pixels, measured from xterm's own screen. */
+  cellSize(): { width: number; height: number } | undefined {
+    const screen = this.screen();
+    return screen === undefined ? undefined : { width: screen.clientWidth / this.terminal.cols, height: screen.clientHeight / this.terminal.rows };
+  }
+
+  /**
+   * The cell under a viewport point as a 0-based frame row and column (the
+   * frame cursor's terms), or undefined outside the grid. xterm can show its
+   * buffer from a line other than its base (viewportY ≠ baseY), so the row
+   * on screen is mapped through both.
+   */
+  cellAt(clientX: number, clientY: number): { row: number; column: number } | undefined {
+    const screen = this.screen();
+    const cell = this.cellSize();
+    if (screen === undefined || cell === undefined) return undefined;
+    const box = screen.getBoundingClientRect();
+    const column = Math.floor((clientX - box.left) / cell.width);
+    const shown = Math.floor((clientY - box.top) / cell.height);
+    if (column < 0 || column >= this.terminal.cols || shown < 0 || shown >= this.terminal.rows) return undefined;
+    const { viewportY, baseY } = this.terminal.buffer.active;
+    return { row: viewportY + shown - baseY, column };
+  }
+
+  /** The cells of frame row `row` (as cellAt counts rows). */
+  rowCells(row: number): IBufferCell[] {
+    return bufferRow(this.terminal, this.terminal.buffer.active.baseY + row + 1) ?? [];
   }
 
   /** Pixel top and bottom of the cursor row inside the terminal element. */
   cursorBand(): { top: number; bottom: number } | undefined {
-    const screen = this.terminal.element?.querySelector<HTMLElement>('.xterm-screen');
-    if (screen === null || screen === undefined || screen.clientHeight === 0) {
+    const cell = this.cellSize();
+    if (cell === undefined) {
       return undefined;
     }
-    const cellHeight = screen.clientHeight / this.terminal.rows;
     const row = this.terminal.buffer.active.cursorY;
-    return { top: row * cellHeight, bottom: (row + 1) * cellHeight };
+    return { top: row * cell.height, bottom: (row + 1) * cell.height };
   }
 
   /**

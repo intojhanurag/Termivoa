@@ -12,7 +12,7 @@ import {
 const noop = () => undefined;
 const screen = (tapped: number, entry = ready(mac)) => renderToStaticMarkup(
   <ProviderScreen
-    computer={mac} provider="herdr" targetId="w8:p1.term_b1" tapped={tapped} entry={entry} fontSize={13} multi={false}
+    computer={mac} provider="herdr" targetId="w8:p1.term_b1" tapped={tapped} entry={entry} fontSize={13} gestures onFontSize={noop} multi={false}
     onChip={noop} onGone={noop} onClosed={noop} onOpened={noop} onReload={async () => undefined} onSessions={noop} onSettings={noop} onFailure={() => 'x'} onRevoked={noop}
   />,
 );

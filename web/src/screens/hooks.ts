@@ -27,6 +27,28 @@ export function useFontSize(): [number, (size: number) => void] {
   return [size, update];
 }
 
+const GESTURES_KEY = 'pterm.gestures';
+
+/** The per-phone "Terminal gestures" switch; on unless this phone turned it off. */
+export function useGestures(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(GESTURES_KEY) !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const update = useCallback((next: boolean) => {
+    setOn(next);
+    try {
+      localStorage.setItem(GESTURES_KEY, next ? 'on' : 'off');
+    } catch {
+      // Private browsing may refuse storage; the in-memory value still applies.
+    }
+  }, []);
+  return [on, update];
+}
+
 /** Keeps the app box equal to the visual viewport so bars stay above the keyboard. */
 export function useVisualViewport(): void {
   useEffect(() => {

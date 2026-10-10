@@ -558,7 +558,7 @@ export function pushWord(push: PushState | undefined): 'On' | 'Off' | '' {
 }
 
 export function Settings({
-  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onComputersChanged,
+  settings, section, entries, providers, fontSize, onFontSize, gestures, onGestures, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers, text size and build then). */
   readonly settings: HTTPSettingsResponse | undefined;
@@ -569,6 +569,9 @@ export function Settings({
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
+  /** The "Terminal gestures" switch, kept on this phone. */
+  readonly gestures: boolean;
+  readonly onGestures: (on: boolean) => void;
   readonly onBack: () => void;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
   readonly onFailure: (error: unknown, from?: Computer) => string;
@@ -695,6 +698,17 @@ export function Settings({
                   <button type="button" className="key" aria-label="Larger text" disabled={fontSize >= MAX_FONT_SIZE}
                     onClick={() => onFontSize(fontSize + 1)}>A+</button>
                 </span>
+              </li>
+              <li className="sc-row">
+                <span id="gestures-label">Terminal gestures</span>
+                <button
+                  type="button"
+                  role="switch"
+                  className="switch"
+                  aria-checked={gestures}
+                  aria-labelledby="gestures-label"
+                  onClick={() => onGestures(!gestures)}
+                ><span className="switch-track" aria-hidden="true" /></button>
               </li>
               <li className="sc-row">
                 <span id="build-heading">Build</span>

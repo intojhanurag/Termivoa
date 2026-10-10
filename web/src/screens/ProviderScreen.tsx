@@ -155,7 +155,7 @@ export type Phase =
   | { readonly kind: 'error'; readonly text: string };
 
 export function ProviderScreen({
-  computer, provider, targetId, tapped, notice, entry, fontSize, multi, queue, onChip, onGone, onClosed, onOpened, onReload, onKinds, onSessions, onSettings, onFailure, onRevoked,
+  computer, provider, targetId, tapped, notice, entry, fontSize, gestures, onFontSize, multi, queue, onChip, onGone, onClosed, onOpened, onReload, onKinds, onSessions, onSettings, onFailure, onRevoked,
 }: {
   readonly computer: Computer;
   readonly provider: string;
@@ -167,6 +167,8 @@ export function ProviderScreen({
   /** The provider's latest read on that computer, for names and chips; undefined until it answers. */
   readonly entry: ProviderEntry | undefined;
   readonly fontSize: number;
+  readonly gestures: boolean;
+  readonly onFontSize: (size: number) => void;
   readonly multi: boolean;
   /** Present while a "Needs you" queue run is on: the Next control. A run starts from the inbox or a notification tap, and stays on for a tab opened with the chips here. */
   readonly queue?: Queue | undefined;
@@ -295,6 +297,8 @@ export function ProviderScreen({
         settings={undefined}
         multi={multi}
         fontSize={fontSize}
+        gestures={gestures}
+        onFontSize={onFontSize}
         queue={queue}
         provider={{
           name, place: <Names parts={parts.length === 0 ? [phase.session.title] : parts} />, chips, sizeLine: sizeLine(computer.label), onOpenAgain: open,

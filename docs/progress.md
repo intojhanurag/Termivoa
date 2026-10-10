@@ -15,6 +15,46 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Feature: touch gestures on the Live terminal (2026-10-10, branch `feat/touch-gestures`)
+
+- Owner decisions: all five gestures; a per-phone **Terminal gestures**
+  switch in **Settings → This phone** (on by default); keep two-finger tap =
+  Esc. Design: [gestures.md](gestures.md).
+- Built: hold and slide (arrow keys), tap to place the cursor, swipe on the
+  status line (switch session), pinch (text size, set on lift), two-finger
+  tap (Esc). Keys go through `Connection.sendKey` with no modifiers, only
+  with control, never queued; the first refusal ends the gesture.
+- Checks: `cd web && npx vitest run` (60 files, 1134 tests, 21 of them new
+  in `gestures.test.ts`); `GOTOOLCHAIN=go1.27.1 sh scripts/check`
+  (pass); `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` (pass, all internal links valid).
+- End to end: `PW=<playwright-core 1.61.1>
+  WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh node
+  scripts/e2e-multicomputer/gestures.mjs` (WebKit 26.4, touch, 390×844):
+  GE1–GE7 pass; [results and screenshots](evidence/touch-gestures/).
+  Touches are synthetic: WebKit has no `Touch` constructor, so plain
+  events carry the touch lists. Regression: `phase-b.mjs` (Chrome for Testing),
+  run twice on this branch with the Mac screen locked: run 1 had 8 steps
+  fail after Chrome stopped making frames ("no frame in 5 s": B4, B5, B6,
+  B6-fit, B2b-back, B2b-same, PV-node, F-setup); run 2 passed all of them
+  and failed only B3-push ("timeout waiting for notification shown"), which
+  passed in run 1. A baseline run on `main` passed 161 of 161. No check
+  failed in both runs.
+- Defect found and handled in this change: after a resize xterm can show
+  its buffer one line above its base (`viewportY` 0, `baseY` 1), so the
+  screen row under a finger is not the frame row; `TerminalView.cellAt`
+  maps through both. The display shift itself is not fixed here (reported).
+- Review fixes (PR #286): tap to place needs a shell prompt (`$ `, `% `,
+  `# `, `> `, `❯ `, `➜ `) left of the cursor and moves only after it (no
+  arrows into a password or `[y/N]` answer); the typed text stops at two
+  blank cells (right prompt); two-finger tap 100 ms / 300 ms; the next
+  touch clears a taken tap; the pinch pill shows only on a size change; the
+  pill sits at the top of the terminal; `touch-action: pan-x pan-y` on the
+  terminal while gestures are on. Checks: `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (pass; 60 files, 1138 web tests); site build (pass).
+  `gestures.mjs` (now with GE8, a `[y/N]` answer): 8 of 8 pass; `phase-b.mjs --only U`: 13 of 13 pass; `phone-settings-main.webp` retaken (`scripts/docs-screenshots/herdr.mjs`).
+- Pending: checks on a real iPhone (iOS Safari and the home-screen app).
+
 ### AGENTS.md for a public repository (2026-10-10, branch `docs/agents-public-repo`)
 
 - The owner made the repository public on 2026-10-10. Rules 1, 3, 4, 5, 16, 25 and 26 still described a private, pre-v0 project; they now describe a public open-source repository (rule numbers unchanged, because docs and PRs cite them). Rule 13 now carries the credential-safety rule that helper briefs already used. A Commands table lists install, check, test, e2e, docs and release-build commands. `docs/release-checklist.md` records the visibility change.
