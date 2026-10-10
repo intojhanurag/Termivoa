@@ -120,7 +120,11 @@ export function Drawer({ returnFocus, onClose, ...props }: DrawerProps & {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
-    if (dialog !== null && !dialog.open) dialog.showModal();
+    if (dialog !== null && !dialog.open) {
+      dialog.showModal();
+      // showModal focuses All computers, and iOS Safari then rings it; the dialog takes the focus, Tab still reaches every row.
+      dialog.focus();
+    }
     return () => {
       dialog?.close();
       returnFocus?.current?.focus();
@@ -130,6 +134,7 @@ export function Drawer({ returnFocus, onClose, ...props }: DrawerProps & {
     <dialog
       ref={ref}
       className="drawer"
+      tabIndex={-1}
       aria-labelledby="drawer-title"
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       // The dialog fills the screen; a tap on it, not on the panel, is a tap beside the panel.

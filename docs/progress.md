@@ -15,6 +15,12 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Fix: side menu focus ring (2026-10-10, branch `fix/drawer-layout`)
+
+- **Defect.** On iPhone Safari, `showModal()` focused the first row (**All computers**) and `:focus-visible` drew a white 2px ring around it.
+- **Fix.** `web/src/screens/Drawer.tsx`: the dialog has `tabIndex={-1}` and takes the focus after `showModal()`; `.drawer:focus` has no outline.
+- **Evidence.** `vitest run src/screens/Drawer.test.tsx` 9/9; a WebKit (iPhone 15 emulation) check of the same markup: before, the active element was the **All computers** button with a solid outline; after, the dialog, with no outline. `scripts/check` (below).
+
 ### UI revamp: side drawer, Settings by computer, Geist (2026-10-10, branch `feat/ui-revamp`; not merged)
 
 - **Why.** With two or more computers, the computer chips crowded Sessions
