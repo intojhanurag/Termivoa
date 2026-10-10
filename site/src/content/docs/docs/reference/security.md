@@ -149,7 +149,7 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 - [Files](/docs/guides/files/) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
-- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks.
+- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks. **Next beta:** timed-out writes stop git's ordinary hook children before returning; this is cleanup, not a sandbox. Hooks remain trusted programs and can deliberately launch detached programs on macOS or Linux.
 - Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone. **Next beta:** in a folder that Termivoa cloned from GitHub, git uses Termivoa's GitHub login for that repository. See [What does GitHub change?](#what-does-github-change)
 
 ## What does Termivoa store?

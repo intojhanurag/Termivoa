@@ -2972,3 +2972,31 @@ owner asked to keep CI disabled. Frozen docs validation follows.
 Frozen Astro29-page build/link validation passed; independent review's
 desktop/protocol race rerun passed3.165s/4.965s. The reviewer caught a missing
 Next beta entry, which is now added; final docs rebuild after that change passed (29 pages and all links).
+
+## Issue #222 — git write process ownership (2026-10-08)
+
+Branch `fix/issue-222`, baseline `08f0332`. Real pre-commit hook descendants
+survived canceled `runWrite` in both inherited/closed-output cases (exit 1,
+6.694 s). After correction, both pass in 0.946 s. The write runner now owns
+an isolated Unix session/group or a suspended-start Windows Job before hooks
+run, terminates its children, waits for git and closes resources before result
+or worktree rollback. Identity, signing, hooks and git/ssh configuration stay
+in use; no protocol change or automatic retry. A deliberately detached Unix
+program remains outside this group boundary: hooks are not sandboxed.
+
+- `go test -race -count=5 -run '^Test(Write(Process|Cancellation|Successful)|WorktreeCancellation)' ./internal/gitchanges` — PASS, 25.296 s; actual hook/PID, closed-pipe, post-checkout rollback, success/environment and controlled process tree tests.
+- `go test -race ./internal/gitchanges` — PASS, 11.441 s.
+- `go test -race -run '^Test(SessionStream.*(Changes|Commits)|Worktree)' ./internal/broker` — PASS, 4.826 s.
+- `go vet ./internal/gitchanges` — PASS.
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -o /dev/null ./internal/gitchanges` and the Linux equivalent — PASS, compile only. The initial inherited-CGO cross-compile failed against the Mac C/assembly compiler; no tool installation.
+- `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` — PASS, 29 pages and all internal links valid (Node 24.11.0, pnpm 10.33.0).
+- `git diff --check` — PASS.
+
+Evidence: [process cleanup](evidence/issue-222/process-cleanup.md).
+Updated architecture, the Changes design, roadmap, README, phone/host
+Unreleased notes, public Changes/worktrees guides, security, troubleshooting
+and Next beta release notes. Existing sidebar entries reach both guides;
+no new page/CLI command. Native Windows/Linux, whole scripts/check, hosted CI,
+owner phone gates and private PR/review/merge/site deployment remain pending
+for the coordinator. No owner processes, real agents, credentials or startup
+configuration were touched.

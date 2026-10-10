@@ -12,6 +12,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Git write cleanup.** Timed-out commits, pushes and worktree creation stop their ordinary hook children before reporting failure or cleaning up a failed worktree. Check the branch before retrying. See [What happens when git times out?](/docs/guides/changes/#what-happens-when-git-times-out).
+
 - **Fixed: stalled push subscriptions could block other phones.** When many other phones' push services do not answer, they no longer use up the whole send window before your phone gets a delivery attempt. A temporary timeout keeps notifications on for a later event. See [How are notifications sent?](/docs/guides/notifications/#how-are-notifications-sent).
 - **Less work for the Wall.** Computers prepare Wall-only updates at the rate the tiles can display them. Tiles still reach the newest screen after output stops, and an open Live terminal keeps its normal update rate. See [Wall](/docs/guides/wall/#does-watching-the-wall-use-less-work-on-the-computer).
 - **Terminal screen bounds.** The computer rejects malformed row positions
