@@ -211,3 +211,20 @@ Email **aojharaj2004@gmail.com**. Start the subject with `[Termivoa security]`.
 Include only the minimum safe details. Never send real secrets, pairing links or terminal content.
 
 This is a one-person project. You get a reply within 7 days, and a first assessment within 30 days.
+
+## How are private saved files checked?
+
+**Next beta:** Termivoa checks a private file before repairing its permissions.
+Linked files, shared hard links, unsafe types and disallowed owners are refused.
+Normal owned files keep their identity while their permissions are tightened.
+
+| Boundary | Meaning |
+| --- | --- |
+| macOS and Linux | A valid private file belongs to your account and is readable and writable only by you |
+| Windows | A valid private file has protected permissions for your account; the existing recovery for files created by an elevated Termivoa run remains |
+| Linked private file | It is refused before repair can change the linked target |
+| Another program in your account | This is not a sandbox against that program; it can already access your private files |
+
+A refusal does not automatically delete the file or create a new login.
+Inspect unexpected local-file changes before reconnecting. See [Why is a
+private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).

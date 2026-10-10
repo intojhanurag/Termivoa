@@ -308,11 +308,111 @@ Wall + Live checks and Windows evidence. No push/PR/merge/deploy by the helper.
 Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
 
 [Approval evidence](evidence/issue-213/owner-approval.md) supersedes owner-pending
+
+### 2026-10-09: owner approved #255 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-255/owner-approval.md) supersedes owner-pending
 statements in earlier dated entries. Independent reviews remain recorded;
 native Windows/Linux and real-phone gates remain pending. For this internal
 documentation update, `git diff --check` passed and the staged additions were
 reviewed. Runtime, tests and public docs are unchanged; no new test run or
 hosted check success is claimed. Required GitHub checks still block merge.
+
+### Private-file repair final documentation gate (#255, 2026-10-09)
+
+- Consolidated the #255 fix entry into the existing Unreleased **Fixed**
+  section; retained all older release headings and entries. Documentation-only
+  correction after checked runtime head `4a09144`; no runtime change.
+- Independent feasibility reviewer pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`
+  and returned source/local-evidence GO: denied-open advice finding resolved;
+  Windows IPC cross-test build, cross-vet and diff check independently passed.
+  Native Windows/Linux execution and owner approval remain pending.
+- Coordinator reported the combined #255/#256/#260/#265 local gate passed:
+  all Go race tests (broker 108.5 s), Go vet, protocol generation drift, web
+  typecheck, 1,080 web tests and build, zero govulncheck findings, and static
+  macOS/Windows/Linux amd64/arm64 builds. This is aggregate branch evidence,
+  not a fresh check on this isolated branch or evidence from merged main.
+  [Evidence](evidence/issue-255/private-file-repair.md). No issues closed.
+- Draft PR #264 remains **DO NOT MERGE without owner review**; hosted CI
+  stays denied. No push, merge or deployment by this agent.
+
+
+### Private-file repair Windows denied-open correction (#255, 2026-10-09)
+
+- Independent feasibility review found a source-level advice gap at `ac2e9b5`:
+  requesting WRITE_DAC before owner inspection lost the existing `icacls`
+  hint for an inspectable Administrators-owned file when that open was denied.
+- Added denial-only nonmutating inspection through a no-reparse/no-delete-share
+  READ_CONTROL/attribute handle. Only a verified regular single-linked
+  Administrators-owned object receives the existing advice; inspection refusal
+  preserves the original access-denied cause without guessing ownership.
+  Applies to private-file and Windows broker-lock initial denied opens.
+- Added native OWNER_RIGHTS fixture with explicit allowed-inspection and
+  denied-repair preconditions, production EnsurePrivateFile assertion,
+  unchanged owner/DACL and an inspection-denied state. Privileged owner-setup
+  limitations skip explicitly; production assertions fail normally. Compiled
+  only; actual Administrators-owner recovery/denial execution remains pending.
+- Focused macOS race count10 passed (IPC 1.695 s / GitHub 2.137 s); vet for
+  IPC/GitHub/host/broker passed. Windows IPC test cross-build and cross-vet
+  passed. Frozen site install/build passed again (29 pages, all internal links).
+  Independent feasibility follow-up source review found no new blocker,
+  conditional on native evidence. [Evidence](evidence/issue-255/private-file-repair.md).
+  Final pinned review, native platforms, integration and owner
+  approval remain pending. Draft PR #264 stays **DO NOT MERGE**; CI denied.
+
+
+### Private-file repair local implementation (#255, 2026-10-09; not merged)
+
+- Parent opened critical design draft PR #264 at `3b0bdff` before local runtime
+  work. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) remain proposed and **DO NOT MERGE
+  without owner review**. No approval or CI enablement is claimed.
+- Shared IPC guard now repairs one validated object: Unix no-follow/nonblocking
+  open, owner/type/link checks before descriptor chmod, final path identity;
+  Windows handle type/reparse/link/owner checks, handle DACL repair, bounded
+  same-object Administrators recovery and no-delete sharing. The Windows
+  broker lock repairs the same opened file that it locks. Legitimate files
+  retain identity; linked/private unsafe files are refused.
+- `go test -race -count=10 -run '^Test(PrivateFile|TokenFileUnsafe)'
+  ./internal/ipc ./internal/github` passed (1.548 s / 1.955 s). Broad race
+  for IPC/GitHub/host passed (2.285 s / 15.970 s / 2.474 s); broker upload
+  race passed (1.889 s). `go vet` for those four packages passed. Windows
+  and Linux IPC cross-test builds passed with `CGO_ENABLED=0`; compile only.
+  Full commands and test scope: [evidence](evidence/issue-255/private-file-repair.md).
+- Updated internal map/design/roadmap and GitHub design, README feature list,
+  Unreleased host/phone fix, existing GitHub guide, security/troubleshooting
+  and Next beta notes. Existing sidebar entries still cover these pages;
+  no new CLI command or major landing-page feature. Frozen site install and
+  Astro build passed (29 pages; all internal links valid).
+- Root independent security source review found no code blocker, conditional
+  on test/platform evidence. Pending: independent final feasibility review,
+  native Windows/Linux execution (especially actual Administrators owner
+  recovery), whole integration, phone checks and explicit owner approval.
+  Hosted CI is explicitly denied, so no enablement, bypass, merge or deploy.
+
+
+### Private-file permission repair architecture (#255, 2026-10-08)
+
+- Branch `fix/issue-255`, fresh base `origin/main` (`08f0332`); design-only
+  milestone. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) are **DO NOT MERGE without owner review**
+  under rule 24. No runtime changes or owner approval are claimed.
+- `go test -count=1 -v -run '^TestIssue255' ./internal/github ./internal/ipc`
+  with temporary synthetic reproduction tests failed as expected: a refused
+  token symlink changed its outside target from 0644 to 0600, and an accepted
+  hard link changed its shared outside inode to 0600. Temporary test files
+  were removed after the reproduction. [Evidence](evidence/issue-255/private-file-repair.md).
+- Inspected shared-guard callers and Unix/Windows owner/type/security rules.
+  Proposed repair through the validated handle, no-follow/reparse refusal,
+  single-link validation and path-identity checks; preserve Windows owner
+  recovery and legitimate-file repair. Later caller reopens and same-user
+  hostile filesystem mutations are explicitly outside the guarantee.
+- Pending: parent opens the design draft before implementation; independent
+  security and feasibility reviews; implementation/tests/full rules 22/25
+  docs/site build; native Windows/Linux verification; explicit owner approval.
+  Hosted CI is explicitly denied; no enabling, bypass, merge or deployment.
 
 ### Summary (2026-09-27)
 

@@ -26,6 +26,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 - **Smaller downloads.** First-open and update downloads use compressed app
   assets automatically when the phone supports them; next beta.
+- **Private saved files.** Termivoa refuses linked or unsafe private files
+  before repairing permissions on a saved login or other private file; next
+  beta. Normal owned files keep their identity and private permissions.
+
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output. Screens are bounded
   to 400 columns and 200 rows; next beta also rejects malformed screen-update

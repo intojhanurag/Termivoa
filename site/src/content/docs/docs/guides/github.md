@@ -137,3 +137,17 @@ Yes, in a folder that Termivoa cloned, and in a folder that has your own git log
 ## Back to Termivoa
 
 Done. Go back to Termivoa.
+
+## Why does a saved login become unavailable?
+
+**Next beta:** Termivoa refuses a saved login file that is linked to another
+file or has an unsafe owner or type. It repairs permissions only on a valid
+owned file. Do not make links to saved login files.
+
+| Situation | What to do |
+| --- | --- |
+| You intentionally linked a saved login file | Stop Termivoa and inspect the local file; remove the link only after checking what it points to |
+| You did not create the link or change ownership | Investigate the computer before connecting GitHub again |
+| A normal file only needs tighter permissions | Termivoa repairs its permissions without replacing the file |
+
+See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked) and [Why is a private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).

@@ -381,3 +381,14 @@ saved pair; remote-only outage permits requested local deletion with the
 manual GitHub applications hint. The private directory and lock marker remain
 so a second broker cannot replace the lock during contents removal. No
 protocol, stored schema, scopes or pairing changes; owner approval is pending.
+
+## 18. Shared private-file repair (#255)
+
+The local implementation on `fix/issue-255` uses the shared IPC guard described
+in [private-file-permissions.md](private-file-permissions.md), ADR 0012. Token
+loading refuses final symlinks and hard-linked token files before permission
+repair can change another object. Valid owned token files are tightened to
+0600 on the same open inode; the existing atomic save remains unchanged.
+The guard does not bind a later `os.ReadFile` reopen to its handle and is not
+a sandbox against a hostile process in the same account. No token format,
+network, OAuth scope or pairing change. **DO NOT MERGE without owner review.**

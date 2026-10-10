@@ -389,6 +389,14 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 
 ## 9. Key invariants
 
+Local security repair (#255, not merged): [ADR 0012](decisions/0012-private-file-permission-repair.md)
+and [private-file-permissions.md](private-file-permissions.md) describe private-file
+permission repair bound to one validated open object, rejecting final links and
+shared hard links before mutation. Owner approved design and implementation on 2026-10-09, subject to required checks;
+local implementation has source/local security and pinned feasibility reviews,
+but awaits native evidence and required checks and does not change current-main
+guarantees. Windows lock repair and locking use the same opened object.
+
 - The gateway never spawns a shell and never opens SQLite. It has no PTY or Store.
 - Only the broker writes to a PTY, through one writer per session.
 - No client-generated terminal-query replies reach the child. The web xterm has `disableStdin: true`.

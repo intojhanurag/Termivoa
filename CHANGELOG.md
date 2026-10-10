@@ -236,6 +236,13 @@ All notable changes are documented here. The format follows
   again after correcting the choice. Host: reserve a unit before calling
   herdr and return it only for a marked preflight refusal, once, in its
   original window. Attempted changes still count even if they fail.
+
+- **Private-file permission repair (#255).** Host: validate the opened file
+  before repairing its permissions; refuse final links, shared hard links,
+  unsafe types and disallowed owners without changing their targets. Keep
+  legitimate files on the same identity, including the Windows broker lock.
+  Phone: a linked or unsafe saved login remains unavailable rather than
+  changing another file. No new command, protocol or database change.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.
