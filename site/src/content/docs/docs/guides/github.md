@@ -176,6 +176,8 @@ See [How are private saved files checked?](/docs/reference/security/#how-are-pri
 | Label | Meaning |
 | --- | --- |
 | **just now** | Under one minute; also a future timestamp if clocks differ. |
+| **min ago** | Whole minutes, until one hour, such as **5 min ago**. |
+| **h ago** | Whole hours, until 24 hours, such as **2 h ago**. |
 | **yesterday** | Between 24 and 48 hours ago. |
 | **d ago** | Whole days, until seven days. |
 | **wk ago** | Whole seven-day weeks, until 30 days. |

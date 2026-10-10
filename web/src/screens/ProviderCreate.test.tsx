@@ -84,7 +84,9 @@ describe('answers', () => {
 describe('the + sheet (H6)', () => {
   it('waits to create with an agent, while No agent can still create during the read', () => {
     const waiting = form({ checkingKinds: true });
-    expect(waiting).toContain('Checking available agents…');
+    expect(waiting).toContain('<p role="status" class="hint-text">Checking available agents…</p>');
+    // The live region stays mounted with no text, so screen readers announce the check when it starts.
+    expect(form({ checkingKinds: false })).toContain('<p role="status" class="visually-hidden"></p>');
     expect(waiting).toContain('<button type="submit" class="primary wide" disabled=""');
     expect(form({ checkingKinds: true, agent: undefined })).not.toContain('<button type="submit" class="primary wide" disabled=""');
   });

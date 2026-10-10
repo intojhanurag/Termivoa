@@ -192,7 +192,7 @@ What Termivoa never does:
 
 - **It never removes work that is not committed.** The app then says "silver-meadow has changes that are not committed. Commit or discard them first." and nothing changes.
 - **It never closes two workspaces in one tap.** For a project's main checkout with open worktrees, **Close workspace** is off and says "Close its worktrees first." When herdr lists two workspaces under one project and both are at that project's main folder (herdr has its worktree record of the same repository for each), it is off for both and says "herdr closes the workspaces at this project's main folder only together. Close them in herdr on mac." A second workspace in the same folder that herdr lists as its own project closes alone.
-- **It checks the name again.** If the list changed after you looked, the app says "The list changed. Look again, then try again." and nothing changes.
+- **It checks the name again.** If the list changed after you looked, nothing changes. **Remove worktree** then says "The list changed. Look again, then try again." **Close workspace** on a workspace that is still there says "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer."
 
 **Remove worktree** deletes files that git ignores, such as `.env` and build output, with the folder. The branch and its commits stay.
 
@@ -261,7 +261,7 @@ Yes. Each computer reads its own herdr. The **herdr** tab shows all of them in *
 | What you see | What to do |
 | --- | --- |
 | **Checking available agents…** | Wait for the check before **Create and start** or **Start**. **No agent** and **Shell** remain available. |
-| “claude is not running in herdr now.” | The selected agent is no longer offered. Choose an available agent; Termivoa does not pick another one for you. |
+| “claude is not available in herdr now.” | The selected agent is no longer offered. Choose an available agent; Termivoa does not pick another one for you. |
 | The check could not complete | The last known choices remain. A start may still be refused if that agent no longer runs. Look at herdr on the computer before trying again. |
 | **Close workspace** is off and the workspace shares the project's main folder | Close those workspaces in herdr on the computer. The last tab ends with its workspace. |
 | A close says the list changed | Inspect the list again. Close linked worktrees first; workspaces sharing the main folder must be closed in herdr on the computer. |

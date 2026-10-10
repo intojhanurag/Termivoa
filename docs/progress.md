@@ -3553,3 +3553,33 @@ and browser run after explicit nonempty guard also pass. No runtime edits.
   owner real-phone checks remain with the coordinator. CI remains disabled
   by explicit owner denial; no CI enablement or merge attempted. No real
   GitHub data, credential, provider or credit used.
+
+## 2026-10-10 — Review follow-ups after issue sweep 2
+
+- herdr docs quote "claude/codex is not available in herdr now." (site guide,
+  `docs/herdr-manage.md`). A stale **Close workspace** now documents its own
+  text (`CLOSE_CHANGED`) in the herdr guide and troubleshooting; "The list
+  changed. Look again, then try again." stays for **Remove worktree**.
+- Release notes: the GitHub uninstall bullet moved under "New features on
+  `main`"; "Desktop attach" merged into "Terminal screen bounds". README:
+  the snapshot row-range sentence moved to "Desktop attach".
+- Threat model and GitHub design: ADRs 0011/0012/0013 accepted by the owner
+  on 2026-10-09 (no "approval pending" or draft wording).
+- `scripts/e2e-multicomputer/README.md`: `H-closetab` and `H-stale` rows match
+  `herdr.mjs`.
+- New worktree limit message: "Termivoa reached a limit on this computer.
+  Wait for other actions to finish, or remove a worktree or session you no
+  longer need, then try again." `session.create` `limit_exceeded` schema
+  description names all three causes; `pnpm protocol:generate` changed
+  comments only.
+- GitHub guide: "min ago" and "h ago" rows in the push-age table.
+- "Checking available agents…": the `role="status"` region stays mounted
+  (visually hidden, empty) and only its text changes, in **New worktree**
+  and **New tab**; tests cover both states.
+- "Settings → Integrations" paths in `docs/herdr-provider.md` and
+  `docs/pending-work.md` now name the computer's page; `docs/ui-revamp.md`
+  section 6 follow-up marked done.
+- Checks: `pnpm install --frozen-lockfile`; `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check`; `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` (29 pages, all internal links valid).
+- Local branch `fix/sweep-review-followups` only; not pushed, no PR.

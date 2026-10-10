@@ -120,7 +120,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   and real-phone checks (Next 3).
 - herdr on your phone (ADR 0008, `docs/herdr-provider.md`): a **herdr** tab,
   open a herdr terminal in Live, buzz when blocked or finished,
-  **Settings → Integrations**, new worktree with an agent. Open: the real
+  **Settings → (the computer) → herdr**, new worktree with an agent. Open: the real
   device checks (Next 5).
 - "Needs you" inbox (`docs/needs-you-inbox.md`): a **Needs you** tab in
   Sessions with what waits on every computer (sessions and herdr), a
@@ -143,7 +143,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   read and write on 2026-10-07; implementation merged in
   [#212](https://github.com/intojhanurag/Termivoa/pull/212), registered App
   build configuration merged in [#229](https://github.com/intojhanurag/Termivoa/pull/229)).
-  **Settings → Integrations** has a row for each computer:
+  Each computer's page in **Settings** has a **GitHub** block:
   **Connect** (device flow, one code for each computer), **Choose on
   GitHub**, **Set up a repository** (list with search, "on mac", "name
   taken"), the clone job with progress and **Stop**, "Ready on mac" with

@@ -554,7 +554,11 @@ If the app says "The agent started, but your first prompt was not sent.", the ag
 
 ### "The list changed. Look again, then try again."
 
-The workspace was renamed, closed, or herdr restarted after the phone read the list. Nothing was closed or removed. Look at the row again and repeat the action.
+The workspace was renamed, closed, or herdr restarted after the phone read the list. **Remove worktree** says this, and so does **Close workspace** when the workspace is gone. Nothing was closed or removed. Look at the row again and repeat the action.
+
+### "The list changed. Look again before closing."
+
+**Close workspace** says "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer." The workspace changed after the phone read the list: it was renamed or closed, herdr restarted, or a worktree opened in it. Nothing was closed. Look at the row again. Close its worktrees first. If two workspaces share the project's main folder, close them in herdr on that computer.
 
 ### "silver-meadow has changes that are not committed"
 

@@ -293,6 +293,11 @@ describe('the item menu', () => {
       expect(tabChooser(noKinds)).toBe(false);
     });
 
+    it('keeps the "Checking available agents…" live region mounted and changes only its text', () => {
+      expect(chooser()).toContain('<p role="status" class="visually-hidden"></p>');
+      expect(chooser({ checkingKinds: true })).toContain('<p role="status" class="hint-text">Checking available agents…</p>');
+    });
+
     it('says so when a fresh settings read took the picked agent away: no agent is started in its place (issue 195)', () => {
       const page = chooser({ agent: undefined, dropped: 'codex is not available in herdr now.' });
       expect(page).toContain('<p role="status" class="hint-text">codex is not available in herdr now.</p>');

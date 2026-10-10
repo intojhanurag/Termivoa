@@ -8,11 +8,9 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 ## Next beta (not released yet)
 
-- **Desktop attach:** Termivoa rejects invalid screen row ranges safely and asks for a fresh screen. Phone behavior is unchanged.
+New features on `main` show here until the next beta ships.
 
 - **GitHub cleanup during uninstall.** Confirmed `pterm uninstall --delete-data` on macOS/Linux tries to revoke the saved login before local removal. Unconfirmed revocation prints a manual GitHub link; canceling during revocation preserves local data. An empty private ownership folder remains. See [Update and uninstall](/docs/reference/update-and-uninstall/) and [Remove GitHub access](/docs/reference/security/#how-do-i-remove-termivoas-access-on-github).
-
-New features on `main` show here until the next beta ships.
 
 - **Fixed: an unusable GitHub push date no longer hides the repository list.** Termivoa omits only that row's last-push age. Repository names, other details and available actions still show; valid ages remain. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
 
@@ -44,7 +42,9 @@ New features on `main` show here until the next beta ships.
 - **Fixed: stalled push subscriptions could block other phones.** When many other phones' push services do not answer, they no longer use up the whole send window before your phone gets a delivery attempt. A temporary timeout keeps notifications on for a later event. See [How are notifications sent?](/docs/guides/notifications/#how-are-notifications-sent).
 - **Less work for the Wall.** Computers prepare Wall-only updates at the rate the tiles can display them. Tiles still reach the newest screen after output stops, and an open Live terminal keeps its normal update rate. See [Wall](/docs/guides/wall/#does-watching-the-wall-use-less-work-on-the-computer).
 - **Terminal screen bounds.** The computer rejects malformed row positions
-  in terminal screen updates; the phone already applies that limit. See
+  in terminal screen updates; the phone already applies that limit. Desktop
+  attach also rejects invalid screen row ranges safely and asks for a fresh
+  screen. Phone behavior is unchanged. See
   [What limits apply to the terminal screen?](/docs/guides/live-terminal/#what-limits-apply-to-the-terminal-screen).
 
 - **Less host overhead for busy terminals.** Watching changing output in Live or Wall uses less CPU and temporary memory on your computer. The terminal controls stay the same. See [What changes for busy terminals?](/docs/guides/live-terminal/#what-changes-for-busy-terminals).
