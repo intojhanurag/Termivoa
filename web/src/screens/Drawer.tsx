@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import '../styles/drawer.css';
 import type { Computer } from '../computers';
 import type { ComputerEntry } from './allSessions';
@@ -16,6 +16,10 @@ export function needsByComputer(items: ReadonlyArray<InboxItem>): ReadonlyMap<st
   for (const item of items) if (item.waits) counts.set(item.computer.host, (counts.get(item.computer.host) ?? 0) + 1);
   return counts;
 }
+
+/** The chosen computer's host while it is still in the list; undefined (All computers) once it left. */
+export const chosenHost = (computers: ReadonlyArray<Pick<Computer, 'host'>>, chosen: string | undefined): string | undefined =>
+  (computers.some((computer) => computer.host === chosen) ? chosen : undefined);
 
 /** The amber pill: the first computer that is not the chosen one and has something that needs you. None in All computers. */
 export function amberPill(computers: ReadonlyArray<Computer>, counts: ReadonlyMap<string, number>, chosen: string | undefined):
@@ -51,7 +55,7 @@ function Count({ count }: { readonly count: number }) {
 }
 
 /** The small header over one computer's part of a list in All computers: its dot, label and state. */
-export function ComputerHead({ entry, line }: { readonly entry: ComputerEntry; readonly line: string }) {
+export function ComputerGroupHead({ entry, line }: { readonly entry: ComputerEntry; readonly line: string }) {
   return (
     <h2 className={`computer-group is-${entry.status.kind}`}>
       <span className="dot" style={{ background: entry.computer.color }} aria-hidden="true" />
@@ -62,8 +66,10 @@ export function ComputerHead({ entry, line }: { readonly entry: ComputerEntry; r
 }
 
 /** ≡, the pill with the chosen computer, and the amber pill. Shown only with two or more computers. */
-export function DrawerBar({ chosen, open, amber, onOpen, onChoose }: {
+export function DrawerBar({ chosen, open, amber, menuRef, onOpen, onChoose }: {
   readonly chosen: Computer | undefined;
+  /** The ≡ button: focus comes back to it when the drawer closes (iOS does not focus a tapped button). */
+  readonly menuRef?: RefObject<HTMLButtonElement | null> | undefined;
   readonly open: boolean;
   readonly amber: ReturnType<typeof amberPill>;
   readonly onOpen: () => void;
@@ -71,7 +77,7 @@ export function DrawerBar({ chosen, open, amber, onOpen, onChoose }: {
 }) {
   return (
     <div className="drawer-bar">
-      <button type="button" className="round drawer-menu" aria-label="Computers and menu" aria-haspopup="dialog" aria-expanded={open} onClick={onOpen}>
+      <button ref={menuRef} type="button" className="round drawer-menu" aria-label="Computers and menu" aria-haspopup="dialog" aria-expanded={open} onClick={onOpen}>
         <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true">
           <path d="M1 1.5h16M1 7h16M1 12.5h16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         </svg>
@@ -91,7 +97,7 @@ export function DrawerBar({ chosen, open, amber, onOpen, onChoose }: {
   );
 }
 
-export function Drawer({ entries, chosen, counts, needs, line, onChoose, onNeeds, onWall, onSettings, onAddComputer, onClose }: {
+interface DrawerProps {
   readonly entries: ReadonlyArray<ComputerEntry>;
   readonly chosen: string | undefined;
   readonly counts: ReadonlyMap<string, number>;
@@ -104,32 +110,43 @@ export function Drawer({ entries, chosen, counts, needs, line, onChoose, onNeeds
   readonly onSettings: () => void;
   readonly onAddComputer: () => void;
   readonly onClose: () => void;
+}
+
+/** A modal dialog (native, so focus stays in it and the page behind is inert). Escape, a tap beside the panel, or a choice closes it. */
+export function Drawer({ returnFocus, onClose, ...props }: DrawerProps & {
+  /** Gets the focus back when the drawer closes. */
+  readonly returnFocus?: RefObject<HTMLElement | null> | undefined;
 }) {
-  const ref = useRef<HTMLElement>(null);
-  // Focus moves in, and back to the button that opened the drawer when it closes.
+  const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    ref.current?.focus();
-    return () => opener?.focus();
-  }, []);
+    const dialog = ref.current;
+    if (dialog !== null && !dialog.open) dialog.showModal();
+    return () => {
+      dialog?.close();
+      returnFocus?.current?.focus();
+    };
+  }, [returnFocus]);
+  return (
+    <dialog
+      ref={ref}
+      className="drawer"
+      aria-labelledby="drawer-title"
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      // The dialog fills the screen; a tap on it, not on the panel, is a tap beside the panel.
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <DrawerPanel {...props} onClose={onClose} />
+    </dialog>
+  );
+}
+
+/** What the drawer shows: Computers, then Needs you, Wall, Settings and + Add a computer. Each choice closes the drawer. */
+export function DrawerPanel({ entries, chosen, counts, needs, line, onChoose, onNeeds, onWall, onSettings, onAddComputer, onClose }: DrawerProps) {
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
   const pick = (host: string | undefined) => { onChoose(host); onClose(); };
   const go = (action: () => void) => () => { onClose(); action(); };
   return (
-    <div className="drawer-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section
-        ref={ref}
-        className="drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="drawer-title"
-        tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape') return;
-          event.stopPropagation();
-          onClose();
-        }}
-      >
+    <div className="drawer-panel">
         <h2 id="drawer-title" className="caps">Computers</h2>
         <ul className="drawer-list">
           <li>
@@ -177,7 +194,6 @@ export function Drawer({ entries, chosen, counts, needs, line, onChoose, onNeeds
           <li><button type="button" className="drawer-row" onClick={go(onSettings)}><span className="drawer-label">Settings</span></button></li>
           <li><button type="button" className="drawer-row drawer-add" onClick={go(onAddComputer)}><span className="drawer-label">+ Add a computer</span></button></li>
         </ul>
-      </section>
     </div>
   );
 }

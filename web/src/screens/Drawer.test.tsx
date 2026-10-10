@@ -1,8 +1,9 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Computer } from '../computers';
 import { hosted, type ComputerEntry } from './allSessions';
-import { amberPill, Drawer, DrawerBar, needsByComputer, stateLine } from './Drawer';
+import { amberPill, chosenHost, Drawer, DrawerBar, DrawerPanel, needsByComputer, stateLine } from './Drawer';
 import { inboxItems } from './Inbox';
 import { mac, okEntry, ready, vps } from './providerFixtures';
 
@@ -59,7 +60,7 @@ describe('Drawer', () => {
 
   it('is a labelled dialog with All computers and one row per computer: tile, label, state line, amber count', () => {
     const page = html();
-    expect(page).toContain('role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1"><h2 id="drawer-title" class="caps">Computers</h2>');
+    expect(page).toContain('<dialog class="drawer" aria-labelledby="drawer-title"><div class="drawer-panel"><h2 id="drawer-title" class="caps">Computers</h2>');
     expect(page).toContain('aria-current="false"><span class="drawer-tile all" aria-hidden="true">');
     expect(page).toContain('<span class="drawer-label">All computers</span></span><span class="drawer-count" aria-hidden="true">3</span><span class="visually-hidden">, 3 need you</span>');
     expect(page).toContain('<button type="button" class="drawer-row is-ok" aria-current="true"><span class="drawer-tile" aria-hidden="true">V</span><span class="drawer-text"><span class="drawer-label"><bdi>vps</bdi></span><span class="drawer-state"><span class="visually-hidden">, </span>vps line</span></span><span class="drawer-count" aria-hidden="true">2</span>');
@@ -77,5 +78,44 @@ describe('Drawer', () => {
     expect(at('>Settings<')).toBeLessThan(at('>+ Add a computer<'));
     expect(html({ needs: undefined, chosen: vps.host })).not.toContain('Needs you');
     expect(html({ needs: 3, chosen: undefined })).toContain('aria-current="true"><span class="drawer-tile all"');
+  });
+});
+
+/** The buttons of a hook-free element tree, with their text: enough to press them without a DOM. */
+function buttons(node: ReactNode): Array<{ readonly text: string; readonly press: () => void }> {
+  const text = (one: ReactNode): string => (typeof one === 'string' || typeof one === 'number' ? String(one)
+    : Array.isArray(one) ? one.map(text).join('') : isValidElement(one) ? text((one.props as { children?: ReactNode }).children) : '');
+  if (Array.isArray(node)) return node.flatMap(buttons);
+  if (!isValidElement(node)) return [];
+  const element = node as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
+  if (element.type === 'button') return [{ text: text(element.props.children), press: () => element.props.onClick?.() }];
+  if (typeof element.type === 'function') return buttons((element.type as (props: unknown) => ReactNode)(element.props));
+  return buttons(element.props.children);
+}
+
+describe('choices', () => {
+  it('the amber pill chooses its computer', () => {
+    const chosen: string[] = [];
+    const bar = DrawerBar({ chosen: mac, open: false, amber: { computer: vps, count: 1 }, onOpen: noop, onChoose: (host) => chosen.push(host) });
+    buttons(bar).find((one) => one.text.startsWith('vps'))?.press();
+    expect(chosen).toEqual([vps.host]);
+  });
+
+  it('every row of the drawer closes it: a computer or All computers after choosing, the rest before leaving', () => {
+    const log: string[] = [];
+    const panel = DrawerPanel({
+      entries: [okEntry(mac), okEntry(vps)], chosen: undefined, counts: new Map(), needs: 1, line: () => '',
+      onChoose: (host) => log.push(`choose ${host ?? 'all'}`), onNeeds: () => log.push('needs'), onWall: () => log.push('wall'),
+      onSettings: () => log.push('settings'), onAddComputer: () => log.push('add'), onClose: () => log.push('close'),
+    });
+    const all = buttons(panel);
+    expect(all.map((one) => one.text)).toEqual(['All computers', 'Mmac, ', 'Vvps, ', 'Needs you', 'Wall', 'Settings', '+ Add a computer']);
+    for (const one of all) one.press();
+    expect(log).toEqual(['choose all', 'close', `choose ${mac.host}`, 'close', `choose ${vps.host}`, 'close', 'close', 'needs', 'close', 'wall', 'close', 'settings', 'close', 'add']);
+  });
+
+  it('keeps a chosen computer only while it is in the list', () => {
+    expect(chosenHost([mac, vps], vps.host)).toBe(vps.host);
+    expect(chosenHost([mac], vps.host)).toBeUndefined();
   });
 });

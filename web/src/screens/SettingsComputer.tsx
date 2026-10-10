@@ -115,7 +115,10 @@ export function ComputerCard({ entry, providers, now, onOpen, children }: {
           <span className={`dot ${statusDot(entry)}`} aria-hidden="true" />
           <span className="computer-name">{computer.label}</span>
           {computer.home && <span className="home-badge">Home</span>}
-          {entry.status.kind !== 'ok' && <span className="computer-state sc-word">{online.text}</span>}
+          {entry.status.kind === 'ok'
+            // The green dot says it on screen; a screen reader hears the word.
+            ? <span className="visually-hidden">, {online.text}</span>
+            : <span className="computer-state sc-word">{online.text}</span>}
           <span className="sc-chevron" aria-hidden="true">›</span>
         </span>
         {chips.length > 0 && (
@@ -183,7 +186,8 @@ export function initialPage(section: string | undefined, state: unknown): Settin
   return section === 'notifications' ? { kind: 'notifications' } : section === undefined ? pageFromHistory(state) : MAIN_PAGE;
 }
 
-/** The page to draw: a computer that left the list (removed) shows the main page. */
-export function shownPage(page: SettingsPage, entries: ReadonlyArray<ComputerEntry>): SettingsPage {
+/** The page to draw: a computer that left the list (removed), or Notifications while home cannot be reached (it needs home), shows the main page. */
+export function shownPage(page: SettingsPage, entries: ReadonlyArray<ComputerEntry>, homeAnswered = true): SettingsPage {
+  if (page.kind === 'notifications') return homeAnswered ? page : MAIN_PAGE;
   return page.kind === 'computer' && !entries.some((entry) => entry.computer.origin === page.origin) ? MAIN_PAGE : page;
 }

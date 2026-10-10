@@ -612,6 +612,52 @@ export async function click(page, text) {
   await sleep(300);
 }
 
+/** In-app navigation, as the app's own links do: no new page load. */
+export const pushPath = (page, path) => page.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
+
+/**
+ * The computer of a list element: the label of its All computers header
+ * (.computer-group), else the computer chosen in the drawer bar, else ''
+ * (one computer: no bar). A page-side function, for page.eval.
+ */
+export const COMPUTER_OF = `const computerOf = (e) => {
+  const box = e.closest('.provider-computer, section[aria-label]:not([aria-label="Your sessions"])');
+  const head = box?.querySelector('.computer-group bdi') ?? document.querySelector('.drawer-pill bdi');
+  return head?.innerText.trim() ?? ''; };`;
+
+/** The Sessions drawer bar: the pill's text, the amber pill, and the All computers headers; null with one computer. */
+export const drawerBar = (page) => page.eval(`(() => { if (!document.querySelector('.drawer-bar')) return null;
+  const t = (e) => e?.innerText.replace(/\\s+/g, ' ').trim() ?? null;
+  return { pill: t(document.querySelector('.drawer-pill')).replace(/ ?▾$/, ''), amber: t(document.querySelector('.drawer-amber')),
+    headers: [...document.querySelectorAll('h2.computer-group bdi')].map(t) }; })()`);
+
+/** Opens the drawer (menu button "Computers and menu") and reads its rows; throws when there is none. */
+export async function openDrawer(page) {
+  if (!await page.eval(`document.querySelector('.drawer') !== null`)) await click(page, 'Computers and menu');
+  return until(() => page.eval(`(() => { const d = document.querySelector('dialog.drawer[open]'); if (!d) return null;
+    const t = (e) => e?.innerText.replace(/\\s+/g, ' ').trim() ?? '';
+    return { focused: d.contains(document.activeElement), rows: [...d.querySelectorAll('.drawer-row')].map((b) => ({ label: t(b.querySelector('.drawer-label')),
+      state: t(b.querySelector('.drawer-state')).replace(/^, /, ''), count: Number(b.querySelector('.drawer-count')?.innerText ?? 0), current: b.getAttribute('aria-current') === 'true' })) }; })()`),
+  { what: 'the drawer' });
+}
+
+/** Chooses a computer in the drawer by label ("All computers" for all); waits until the pill says it. */
+export async function chooseComputer(page, label) {
+  await openDrawer(page);
+  const ok = await page.eval(`(() => { const b = [...document.querySelectorAll('.drawer .drawer-row')].find((e) => e.querySelector('.drawer-label')?.innerText.trim() === ${JSON.stringify(label)});
+    if (!b) return false; b.click(); return true; })()`);
+  if (!ok) throw new Error(`no drawer row "${label}"`);
+  await until(async () => (await drawerBar(page))?.pill === label && !(await page.eval(`document.querySelector('.drawer') !== null`)), { what: `the pill "${label}"` });
+}
+
+/** Settings → the card of a computer → its page (docs/ui-revamp.md, section 5); from anywhere in the app. */
+export async function settingsComputer(page, label) {
+  await pushPath(page, '/settings');
+  await until(() => page.eval(`(() => { const b = [...document.querySelectorAll('.sc-card .sc-open')].find((e) => e.querySelector('.computer-name')?.innerText.trim() === ${JSON.stringify(label)});
+    if (!b) return false; b.click(); return true; })()`), { what: `the Settings card of ${label}`, timeout: 20000 });
+  await until(() => page.eval(`document.querySelector('.sc-page-head h1')?.innerText.trim() === ${JSON.stringify(label)}`), { what: `the Settings page of ${label}` });
+}
+
 /** Pairs the browser page with a stack directly, as today: pterm pair, the link, the code, y. */
 export async function pairDirect(page, stack, label) {
   const started = Date.now();

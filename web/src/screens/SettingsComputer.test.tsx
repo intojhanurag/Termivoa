@@ -39,6 +39,8 @@ describe('the main page: a card per computer', () => {
     expect(online).toContain('<span class="sc-chip dashed">Connect GitHub</span>');
     expect(online).toContain('<li class="computer-card sc-card is-ok">');
     expect(online).not.toContain('computer-state');
+    // The dot is hidden from screen readers: the state is said in words.
+    expect(online).toContain('<span class="home-badge">Home</span><span class="visually-hidden">, Online</span>');
     const loading = card({ computer: vps, status: { kind: 'loading' } });
     expect(loading).toContain('>Checking</span>');
     expect(loading).not.toContain('dashed');
@@ -122,6 +124,11 @@ describe('where Settings is', () => {
     expect(initialPage(undefined, computer)).toEqual({ kind: 'computer', origin: vps.origin });
   });
 
+  it('shows the main page for Notifications while home cannot be reached', () => {
+    expect(shownPage({ kind: 'notifications' }, [okEntry(mac)], false)).toEqual(MAIN_PAGE);
+    expect(shownPage({ kind: 'notifications' }, [okEntry(mac)], true)).toEqual({ kind: 'notifications' });
+  });
+
   it('shows the main page for a computer that left the list', () => {
     expect(shownPage({ kind: 'computer', origin: vps.origin }, [okEntry(mac)])).toEqual(MAIN_PAGE);
     expect(shownPage({ kind: 'computer', origin: vps.origin }, [okEntry(vps)])).toEqual({ kind: 'computer', origin: vps.origin });
@@ -178,6 +185,12 @@ describe('This phone', () => {
     expect(html).toContain('>‹ Settings</button>');
     expect(html).toContain('<div class="stack">');
     expect(html).not.toContain('phone-heading');
+  });
+
+  it('opened at Notifications without home: the main page, not a page with only ‹ Settings', () => {
+    const html = render(undefined, 'notifications');
+    expect(html).toContain('<h2 id="phone-heading" class="caps">This phone</h2>');
+    expect(html).not.toContain('‹ Settings');
   });
 
   it('says On or Off for push once the browser answered', () => {

@@ -20,7 +20,8 @@ With two or more computers, the herdr tab and Sessions list every computer's pro
 | --- | --- | --- |
 | Body | `system-ui` | **Geist**, bundled with the app (npm `geist`, SIL Open Font License 1.1; woff2 files served by the gateway, nothing from the internet) |
 | Titles (`h1`, `h2`) | serif (`ui-serif`, New York), weight 400 | Geist 600, letter spacing -0.03em |
-| Code, terminal text, branch and worktree names, build IDs | `ui-monospace` | **Geist Mono** |
+| Code, branch and worktree names, build IDs, history text | `ui-monospace` | **Geist Mono** |
+| The live terminal (xterm) | system mono list | **Unchanged.** xterm measures its cells once; a font that arrives late (`font-display: swap`) would break the grid |
 | `.caps` section labels | mono 11px, uppercase, 0.14em spacing | Geist 13px, weight 500, muted, **no uppercase**, normal spacing |
 | State words (`.state-word`, `.computer-state`, `.status-pill`, `.controller`, `.group-where`, `.faint`, `.host-line`) | mono 11px uppercase | Geist 12px, weight 500, no uppercase |
 | `.row-meta` | mono 12px | Geist 13px (stays mono where it shows a path or code) |

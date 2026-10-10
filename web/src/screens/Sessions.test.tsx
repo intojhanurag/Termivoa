@@ -267,6 +267,18 @@ describe('Sessions across computers', () => {
     expect(html).toContain('<button type="button" class="drawer-pill" aria-haspopup="dialog" aria-expanded="false"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span><bdi>vps</bdi>');
   });
 
+  it('with a chosen computer that does not answer, says its state and an amber dot; another computer\'s trouble does not change the dot', () => {
+    const page = (computer: string) => renderToStaticMarkup(
+      <Sessions
+        entries={[entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable' })]} sessions={[hosted(working, mac)]}
+        computer={computer} offerPush={false} onOpen={() => undefined} onNew={() => undefined} onWall={() => undefined} onSettings={() => undefined}
+        onReload={async () => undefined} onRetry={() => Promise.resolve()} onFailure={() => ''}
+      />,
+    );
+    expect(page(vps.host)).toContain('<span class="dot amber" aria-hidden="true"></span>vps · can&#x27;t reach</p>');
+    expect(page(mac.host)).toContain('<span class="dot accent" aria-hidden="true"></span>mac · 1 working</p>');
+  });
+
   it('has the drawer button and the All computers pill, no computer chips; Wall and Settings stay in the bar', () => {
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, ok(ready, [], vps))]);
     expect(html).toContain('aria-label="Computers and menu"');
@@ -281,16 +293,14 @@ describe('Sessions across computers', () => {
     expect(html.match(/class="session-row/gu)).toHaveLength(2);
   });
 
-  it('offers All plus one tab per computer', () => {
-    const html = renderToStaticMarkup(<ComputerChips computers={[mac, vps]} chosen={undefined} onChoose={() => undefined} />);
-    expect(html).toContain('<button type="button" class="chip" aria-pressed="true">All</button>');
-    expect(html).toContain('aria-pressed="false"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</button>');
+  it('offers one chip per computer to pick from (New session), none with one computer', () => {
     expect(renderToStaticMarkup(<ComputerChips computers={[mac]} chosen={undefined} onChoose={() => undefined} />)).toBe('');
     const pick = renderToStaticMarkup(
-      <ComputerChips computers={[mac, vps]} chosen="mac.tailx.ts.net" all={false} disabled={(host) => host === vps.host} onChoose={() => undefined} />,
+      <ComputerChips computers={[mac, vps]} chosen="mac.tailx.ts.net" disabled={(host) => host === vps.host} onChoose={() => undefined} />,
     );
     expect(pick).not.toContain('All');
-    expect(pick).toContain('aria-pressed="false" disabled="">');
+    expect(pick).toContain('aria-pressed="true"><span class="dot" style="background:#64D8E8" aria-hidden="true"></span>mac</button>');
+    expect(pick).toContain('aria-pressed="false" disabled=""><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</button>');
   });
 
   it('says when a computer that did not answer was last seen, and asks (never claims) why only after a network error', () => {

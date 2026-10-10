@@ -10,26 +10,27 @@ button.drawer-pill bdi { overflow: hidden; text-overflow: ellipsis; }
 button.drawer-amber { margin-left: auto; height: 32px; min-height: 32px; padding: 0 12px; border-color: transparent; background: rgb(242 181 68 / 12%); color: var(--amber); font-size: 13px; }
 button.drawer-amber .drawer-count { min-width: 0; padding: 0; background: none; }
 
-.drawer-backdrop { position: fixed; inset: 0; z-index: 6; background: rgb(0 0 0 / 60%); }
-.drawer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
+/* A native modal dialog over the whole screen; the panel is its left 300px, the rest is the dimmed page (a tap there closes it). */
+.drawer { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / 60%); color: var(--text); overscroll-behavior: contain; }
+.drawer::backdrop { background: transparent; }
+.drawer-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(300px, 86vw);
+  width: calc(min(300px, 86vw) + env(safe-area-inset-left));
+  height: 100%;
   overflow-y: auto;
-  padding: max(24px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+  padding: max(24px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   border-right: 1px solid var(--line);
   background: var(--surface);
   animation: drawer-in 180ms var(--ease);
 }
+
 .drawer:focus { outline: none; }
-.drawer > .caps { padding: 0 12px 4px; }
+.drawer-panel > .caps { padding: 0 12px 4px; }
 @keyframes drawer-in { from { transform: translateX(-100%); } }
-@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .drawer-panel { animation: none; } }
 
 .drawer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .drawer-foot { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }

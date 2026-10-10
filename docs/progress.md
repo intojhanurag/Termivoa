@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-10
 
 ## Start here
 
@@ -14,6 +14,48 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### UI revamp: side drawer, Settings by computer, Geist (2026-10-10, branch `feat/ui-revamp`; not merged)
+
+- **Why.** With two or more computers, the computer chips crowded Sessions
+  and Settings was one long page. The owner approved the designs on
+  2026-10-10 ([ui-revamp.md](ui-revamp.md); pictures in
+  [`evidence/ui-revamp/`](evidence/ui-revamp/)). Not critical under rule 24:
+  no change to authentication, pairing, trust, network surface, protocol or
+  stored secrets.
+- **What.** Phone only (commit b737be0): the side drawer (`Drawer.tsx`) with
+  All computers, each computer's state and count, Needs you, Wall, Settings,
+  + Add a computer; the amber pill; tabs Sessions · herdr · Needs you; a
+  header per computer in All computers. Settings by computer
+  (`SettingsComputer.tsx`, `Settings.tsx`, `Computers.tsx`): Computers cards
+  with chips, This phone, and one page per computer (herdr, GitHub, This
+  computer). Geist and Geist Mono bundled (`fonts.css`). Texts: "Can't
+  reach", "See Sessions.", sentence case for state words. Host: no change.
+- **Docs.** Every "Settings → Integrations", "Settings → Computers", "This
+  device", "All" tab and upper-case label in the docs site, README,
+  CHANGELOG (Unreleased), `architecture.md`, `pending-work.md` and the design
+  documents now names the new screens; `guides/computers.md` has "How do I
+  switch between computers?" and "Where are a computer's settings?";
+  release notes have a Next beta bullet. Screenshots retaken with
+  `scripts/docs-screenshots/` (demo data).
+- **Commands and evidence.** `pnpm typecheck`; `pnpm test:web` (1080
+  pass); `GOTOOLCHAIN=go1.27.1 sh scripts/check` (pass); e2e
+  `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build`
+  161 PASS, 0 FAIL, 0 SKIP (new checks U1-U9: drawer, filter, amber pill,
+  Settings levels and Back, Add a computer, Geist from the app's origin,
+  drawer close paths, New session on the chosen computer, the queue on the
+  chosen computer) and `phase-a.mjs` 32 PASS, 0 FAIL; screenshots with
+  `scripts/docs-screenshots/` (demo data); `cd site && npx astro build`
+  (pass, links valid). Design pictures in `docs/evidence/ui-revamp/`.
+- **Reviews.** One independent review (verdict: merge after fixes; no lost
+  control): the queue and the status line now follow the chosen computer,
+  the drawer is a native modal `<dialog>`, New session opens on the chosen
+  computer, the choice clears on a new pairing; small fixes in Settings.
+  The e2e run then found two host texts that named the old page
+  (`cmd/pterm/github.go`, `internal/cli/admin.go`); both now say "Settings,
+  tap the computer". Issues filed from the run: #269, #270.
+- **Open.** Not tested on a real phone. Follow-ups in
+  [pending-work.md](pending-work.md) (Polish next, item 7).
 
 ### Summary (2026-09-27)
 

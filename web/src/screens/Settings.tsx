@@ -169,7 +169,7 @@ export function NotificationSettings({ onFailure, onPush }: {
   );
 }
 
-/** The state word and its one line for Settings → Integrations (docs/herdr-provider.md, section 8). */
+/** The state word and its one line for Settings → (computer) (docs/herdr-provider.md, section 8). */
 export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, label: string, canStart = false): {
   readonly word: string;
   readonly tone: 'green' | 'amber' | 'muted';
@@ -589,7 +589,7 @@ export function Settings({
   const [naming, setNaming] = useState(false);
   const [note, setNote] = useState<{ readonly text: string; readonly error: boolean }>();
   const [wanted, setWanted] = useState<SettingsPage>(() => initialPage(section, globalThis.history?.state));
-  const page = shownPage(wanted, entries);
+  const page = shownPage(wanted, entries, settings !== undefined);
   const main = useRef<HTMLElement>(null);
   const multi = entries.length > 1;
 

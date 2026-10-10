@@ -32,15 +32,15 @@ the old working name "Phone Terminal" so existing installs keep working (see
   any branch) with one tap, with a random name you can edit, and Claude or
   Codex already running in it.
 - **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
-  its projects and worktrees with BLOCKED, DONE and WORKING, buzzes when an
+  its projects and worktrees with blocked, done and working, buzzes when an
   agent is blocked or finished, opens one herdr terminal in Live and makes new
   worktrees. From the phone you can also open a tab or a workspace, close a tab or a
   workspace, remove a worktree (never one with uncommitted changes) and start
   herdr. A new tab can start a coding agent with a first prompt, a closed
-  worktree shows as CLOSED with **Open**, and a herdr terminal has the same
+  worktree shows as closed with **Open**, and a herdr terminal has the same
   **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
-- **GitHub.** Connect each computer to GitHub from **Settings →
-  Integrations** with a code, see your repositories, and clone one onto a
+- **GitHub.** Connect each computer to GitHub from its page in
+  **Settings** with a code, see your repositories, and clone one onto a
   computer with one tap, ready for a new session. No `gh` needed, only git;
   a folder that is already there is never deleted or overwritten. Pull and
   push work in the clone. macOS and Linux, github.com only; next beta.
@@ -48,10 +48,11 @@ the old working name "Phone Terminal" so existing installs keep working (see
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
   snapshot of their screen, marked Paused.
-- **Computer health.** Each computer's version and last answer in
-  Settings, with Check again.
+- **Computer health.** Each computer's version and last answer on its page
+  in Settings, with Check again.
 - **Several computers.** Use a Mac, a Linux server and a VPS
-  from one phone app: one Sessions list with a chip per computer, one Wall,
+  from one phone app: one Sessions list with a side menu to pick a computer (or
+  all of them), Settings with one page for each computer, one Wall,
   and new sessions on any of them. Each computer approves the phone itself,
   and **Log out** signs out of every computer it can reach. Not yet tested
   on a real phone; choose an always-on, trusted computer as home, because a
@@ -61,7 +62,7 @@ the old working name "Phone Terminal" so existing installs keep working (see
   or by tapping it in a Termivoa session.
 - **Found on your network.** Run `pterm setup` or
   `pterm pair --via <home>` on a new computer, then tap **Add** next to it in
-  **Settings → Computers**: no link to move. You still compare the code and
+  **Settings**: no link to move. You still compare the code and
   type `y` on the new computer. Not yet tested on a real phone.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts (Down sits next to Up while you type), plus a key

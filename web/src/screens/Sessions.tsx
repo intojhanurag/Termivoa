@@ -5,7 +5,7 @@ import { dismissHomeScreenHint, dismissPushCard, enablePush, shouldOfferHomeScre
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type ComputerStatus, type HostedSession,
+  atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { InboxList, inboxItems, inboxTabShown, needsYouText, waitingCount, type InboxItem } from './Inbox';
@@ -13,7 +13,7 @@ import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type Provide
 import { ProviderCreateSheet } from './ProviderCreate';
 import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
 import { ErrorBoundary, loadChunk } from './chunks';
-import { amberPill, ComputerHead, Drawer, DrawerBar, needsByComputer, stateLine } from './Drawer';
+import { amberPill, chosenHost, ComputerGroupHead, Drawer, DrawerBar, needsByComputer, stateLine } from './Drawer';
 import { NewSessionHelp } from './NewSession';
 import { ADD_FOLDER_COMMAND, providerState, providerTabs, startInstall, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
@@ -295,30 +295,27 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   );
 }
 
-/** One chip per computer, after "All" unless `all` is false (New session picks one computer); none with a single computer. */
-export function ComputerChips({ computers, chosen, all = true, disabled, onChoose }: {
+/** One chip per computer, to pick one (New session); none with a single computer. */
+export function ComputerChips({ computers, chosen, disabled, onChoose }: {
   readonly computers: ReadonlyArray<Computer>;
   readonly chosen: string | undefined;
-  /** False to pick one computer (New session): no "All" chip. */
-  readonly all?: boolean;
   /** Computers that cannot be picked now. */
   readonly disabled?: (host: string) => boolean;
-  readonly onChoose: (host: string | undefined) => void;
+  readonly onChoose: (host: string) => void;
 }) {
-  const chips = chipsFor(computers).filter((chip) => all || chip.host !== undefined);
-  if (chips.length === 0) return null;
+  if (computers.length < 2) return null;
   return (
     <div className="chips" role="group" aria-label="Computers">
-      {chips.map((item) => (
+      {computers.map((item) => (
         <button
-          key={item.host ?? ''}
+          key={item.host}
           type="button"
           className="chip"
           aria-pressed={chosen === item.host}
-          disabled={item.host !== undefined && disabled?.(item.host) === true}
+          disabled={disabled?.(item.host) === true}
           onClick={() => onChoose(item.host)}
         >
-          {item.color !== undefined && <span className="dot" style={{ background: item.color }} aria-hidden="true" />}
+          <span className="dot" style={{ background: item.color }} aria-hidden="true" />
           {item.label}
         </button>
       ))}
@@ -357,6 +354,13 @@ export function ShowTabs({ providers, provider, needs, needsOpen, onSessions, on
       )}
     </div>
   );
+}
+
+/** The status line of one chosen computer: "vps · 1 waiting" while it answers, else its state line ("vps · can't reach"). Undefined in All computers. */
+export function chosenSummary(shown: ReadonlyArray<ComputerEntry>, list: ReadonlyArray<HostedSession>, providers: ReadonlyArray<ProviderEntry>): string | undefined {
+  const [entry, other] = shown;
+  if (entry === undefined || other !== undefined) return undefined;
+  return entry.status.kind === 'ok' ? hostSummary(list, entry.computer.label) : `${entry.computer.label} · ${stateLine(entry, providers)}`;
 }
 
 const canStart = (entry: ComputerEntry) => entry.status.kind === 'ok'
@@ -421,10 +425,11 @@ export function Sessions({
   const [error, setError] = useState<string | undefined>(message);
   const [chosen, setChosen] = useState<string | undefined>(startComputer);
   const [drawer, setDrawer] = useState(false);
+  const menuRef = useRef<HTMLButtonElement>(null);
   const computers = entries.map((entry) => entry.computer);
   const multi = computers.length > 1;
   // A computer that left the list shows All computers.
-  const chip = multi && computers.some((computer) => computer.host === chosen) ? chosen : undefined;
+  const chip = multi ? chosenHost(computers, chosen) : undefined;
   const choose = (host: string | undefined) => { setChosen(host); onComputer?.(host); };
   const tabs = providerTabs(byChip(providers, chip));
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
@@ -452,7 +457,8 @@ export function Sessions({
   const needsYou = byChip(everyNeed, chip);
   const needs = waitingCount(needsYou);
   const answers = (entry: ComputerEntry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting';
-  const reachable = entries.every(answers);
+  // Of the computers shown: a chosen computer's trouble shows, another computer's does not.
+  const reachable = shown.every(answers);
   const shownProviders = byChip(providers, chip).filter((entry) => provider === undefined || entry.info.id === provider);
   // All computers: each computer's part of the list under its own header.
   const headers = multi && chip === undefined;
@@ -462,7 +468,7 @@ export function Sessions({
   const summary = inbox && needs > 0 ? needsYouText(needs) : provider !== undefined
     ? wordSummary(shownProviders) ?? `${tabs.find((item) => item.id === provider)?.name ?? provider} · nothing running`
     : multi
-      ? hostSummary(list, chosenComputer?.label ?? `${computers.length} computers`)
+      ? chosenSummary(shown, list, providers) ?? hostSummary(list, `${computers.length} computers`)
       : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';
   const blocked = provider === undefined ? undefined : firstBlocked(shownProviders);
   const openTarget = onOpenTarget ?? (() => undefined);
@@ -524,6 +530,7 @@ export function Sessions({
           chosen={chosenComputer}
           open={drawer}
           amber={amberPill(computers, counts, chip)}
+          menuRef={menuRef}
           onOpen={() => setDrawer(true)}
           onChoose={choose}
         />
@@ -573,7 +580,7 @@ export function Sessions({
 
       {provider !== undefined && (
         <ProviderTree entries={shownProviders} multi={multi} now={now}
-          head={headers ? (entry) => { const one = entries.find((item) => item.computer.host === entry.computer.host); return one === undefined ? null : <ComputerHead entry={one} line={line(one)} />; } : undefined} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
+          head={headers ? (entry) => { const one = entries.find((item) => item.computer.host === entry.computer.host); return one === undefined ? null : <ComputerGroupHead entry={one} line={line(one)} />; } : undefined} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
           manage={onCreated === undefined ? undefined : { onMenu: (entry, group, item) => setMenu({ entry, group, item }), onWorkspace: openWorkspace, onOpened: (entry, tap) => onCreated(tap, undefined, entry.key), onFailure }}
         />
       )}
@@ -602,7 +609,7 @@ export function Sessions({
           const rows = list.filter((session) => session.computer.host === entry.computer.host);
           return (
             <section key={entry.computer.origin} aria-label={entry.computer.label}>
-              <ComputerHead entry={entry} line={line(entry)} />
+              <ComputerGroupHead entry={entry} line={line(entry)} />
               <ProviderSection entries={mine} multi={false} now={now} onOpen={openTarget} />
               {sectionParts(mine).length > 0 && rows.length > 0 && <h3 className="caps list-label">Termivoa sessions</h3>}
               <ul className="rows">
@@ -702,6 +709,7 @@ export function Sessions({
           onWall={onWall}
           onSettings={onSettings}
           onAddComputer={onAddComputer ?? onSettings}
+          returnFocus={menuRef}
           onClose={() => setDrawer(false)}
         />
       )}

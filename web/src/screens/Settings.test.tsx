@@ -139,7 +139,7 @@ describe('LogoutSection', () => {
   });
 });
 
-describe('Settings → Integrations', () => {
+describe('Settings → (computer)', () => {
   const { info, mac, okEntry, vps } = fixtures;
   const row = (state: 'ready' | 'notRunning' | 'unsupported' | 'off', extra = {}) => renderToStaticMarkup(
     <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }), manage: true, agentTab: true }} onFailure={() => ''} /></ul>,

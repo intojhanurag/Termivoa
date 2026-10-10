@@ -209,7 +209,7 @@ function usePoll(on: boolean, read: () => void): void {
 type RowNote = { readonly kind: 'disconnected'; readonly revokeFailed?: boolean } | { readonly kind: 'error'; readonly text: string };
 type RowBusy = 'disconnect' | 'check' | 'install' | 'session';
 
-/** The row of one computer in Settings → Integrations. State comes from props, so each state renders on its own. */
+/** The row of one computer in Settings → (computer). State comes from props, so each state renders on its own. */
 export function GitHubRowView({
   label, state, login, mine, problem, setup, confirming = false, busy, note, help, children,
   onConnect, onContinue, onSetUp, onDisconnect, onConfirm, onCancel, onCheck, onRetry, onInstall, onShow, onNewSession,

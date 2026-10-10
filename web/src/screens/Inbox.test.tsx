@@ -7,7 +7,7 @@ import { markOpened } from './Herdr';
 import { InboxList, inboxItems, inboxTabShown, itemAt, needsYouText, NEXT_AFTER_MS, nextFilled, nextLabel, nextReady, NO_ANSWER, NOTHING, QueueNext, queueStep, waitingCount } from './Inbox';
 import { group, item, mac, okEntry, providerEntry, ready, shopGroups, snapshot, target, vps } from './providerFixtures';
 import { providerSources } from './providers';
-import { ComputerChips, Sessions } from './Sessions';
+import { Sessions } from './Sessions';
 
 const NOW = Date.parse('2026-10-04T10:00:00Z');
 let ids = 0;
@@ -231,7 +231,6 @@ describe('Sessions with the Needs you tab', () => {
     const done = [group('g', 'shop', [item('w9', 'lucky-valley', [target('t9', 'done')])])];
     expect(renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac), okEntry(vps)]} sessions={[turn(mac, 'docs')]} providers={[ready(mac, done)]} />)).not.toContain('Needs you');
     expect(renderToStaticMarkup(<Sessions {...base} onOpenItem={undefined} entries={[okEntry(mac)]} sessions={[api]} />)).not.toContain('Needs you');
-    expect(renderToStaticMarkup(<ComputerChips computers={[mac, vps]} chosen={undefined} onChoose={() => undefined} />)).not.toContain('Needs you');
   });
 
   it('opened on the tab: the list in place of the sessions, the count on the status line, the other tabs still there', () => {
