@@ -1,0 +1,13 @@
+Command: go test ./internal/broker -run '^$' -bench '^BenchmarkViewerPublicationCapture$' -benchmem -benchtime=200ms -count=1
+goos: darwin
+goarch: arm64
+pkg: github.com/intojhanurag/phone-terminal/internal/broker
+cpu: Apple M5
+BenchmarkViewerPublicationCapture/80x24-10        5883    38134 ns/op    157917 B/op    31 allocs/op
+BenchmarkViewerPublicationCapture/200x60-10      1090   210247 ns/op    985181 B/op    67 allocs/op
+BenchmarkViewerPublicationCapture/400x200-10      199  1206635 ns/op   6559095 B/op   207 allocs/op
+PASS
+ok github.com/intojhanurag/phone-terminal/internal/broker 5.108s
+
+Real canonical grid copies, per capture. Shared load, including broker tests.
+Not a measured total-host CPU or allocation-rate comparison.

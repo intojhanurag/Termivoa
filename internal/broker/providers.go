@@ -172,14 +172,20 @@ func (host *providerHost) info() (protocol.HTTPProviderInfo, bool) {
 }
 
 // settingsInfo is info for the settings response. The app reads the settings
-// again for "Check again": while herdr is not installed or not running, the
+// again for "Check again": while herdr is missing, stopped or ready, the
 // read asks the poll loop to look now (at most once per 2 s), so a new
-// install or a started server shows on the next read. It never waits.
+// install, a started server or changed agent commands show on the next read.
+// A ready herdr only rescans its agent commands; its retry timers stay.
+// It never waits; ready-state refresh remains read-only discovery.
 func (host *providerHost) settingsInfo(now time.Time) protocol.HTTPProviderInfo {
 	info, _ := host.info()
-	if info.State == protocol.NotInstalled || info.State == protocol.NotRunning {
+	if info.State == protocol.NotInstalled || info.State == protocol.NotRunning || info.State == protocol.HTTPProviderStateReady {
 		if last := host.looked.Load(); now.UnixNano()-last >= int64(providerLookEvery) && host.looked.CompareAndSwap(last, now.UnixNano()) {
-			host.provider.LookAgain()
+			if info.State == protocol.HTTPProviderStateReady {
+				host.provider.RefreshAgents()
+			} else {
+				host.provider.LookAgain()
+			}
 		}
 	}
 	return info
@@ -251,14 +257,22 @@ func (server *ManagementServer) providerChanged(change herdr.Change) {
 // window per route and device.
 type providerLimits struct {
 	mu      sync.Mutex
-	windows map[string]uploadWindow
+	windows map[string]*uploadWindow
 }
 
 func (limits *providerLimits) take(route, device string, perMinute int, now time.Time) bool {
+	_, ok := limits.takeWindow(route, device, perMinute, now)
+	return ok
+}
+
+func (limits *providerLimits) takeWindow(route, device string, perMinute int, now time.Time) (*uploadWindow, bool) {
+	if perMinute < 1 {
+		return nil, false
+	}
 	limits.mu.Lock()
 	defer limits.mu.Unlock()
 	if limits.windows == nil {
-		limits.windows = map[string]uploadWindow{}
+		limits.windows = map[string]*uploadWindow{}
 	}
 	for key, window := range limits.windows {
 		if now.Sub(window.start) >= time.Minute || now.Before(window.start) {
@@ -267,28 +281,51 @@ func (limits *providerLimits) take(route, device string, perMinute int, now time
 	}
 	key := route + "\x00" + device
 	window := limits.windows[key]
-	if window.count >= perMinute {
-		return false
+	if window != nil && window.count >= perMinute {
+		return nil, false
+	}
+	if window == nil {
+		window = &uploadWindow{}
 	}
 	if window.count == 0 {
 		window.start = now
 	}
 	window.count++
 	limits.windows[key] = window
-	return true
+	return window, true
 }
 
-// giveBack returns the unit that take gave at now: the work it was for never
-// started. It changes only the window that take counted in, so the bound of
-// a window stays exact.
-func (limits *providerLimits) giveBack(route, device string, now time.Time) {
-	limits.mu.Lock()
-	defer limits.mu.Unlock()
-	key := route + "\x00" + device
-	if window, ok := limits.windows[key]; ok && window.count > 0 && !now.Before(window.start) && now.Sub(window.start) < time.Minute {
-		window.count--
-		limits.windows[key] = window
+// reserve counts an in-flight create before invoking the provider. A finish
+// commits attempted work or refunds a preflight refusal, exactly once.
+func (limits *providerLimits) reserve(route, device string, perMinute int, now time.Time) *providerReservation {
+	window, ok := limits.takeWindow(route, device, perMinute, now)
+	if !ok {
+		return nil
 	}
+	return &providerReservation{limits: limits, key: route + "\x00" + device, window: window}
+}
+
+type providerReservation struct {
+	limits *providerLimits
+	key    string
+	window *uploadWindow
+	once   sync.Once
+}
+
+func (reservation *providerReservation) finish(consume bool) {
+	reservation.once.Do(func() {
+		if consume {
+			return
+		}
+		reservation.limits.mu.Lock()
+		defer reservation.limits.mu.Unlock()
+		// Pointer identity isolates rollovers, including a clock reset that
+		// recreates a window with the same timestamp. Old refunds cannot
+		// erase a charge in the new window.
+		if current := reservation.limits.windows[reservation.key]; current == reservation.window && current.count > 0 {
+			current.count--
+		}
+	})
 }
 
 // providerFor returns the host of an installed provider named id. A provider
@@ -474,15 +511,12 @@ func (server *ManagementServer) createProvider(
 	if !host.enabled.Load() {
 		return protocol.HTTPProviderCreateResponse{}, errProviderUnavailable
 	}
-	taken := server.now()
-	if !host.limits.take("create", device, providerCreatesPerMinute, taken) {
+	reservation := host.limits.reserve("create", device, providerCreatesPerMinute, server.now())
+	if reservation == nil {
 		return protocol.HTTPProviderCreateResponse{}, errProviderRate
 	}
 	response, err := host.provider.Create(ctx, request)
-	if errors.Is(err, herdr.ErrBusy) {
-		// Nothing started: "busy" does not use up one of the device's creates.
-		host.limits.giveBack("create", device, taken)
-	}
+	reservation.finish(!herdr.RefusedBeforeStart(err))
 	for herdrErr, failure := range map[error]providerFailure{
 		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: errProviderGroup,
 		herdr.ErrBusy: errProviderBusy, herdr.ErrKind: errProviderKind, herdr.ErrNotGit: errProviderNotGit,
@@ -504,7 +538,7 @@ func (server *ManagementServer) createProvider(
 // project by ID, never a path; the folder is checked here, right before the
 // call, because herdr uses another folder without a word when cwd is missing.
 // A new tab with an agent is also a create: it takes one of the device's 3
-// creates a minute, and gets it back when herdr is busy (nothing started).
+// creates a minute, and gets it back after a marked preflight refusal.
 func (server *ManagementServer) manageProvider(
 	ctx context.Context, host *providerHost, device string, request protocol.HTTPProviderManageRequest,
 ) (protocol.HTTPProviderManageResponse, error) {
@@ -513,9 +547,19 @@ func (server *ManagementServer) manageProvider(
 		return none, errProviderUnavailable
 	}
 	taken := server.now()
-	if !host.limits.take("manage", device, providerManagesPerMinute, taken) ||
-		request.Agent != nil && !host.limits.take("create", device, providerCreatesPerMinute, taken) {
+	if !host.limits.take("manage", device, providerManagesPerMinute, taken) {
 		return none, errProviderRate
+	}
+	var reservation *providerReservation
+	if request.Agent != nil {
+		reservation = host.limits.reserve("create", device, providerCreatesPerMinute, taken)
+		if reservation == nil {
+			return none, errProviderRate
+		}
+	}
+	consume := false
+	if reservation != nil {
+		defer func() { reservation.finish(consume) }()
 	}
 	var project herdr.Project
 	if request.Action == protocol.NewWorkspace {
@@ -532,10 +576,9 @@ func (server *ManagementServer) manageProvider(
 		}
 		project = herdr.Project{Folder: resolved, Name: stored.DisplayName}
 	}
+	consume = true // an interruption after this boundary may have changed herdr
 	response, err := host.provider.Manage(ctx, request, project)
-	if request.Agent != nil && errors.Is(err, herdr.ErrBusy) {
-		host.limits.giveBack("create", device, taken)
-	}
+	consume = !herdr.RefusedBeforeStart(err)
 	missing, full := errProviderItem, errProviderFull
 	if request.Action == protocol.OpenItem {
 		missing, full = errProviderClosedGone, errProviderGroupFull

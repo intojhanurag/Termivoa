@@ -24,30 +24,53 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 ## Features
 
+- **Smaller downloads.** First-open and update downloads use compressed app
+  assets automatically when the phone supports them; next beta.
+- **Private saved files.** Termivoa refuses linked or unsafe private files
+  before repairing permissions on a saved login or other private file; next
+  beta. Normal owned files keep their identity and private permissions.
+
 - **Many live sessions.** Start shells or coding agents on your computer and
-  switch between them with tabs. A dot shows new output.
+  switch between them with tabs. A dot shows new output. Screens are bounded
+  to 400 columns and 200 rows; next beta also rejects malformed screen-update
+  row positions on the computer.
+- **Keyboard navigation.** Next beta: closing a sheet returns focus to the
+  control that opened it, when that control is still available.
 - **Files.** Browse, search and read your project's files on the phone, and
   tap a path like `src/app.ts:42` in the terminal to open it there.
 - **Worktrees.** Start a task in its own folder and branch from `main` (or
   any branch) with one tap, with a random name you can edit, and Claude or
-  Codex already running in it.
+  Codex already running in it. Timed-out git writes clean up their ordinary
+  hook children before returning. Next beta: a computer creates one at a time;
+  another request gets a limit message immediately instead of waiting, and
+  other sessions stay available while a slow worktree creation finishes.
 - **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
   its projects and worktrees with blocked, done and working, buzzes when an
   agent is blocked or finished, opens one herdr terminal in Live and makes new
   worktrees. From the phone you can also open a tab or a workspace, close a tab or a
   workspace, remove a worktree (never one with uncommitted changes) and start
-  herdr. A new tab can start a coding agent with a first prompt, a closed
+  herdr. A refusal before creation starts keeps your create allowance. A new
+  tab or worktree can start an installed coding agent with a first
+  prompt, even before any agent runs in herdr. A closed
   worktree shows as closed with **Open**, and a herdr terminal has the same
-  **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
+  **⋯** menu. Agent starts wait for the sheet's settings read; a removed
+  choice stays unselected. Last-tab guidance explains when closing must happen
+  in herdr on the computer. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
 - **GitHub.** Connect each computer to GitHub from its page in
   **Settings** with a code, see your repositories, and clone one onto a
   computer with one tap, ready for a new session. No `gh` needed, only git;
   a folder that is already there is never deleted or overwritten. Pull and
-  push work in the clone. macOS and Linux, github.com only; next beta.
+  push work in the clone. Confirmed `uninstall --delete-data` tries to revoke
+  the saved login before removing local data, with a manual GitHub hint when
+  revocation is unconfirmed. Removing a saved login preserves other files that
+  share it. Older push times use compact weeks, months and years, and
+  repository rows stay usable when no last-push age can be shown. macOS and
+  Linux, github.com only; next beta.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
-  snapshot of their screen, marked Paused.
+  snapshot of their screen, marked Paused. Next beta: Wall-only sessions
+  avoid preparing screen updates faster than their tiles can show them.
 - **Computer health.** Each computer's version and last answer on its page
   in Settings, with Check again.
 - **Several computers.** Use a Mac, a Linux server and a VPS
@@ -75,12 +98,18 @@ the old working name "Phone Terminal" so existing installs keep working (see
   and start it in one tap.
 - **Composer.** Write long or multi-line text before you send it.
 - **History and copy.** Scroll back through bounded history and copy text.
+  Next beta: preparing History pages uses less CPU and temporary memory on
+  your computer.
+  Next beta reads byte-limited pages to completion, including styled output;
+  an incomplete read shows unavailable instead of skipping rows.
   In full-screen apps such as Claude Code, swipe on the terminal to scroll.
 - **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
   **Your turn**. Answer Claude Code and Codex questions with one tap; a
   changed question is never answered by mistake.
 - **Notifications.** A buzz when an agent waits or finishes, from every
   computer you paired. Only the session name and status, never terminal text.
+  Next beta: many stalled push subscriptions no longer use up the whole
+  send window before another phone gets a delivery attempt.
 - **Needs you.** One list of every agent that waits for you, on every
   computer and in herdr, with a **Next** button to go from one to the next.
   A notification tap starts there too. Next beta.
@@ -96,6 +125,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   from other computers.
 - **Desktop attach.** `pterm attach` opens the same session from any desktop
   terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
+  **Next beta:** invalid snapshot row ranges request a fresh screen safely.
+- **Watching busy terminals.** Next beta reduces CPU and temporary memory
+  used on the computer while Live or Wall shows changing output.
 - **Sessions survive the phone.** Close the app or lose signal; the session
   keeps running on the computer. Input is never queued or resent on its own.
 - **Pairing you can check.** Scan a QR code, compare a short code on both

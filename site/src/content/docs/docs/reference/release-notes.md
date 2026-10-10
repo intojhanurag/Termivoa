@@ -10,6 +10,47 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **GitHub cleanup during uninstall.** Confirmed `pterm uninstall --delete-data` on macOS/Linux tries to revoke the saved login before local removal. Unconfirmed revocation prints a manual GitHub link; canceling during revocation preserves local data. An empty private ownership folder remains. See [Update and uninstall](/docs/reference/update-and-uninstall/) and [Remove GitHub access](/docs/reference/security/#how-do-i-remove-termivoas-access-on-github).
+
+- **Fixed: an unusable GitHub push date no longer hides the repository list.** Termivoa omits only that row's last-push age. Repository names, other details and available actions still show; valid ages remain. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
+
+- **Fixed: old timestamps are easier to read.** Repository pushes, session ages and computer last-seen labels use compact weeks, months and years, such as **3 yr ago** instead of **1095 d ago**. Months and years are approximate elapsed units. See [repository push ages](/docs/guides/github/#what-does-a-repositorys-push-age-mean).
+
+- **Fixed: herdr starts during a pending agent check.** **New worktree** and **New tab** wait before starting an agent while **Checking available agents…** shows. **No agent** and **Shell** stay available; removed choices stay unselected. Close conflicts and last-tab hints explain when workspaces must be closed in herdr on the computer. See [Why does starting an agent wait for a check?](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
+
+- **Fixed: losing your keyboard place after closing a sheet.** **Close** and Escape return focus to the control that opened the sheet, if it is still available. Closing a nested sheet returns to its own control. See [Use sheets with a keyboard](/docs/guides/live-terminal/#use-sheets-with-a-keyboard).
+- **Fixed: missing rows in History.** Colored output could make History skip
+  recent retained rows after loading 25 pages. It now reads to completion;
+  an incomplete read shows unavailable. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
+
+- **Safer GitHub login removal.** Removing the saved login preserves another file linked to the same stored contents. Local deletion does not securely erase copies or backups. See [How do I disconnect?](/docs/guides/github/#how-do-i-disconnect).
+- **Fixed: private-file permission repair.** Termivoa refuses linked or unsafe private files before changing their permissions. Normal owned files keep their identity and private permissions. A saved GitHub login that is linked to another file is unavailable until the local file is inspected. See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
+- **herdr create allowance.** Refusals before creation starts keep the allowance shared by **New worktree** and agent **New tab**. Attempted creates still count if they fail. See [When does a create use my allowance?](/docs/guides/herdr/#when-does-a-create-use-my-allowance).
+
+- **Start the first herdr agent.** **New worktree** and **New tab** offer supported installed agents even with none running, and keep installed choices when their last agent stops. Discovery does not run an agent. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
+
+- **Smaller phone downloads.** App files transfer compressed on first open and after updates when the phone supports it. No new setup step. See [Download changes](/docs/quick-start/#what-changes-for-downloads-in-the-next-beta).
+
+- **Fixed: a slow worktree creation could hold up other sessions.** The
+  Sessions list and new session opens remain available while a checkout or
+  hook finishes. Too many simultaneous slow actions ask you to wait until
+  one finishes. See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-another-session-while-create-waits).
+
+- **Fixed: worktree requests that kept waiting after the phone left.** A computer creates one worktree at a time. Another request now gets a limit message immediately; wait for the first create to finish before trying again. A create that already started can still finish after the app closes. See [Worktree limits](/docs/guides/worktrees/#what-are-the-limits).
+- **Git write cleanup.** Timed-out commits, pushes and worktree creation stop their ordinary hook children before reporting failure or cleaning up a failed worktree. Check the branch before retrying. See [What happens when git times out?](/docs/guides/changes/#what-happens-when-git-times-out).
+
+- **Fixed: stalled push subscriptions could block other phones.** When many other phones' push services do not answer, they no longer use up the whole send window before your phone gets a delivery attempt. A temporary timeout keeps notifications on for a later event. See [How are notifications sent?](/docs/guides/notifications/#how-are-notifications-sent).
+- **Less work for the Wall.** Computers prepare Wall-only updates at the rate the tiles can display them. Tiles still reach the newest screen after output stops, and an open Live terminal keeps its normal update rate. See [Wall](/docs/guides/wall/#does-watching-the-wall-use-less-work-on-the-computer).
+- **Terminal screen bounds.** The computer rejects malformed row positions
+  in terminal screen updates; the phone already applies that limit. Desktop
+  attach also rejects invalid screen row ranges safely and asks for a fresh
+  screen. Phone behavior is unchanged. See
+  [What limits apply to the terminal screen?](/docs/guides/live-terminal/#what-limits-apply-to-the-terminal-screen).
+
+- **Less host overhead for busy terminals.** Watching changing output in Live or Wall uses less CPU and temporary memory on your computer. The terminal controls stay the same. See [What changes for busy terminals?](/docs/guides/live-terminal/#what-changes-for-busy-terminals).
+
+- **History uses less CPU and temporary memory on your computer.** Tap **history** and copy as usual. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
+
 - **A side menu for your computers, and Settings by computer.** With two or more computers, the menu button (**≡**) or the computer pill at the top of Sessions opens a side menu: **All computers**, each computer with its state and an amber count of what needs you there, then **Needs you**, **Wall**, **Settings** and **+ Add a computer**. Choose a computer to see only its sessions, herdr projects and **Needs you** items; an amber pill shows when another computer needs you. The computer chips are gone, and the tabs are **Sessions**, **herdr** and **Needs you** (**All** is now **Sessions**). **Settings** shows one card for each computer (with **herdr**, **GitHub** and project chips) and **This phone**; tap a card for that computer's page with **herdr**, **GitHub** and **This computer** (**Check again**, **Rename**, **Remove**). **Settings → Integrations** is gone. A computer that does not answer says **Can't reach**. The app uses the Geist font, which comes with the app (nothing loads from the internet). With one computer, there is no side menu. See [How do I switch between computers?](/docs/guides/computers/#how-do-i-switch-between-computers) and [Where are a computer's settings?](/docs/guides/computers/#where-are-a-computers-settings)
 - **Fixed: a white box in the side menu.** On iPhone, **All computers** no longer shows a white box when the side menu opens.
 - **GitHub from the phone.** Each computer's page in **Settings** has a row **GitHub on mac**. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)

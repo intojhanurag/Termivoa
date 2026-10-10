@@ -1,0 +1,5 @@
+=== RUN   TestStyledRetainedHistoryRequiresMoreThan25Pages
+    history_pagination_test.go:63: loaded all 1632 retained rows in 40 byte-limited pages
+--- PASS: TestStyledRetainedHistoryRequiresMoreThan25Pages (1.71s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	2.261s

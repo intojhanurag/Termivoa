@@ -76,6 +76,16 @@ It reaches only the repositories that you chose on GitHub. It cannot change work
 
 Two repositories with the same name from two owners cannot both be set up on one computer. The second one says **name taken**.
 
+## Why does a repository have no last-push age?
+
+**Next beta:** Termivoa omits the last-push age when GitHub has no usable date for it. The repository row still shows its name and other details.
+
+| What you see | What it means |
+| --- | --- |
+| A repository with no push age | No usable last-push date was supplied; the repository remains in the list. |
+| **Set up** or **on mac** still shows | Use the same available action; the missing age does not change whether the repository is on that computer. |
+| Other repositories show push ages | Their dates are usable, so their age labels remain. |
+
 ## What can a phone do with GitHub?
 
 | A paired phone can | A paired phone cannot |
@@ -100,9 +110,16 @@ When the repository and your git settings have no commit name, Termivoa sets the
 1. In **Settings**, tap the computer's card, then **Disconnect** in its **GitHub** part.
 2. The app asks: "Disconnect GitHub on mac?". Tap **Disconnect**.
 
-Termivoa removes the login at GitHub, then deletes it from the computer. When GitHub did not confirm the removal, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
+Termivoa asks GitHub to revoke the login, then removes it from the computer. When GitHub did not accept revocation, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
 
 On the computer you can also run `pterm github disconnect`. See the [CLI reference](/docs/reference/cli/#github).
+
+**Next beta:** removing the saved login preserves another file linked to the same stored contents. Local removal does not securely erase copies or backups.
+
+| What you need to remove | What to do |
+| --- | --- |
+| This computer's saved login | Use **Disconnect** on that computer's row. |
+| A copied login, or a login on a computer you lost | Revoke **Termivoa** in GitHub's [Authorized GitHub Apps](https://github.com/settings/applications); deleting local data does not itself end copied access. |
 
 After Disconnect, `git pull` and `git push` in a folder that Termivoa cloned fail with "Termivoa is not connected to GitHub on this computer. In Termivoa, open Settings, tap this computer, then Connect." Connect again to use them: in **Settings**, tap the computer's card, then **Connect**.
 
@@ -137,3 +154,34 @@ Yes, in a folder that Termivoa cloned, and in a folder that has your own git log
 ## Back to Termivoa
 
 Done. Go back to Termivoa.
+
+## Why does a saved login become unavailable?
+
+**Next beta:** Termivoa refuses a saved login file that is linked to another
+file or has an unsafe owner or type. It repairs permissions only on a valid
+owned file. Do not make links to saved login files.
+
+| Situation | What to do |
+| --- | --- |
+| You intentionally linked a saved login file | Stop Termivoa and inspect the local file; remove the link only after checking what it points to |
+| You did not create the link or change ownership | Investigate the computer before connecting GitHub again |
+| A normal file only needs tighter permissions | Termivoa repairs its permissions without replacing the file |
+
+See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked) and [Why is a private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).
+
+## What does a repository's push age mean?
+
+**Next beta:** Termivoa shows the elapsed time since GitHub reports the repository's last push. Old repositories use compact weeks, months and years, so a three-year-old push reads **3 yr ago**.
+
+| Label | Meaning |
+| --- | --- |
+| **just now** | Under one minute; also a future timestamp if clocks differ. |
+| **min ago** | Whole minutes, until one hour, such as **5 min ago**. |
+| **h ago** | Whole hours, until 24 hours, such as **2 h ago**. |
+| **yesterday** | Between 24 and 48 hours ago. |
+| **d ago** | Whole days, until seven days. |
+| **wk ago** | Whole seven-day weeks, until 30 days. |
+| **mo ago** | Whole 30-day months, until 365 days. |
+| **yr ago** | Whole 365-day years. |
+
+Months and years are approximate elapsed units. The time is calculated when Termivoa reads the repository list; searching the list does not refresh it. A repository with no push timestamp has no age label.

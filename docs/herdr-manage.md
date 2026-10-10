@@ -380,7 +380,7 @@ Lab facts, each run on herdr 0.8.2 and on the 0.9.3 release binary (isolated: a 
 | 192 | After `agent.start`, the host asks `agent.get` for the pane every 200 ms. With a prompt it waits until herdr sees the program and `launch_pending` is gone, then sends `agent.prompt` (5 s). `agent.start` and this wait share the 20 s step limit. Worst case, inside the phone's 45 s wait: create 43 s (`worktree.create` 15 s + 20 s + `agent.prompt` 5 s + the wait for the list 3 s); an agent tab 44 s (it reads a fresh snapshot first, 1 s, then `tab.create` 15 s + 20 s + 5 s + 3 s). An agent that is not ready when the limit ends answers `agentStarted: true`, `promptFailed`, and the prompt is not sent. With a prompt, an agent at a question (`blocked`) answers `agentNotReady`. Without a prompt the host answers "started" as soon as herdr sees the program, also when the agent waits at a question (no prompt was to be sent). When `agent.get` answers an error code other than the two of row 193 (a herdr without that call), the host cannot wait: the agent counts as started and the prompt is tried once, as before this fix |
 | 193 | The same wait: when herdr answers `agent_not_found` or `agent_not_running` (it dropped the launch: the program ended, or did not show within herdr's own launch limit, the `timeout_ms` of 15 s that the host sends with `agent.start`), or no program shows before the 20 s step limit ends, the answer is `agentStarted: false`, `agentFailed`. The tab or worktree stays. So a missing program is reported after about 15 s (lab: 15.1 s on herdr 0.8.2, 15.3 s on herdr 0.9.3), and a program that shows later than that counts as failed; the user sees it in the terminal that opens. The first build used a limit of 5 s; a real agent behind a heavy shell start can take longer ("Review of the fixes", M1) |
 | 194 | The recap's own read of the changes is quiet: when the host refuses it, the phone shows no notice and keeps no state, so a later tap on **Changes** asks again and shows the host's words. The phone cannot know that a herdr terminal has no folder (the wire does not say), so the one quiet request is still sent. The first end-to-end run of `H-newtab-quiet` (2026-10-06) still showed the text: Live also reads the files root ahead when a terminal opens (`files.list`, for tapped paths), and that refusal was not quiet. Fixed: a refused files listing that the Files view does not wait for says nothing (`Connection.rootReadAhead`) |
-| 195 | The **New worktree** sheet reads that computer's settings again when it opens, and the item menu when it opens and when its **New tab** chooser opens (quietly; home or a peer). The sheets show the provider's latest entry, so the kinds change in place. A picked kind that is no longer offered is never changed to another agent: both sheets fall back to no agent (**No agent** in the sheet; no kind picked in the chooser) and say so in one line, such as "codex is not running in herdr now." |
+| 195 | The **New worktree** sheet reads that computer's settings again when it opens, and the item menu when it opens and when its **New tab** chooser opens (quietly; home or a peer). The sheets show the provider's latest entry, so the kinds change in place. A picked kind that is no longer offered is never changed to another agent: both sheets fall back to no agent (**No agent** in the sheet; no kind picked in the chooser) and say so in one line, such as "codex is not available in herdr now." |
 | 196 | A probe run that did not end by itself (the 3 s limit, or it did not start) is no answer. The part it missed stays as it was, the result is not kept for that herdr version, and the probe runs again after 30 s, then 1, 2, 4 and at most 8 minutes; never on every poll, and not at a new discovery of the same herdr before that wait is over. A run that a signal ended is no answer either. The wait starts at 30 s again for another binary or herdr version |
 | 200 | (1) One busy text. (2) Field errors use `error field-note`. (3) The CSS comment is above `.confirm-pair`. (4) `confirmReady` and its 400 ms are in `ui.tsx`; the item menu's confirmations use the shared `ConfirmPair`. (5) Section 13, "Two workspaces at one repository's main checkout" |
 
@@ -394,13 +394,75 @@ One adversarial review of the branch `fix/herdr-bugs`. No critical or high findi
 | --- | --- | --- |
 | M1 | The 5 s limit for an agent's program to show in the pane reported a slow real agent (a heavy shell start, a loaded computer) as `agentFailed`; its prompt was never sent, and on a herdr without `terminal attach` the tab did not open | The 5 s limit is gone. herdr's own launch limit decides (the `timeout_ms` of 15 s sent with `agent.start`; herdr then answers `agent_not_found`), inside the 20 s step. A missing program is reported after about 15 s (`TestStartAgentWaitsForHerdrsRecord`, "the program shows late"; lab: 15.1 s and 15.3 s) |
 | M2 | Two tests had tight real-time margins (`TestAProbeThatTimedOutIsNotKept`: a 500 ms limit for real `/bin/sh` runs; `TestStartAgentWaitsForHerdrsRecord`: 500 ms against the fixed 200 ms look) | The probe test has a 2 s limit and a script that sleeps 60 s. The time between two looks is a test seam (`createTimeouts.look`, 10 ms in the test); a case that ends by itself has a step limit of one minute, one that ends at the limit has 1 s |
-| L1 | The **New worktree** sheet changed a picked agent that left to the first agent offered: a user who picked codex got claude | Never another agent: `offeredAgent` in both sheets (no agent), with the line "codex is not running in herdr now." (`droppedAgent`) |
+| L1 | The **New worktree** sheet changed a picked agent that left to the first agent offered: a user who picked codex got claude | Never another agent: `offeredAgent` in both sheets (no agent), with the line "codex is not available in herdr now." (`droppedAgent`) |
 | L2 | **Changes** could stay on "loading" for ever: the panel opened on **Files** while the quiet recap read was on its way, the switch to **Changes** did not ask again, and the quiet refusal left no state | A switch to **Changes** asks for the user when nothing they asked for is read or shown (`Connection.needsChanges`) |
 | L3 | A start with no prompt answered `agentNotReady` for an agent at a question, and the phone said "Your prompt was not sent." though none was typed | Host: with no prompt, an agent that is there is "started". Phone: `startNotice` knows whether a prompt was sent; without one it says "The agent started and waits at a question." |
 | L4 | Any `agent.get` failure other than `agent_not_found` and `agent_not_running` became `agentFailed` at the step limit: a herdr without `agent.get` made every start "failed" | Another error code from herdr ends the wait with the behaviour from before the wait: started, and the prompt is tried once |
 | L5 | Probe edges: a run that a signal ended counted as "ended" and kept "cannot attach" for good; the back-off was not reset for another binary or version; a new discovery ran the probe before its wait was over | Only a real exit code counts; the wait starts again for a new key; only the poll loop's timer runs a probe again (`TestProbeBackOffEdges`) |
-| L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`readsKinds`) |
-| O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (`providerLimits.giveBack`; it changes only the window that the take counted in, so the bound stays exact). The manage limit is as before (`TestProviderCreateRoute`) |
+| L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`useAgentKinds`) |
+| O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (originally `providerLimits.giveBack`; issue #209 replaces it with the one-shot reservations below). The manage limit is as before (`TestProviderCreateRoute`) |
 | Rule 21, last round | The **New worktree** sheet said "Too many new worktrees just now. Wait a minute, then try again." also when herdr was busy with another change (both are `limit_exceeded`) | The home computer's own fixed words show ("herdr is busy with another change; try again" or "too many requests; wait a minute and try again"). A peer's words are never shown, so for a peer the app says what is true for both: "herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again." |
 | e2e | `H-newtab-quiet`, never run before, failed: "this herdr terminal's folder cannot be read" still showed in a new herdr terminal outside git. A product defect: the read-ahead of the files root (see row 194) | The read-ahead's refusal is quiet; a listing that the user opened still shows the host's words (`Connection.test.ts`) |
 | Docs | The site said "herdr 0.8" and "herdr 0.9", and "two workspaces at the main folder of one repository" without the exact rule | The site names herdr 0.8.2 and herdr 0.9.3, and the rule as the host has it: two workspaces that herdr lists under one project as that project's main folder (each has herdr's worktree record for the same repository). The new lab case above shows that a second workspace without the record closes alone on both versions, so the host refuses nothing more |
+
+## Starting an installed kind with no running agents (issue #208)
+
+The **New tab** and **New worktree** choices now include herdr's advertised
+start kinds whose canonical commands are installed, as well as kinds already
+running. Stopping the last agent does not remove its installed kind. The
+poll-loop cache and bounds are specified in [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
+
+This supersedes the running-only selection rule recorded in the issue #195
+and L1 historical reviews above. The sheets still refresh settings when they
+open and never silently substitute another agent. A choice that becomes
+unavailable says, for example, "codex is not available in herdr now." and
+falls back to no agent. Create and newTab still check the exact offered kind
+before making anything, and launch only through herdr's existing methods.
+The broker requests a ready-state availability refresh on settings reads,
+under the existing 2 s throttle; it rescans agent commands only and keeps
+the lookup and retry timers; the response stays a nonblocking cache read.
+
+## Agent-tab create allowance (issue #209)
+
+An agent **New tab** shares the three-create allowance with **New worktree**.
+A pending reservation counts before the provider runs. A marked local
+preflight refusal (missing workspace, unavailable kind/state, busy, or tab
+limit reached) returns that create reservation, exactly once in its original
+window. Its separate 30/manage-attempts-per-minute budget remains charged.
+
+Once `tab.create` is attempted, the create unit stays consumed even when
+the response says the workspace is missing; a network failure or partial
+success must not create a new allowance for retrying ambiguous work. The
+full boundary and concurrency rules are in
+[herdr-provider.md](herdr-provider.md#create-admission-accounting-issue-209-2026-10-08).
+There is no automatic retry or new operation ID / protocol field.
+
+## How are fresh choices and close hints verified? (#210)
+
+The quiet settings callback now returns its read promise all the way from
+`App` through `Sessions` and `ProviderScreen`. `useAgentKinds` waits only
+agent actions, settles success/failure, ignores canceled effect lifetimes,
+and reads on initial sheet/menu open and chooser open, not chooser close.
+An agent disappearing from the latest `ProviderEntry` removes its selection
+without substituting another agent. **No agent** creation and **Shell** tabs
+remain usable during the read. A successful read is a snapshot, not a lock:
+the host still validates an agent that stops afterward. Failed quiet reads
+retain cached choices, and no create/manage request is retried.
+
+For `closeItem` conflicts, `manageStep` reloads then shows a fixed actionable
+note: inspect the changed list, close linked worktrees first, and close
+shared main-folder workspaces in herdr on the computer. It does not copy
+host or peer error text. Other changed/missing operations keep their
+existing behavior. The last-tab hint follows `closeWorktreesFirst` and
+`closesTogether`, so it no longer directs a user to a disabled close action.
+
+`node scripts/test-provider-kinds.mjs` runs actual React effects in installed
+Chromium, using synthetic data and intercepted mutation requests. The
+fixture covers home/peer origin routing, latest-entry changes, pending
+button/form guards, dropped choices, successful single submissions,
+chooser cancel, quiet-read failure, last-tab hints and stale close conflicts.
+These focused browser checks are separate from Vitest's SSR/helper suite.
+See [verification evidence](evidence/issue-210/verification.md). The existing
+herdr sidebar guide covers the same feature; no new navigation entry or
+CLI/security page change is needed because no command, access or stored
+information changes.

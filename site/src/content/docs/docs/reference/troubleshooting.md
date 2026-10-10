@@ -10,6 +10,14 @@ Most Termivoa problems start with one check on the computer. It never prints sec
 pterm doctor
 ```
 
+## Keyboard focus goes to the page start after closing a sheet
+
+**Next beta.** Update Termivoa and reload the app. Closing a sheet now
+returns focus to the control that opened it, if that control is still
+available. If the control disappeared or became unavailable, use Tab to
+pick another control. Focus that you moved elsewhere stays there.
+See [Use sheets with a keyboard](/docs/guides/live-terminal/#use-sheets-with-a-keyboard).
+
 ## "Can't reach your computer"
 
 1. Turn Tailscale on, on both phone and computer.
@@ -28,6 +36,19 @@ Keep the computer on power and stop sleep:
 - Windows: check **Settings → System → Power**.
 
 Sessions continue when it wakes.
+
+## Why is the first open slow?
+
+**Next beta:** Termivoa sends compressed app files when your browser supports
+them. First open and opening after an update still need a download. Keep
+Tailscale connected and allow that download to finish; later opens can use
+the phone's saved app files. If a custom network proxy rejects the download,
+check that it supports ordinary browser content-encoding negotiation.
+
+| Situation | What to check |
+| --- | --- |
+| First open or an update | The phone's connection and Tailscale on both devices |
+| A custom proxy reports a download error | Its content-encoding settings; Termivoa also supplies ordinary uncompressed files |
 
 ## It reconnects often
 
@@ -78,6 +99,8 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 5. Keep the computer awake; it sends them.
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
+
+**Next beta:** a temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
 
 ## Next is not there after a notification tap
 
@@ -279,6 +302,16 @@ A text that stays after **↻** on another computer: pair that computer again th
 
 Run `pterm setup` again and answer `y` to the linger question. More in [Keep sessions running on a server or VPS](/docs/install/linux/#keep-sessions-running-on-a-server-or-vps).
 
+## Why did a commit, push or worktree creation time out?
+
+Termivoa allows about two minutes for a git write. A slow hook or remote can
+exceed that. **Next beta:** git and its ordinary hook children are stopped
+before failure is reported or a failed worktree is cleaned up. Check the
+branch and files before retrying: a completed commit or push is not undone.
+Fix the hook or connection on the computer. Termivoa does not automatically
+send the write again. A program that a hook deliberately detached on macOS
+or Linux is outside this cleanup; manage it on the computer.
+
 ## Changes says "not a git repository"
 
 `cd` into your project in the terminal, then tap **Refresh**. The session's folder is not in a git repository.
@@ -294,6 +327,17 @@ Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<na
 ## New worktree says there are too many worktrees
 
 Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
+
+## New worktree says "Termivoa reached a limit on this computer"
+
+**Next beta.** Termivoa creates one worktree at a time on each computer.
+Wait for any earlier create to finish, then try **Create** again. If no
+create is running, remove a finished worktree or end a finished session to
+make room. Extra requests are refused immediately and do not run later.
+
+If the app closed while a create was already running, check Sessions for
+its worktree before making another. The computer can still finish that
+create after the phone leaves.
 
 ## New worktree says "git worktree add failed"
 
@@ -485,9 +529,22 @@ If the **herdr** part says "Run `pterm doctor` on mac." and has no **Install her
 
 Termivoa started herdr's server, but it did not answer in time. Run `herdr server` in a terminal on that computer to see why. On a peer computer the app says only "That computer could not do this."; the fix is the same.
 
-### "codex is not running in herdr now."
+### Why does "codex is not available in herdr now." appear?
 
-Termivoa offers an agent only while one of that kind runs in herdr on that computer. The agent you picked in **New worktree** or **New tab** left herdr before you tapped the button. The sheet goes to no agent; it never starts another agent in its place. Pick an agent that is listed, or start that agent in herdr first.
+**Next beta:** Termivoa offers supported agent kinds when their commands are installed or an agent of that kind runs in herdr. The picked kind is no longer available to the latest check. The **New worktree** or **New tab** sheet falls back to no agent and never starts another kind in its place. Pick a listed agent, or check its installation on that computer and tap **Check again**.
+
+### Why is an installed agent missing from herdr's choices?
+
+**Next beta:** Termivoa checks commands without starting them. An agent installed only through herdr's shell settings may be missing until it runs there once. Check that herdr supports starting that kind and that the command is installed for the computer running Termivoa, then tap **Check again**. Choices are limited to 16, with running kinds first. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
+
+### Why does herdr say "too many requests; wait a minute and try again"?
+
+Termivoa limits repeated creates on each computer. **Next beta:** a refusal
+before creation starts keeps your allowance; an attempted create still
+counts if it fails. **New worktree** and **New tab** with an agent share
+three attempts per minute. Wait about a minute before another create. If a
+tab or worktree already exists, open it to continue rather than creating it
+again. There is also a separate limit for repeated workspace-menu actions.
 
 ### "The tab is ready, but the agent did not start."
 
@@ -497,7 +554,11 @@ If the app says "The agent started, but your first prompt was not sent.", the ag
 
 ### "The list changed. Look again, then try again."
 
-The workspace was renamed, closed, or herdr restarted after the phone read the list. Nothing was closed or removed. Look at the row again and repeat the action.
+The workspace was renamed, closed, or herdr restarted after the phone read the list. **Remove worktree** says this, and so does **Close workspace** when the workspace is gone. Nothing was closed or removed. Look at the row again and repeat the action.
+
+### "The list changed. Look again before closing."
+
+**Close workspace** says "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer." The workspace changed after the phone read the list: it was renamed or closed, herdr restarted, or a worktree opened in it. Nothing was closed. Look at the row again. Close its worktrees first. If two workspaces share the project's main folder, close them in herdr on that computer.
 
 ### "silver-meadow has changes that are not committed"
 
@@ -658,3 +719,104 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+## Why does Termivoa say too many operations are in progress?
+
+**Next beta:** Termivoa limits simultaneous slow actions on each computer.
+On home, a slow action can say **too many operations in progress; try again
+after one finishes**. Worktree creation instead says **Termivoa reached a
+limit on this computer.** Wait for a pending action to finish, then try
+again. Other computers may show **That computer could not do this.**
+The Sessions list and authentication can still answer while actions wait.
+
+| If this happens | Next step |
+| --- | --- |
+| An action says too many operations are in progress | Wait for an action to finish, then try again. |
+| A worktree creation says Termivoa reached a limit | Wait for pending actions. Also check the limits of eight live sessions and 50 worktrees per repository. |
+| A worktree creation times out or loses its connection | Check Sessions before trying another creation; the computer may have completed it. |
+
+See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-another-session-while-create-waits).
+
+
+## What if uninstall cannot confirm GitHub revocation?
+
+**Next beta, macOS and Linux:** Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
+
+| Output or result | What should I do? |
+| --- | --- |
+| The data directory was retained after cleanup failed | Startup registration may already be removed, and cleanup may be partial. Ensure Termivoa is stopped and check GitHub's applications page before trying again. |
+| The command was canceled during revocation | Local deletion has not started; the saved login remains. GitHub may have received the revoke, so check its applications page. |
+| Cleanup was canceled after deletion began | Some data may already be removed. Check the remaining folder and GitHub access before retrying. |
+| An empty private data folder remains | This is expected. It contains only an ownership marker, with no database, login or other saved data. |
+
+## Why is a private file refused?
+
+**Next beta:** Termivoa refuses a linked, shared, wrongly owned or non-file
+object where it expects a private file. An unreadable file or one that changes
+during a permission check can also be refused. The refusal may prevent startup
+or leave GitHub unavailable.
+
+| What you see | What to do |
+| --- | --- |
+| A private file is a link or shared hard link | Stop Termivoa and inspect the local file and its target before removing a link or replacing the file |
+| Ownership was changed by an elevated run on Windows | Follow the ownership-repair advice in the host error, then run Termivoa without elevation |
+| The problem was unexpected | Investigate the computer before reconnecting or changing permissions |
+| An ordinary owned file only has loose permissions | Termivoa normally repairs these itself; it does not copy or replace the file |
+
+If Termivoa cannot inspect ownership, it reports the access error without
+guessing who owns the file. Inspect it locally before changing permissions.
+
+Do not grant everyone access or delete the database to hide a permission error.
+No new pairing or database is needed for a normal owned file. See [How are
+private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
+
+## Why does History say unavailable?
+
+**Next beta:** Termivoa says **History unavailable right now. Return to live
+and try again.** if the computer cannot finish a consistent history read,
+output keeps changing, or the read reaches its limits. A loading attempt has
+one minute. Tap **Done**, let output slow, then tap **history** again. It
+never shows missing rows as a continuous transcript.
+
+| Situation | What remains usable |
+| --- | --- |
+| History cannot finish | The live terminal, typing with control and a fresh History attempt |
+| A full-screen application is open | Its current screen; use the application's own scroll controls for older output |
+
+See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
+
+## Why is herdr Start or Create and start temporarily off?
+
+**Next beta:** Termivoa waits for **Checking available agents…** to finish before starting an agent. The choices update in place; a removed selection stays unselected. **Shell** and **No agent** remain available. If a check fails, last known choices remain and the computer may refuse an agent that stopped. See [herdr agent checks](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
+
+## Why can I not close a herdr workspace's last tab?
+
+**Next beta:** Termivoa closes a workspace to end its last tab. When **Close workspace** is off, close its linked worktrees first, or close workspaces sharing the project's main folder in herdr on the computer. If the list changed during a close, inspect it again before trying another action.
+
+## Why does a GitHub repository have no push age?
+
+**Next beta:** Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
+
+## Why does Termivoa not start after a backup hard-linked its files?
+
+**Next beta:** on macOS and Linux, Termivoa refuses a private file that has a
+second hard link. Some backup tools, such as rsnapshot or `cp -al`, make
+backups with hard links instead of copies. Then Termivoa's database or
+GitHub login is also reachable through the backup, so the broker stops at
+startup. The terminal or the log shows one of these errors:
+
+| Error text | File |
+| --- | --- |
+| `ipc: secure private file: private file must have exactly one hard link` | The database or the GitHub login |
+| `ipc: broker lock must have exactly one link` | The broker lock |
+
+To fix it, give each file its own copy again. Your backup keeps its copy.
+
+1. Run `pterm shutdown`.
+2. Open Termivoa's data folder (see [Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)) and list the files with more than one link: `find . -type f -links +1`.
+3. For each file, copy it and move the copy back over it: `cp -p FILE FILE.new && mv FILE.new FILE`. `-p` keeps its owner-only permissions.
+4. Exclude Termivoa's data folder from hard-link backups, or back it up with real copies.
+5. Run `pterm launch`.
+
+Do not delete the database or loosen its permissions to get past this error.
+No new pairing is needed.

@@ -108,8 +108,9 @@ func EnsurePrivateDirectory(path string) (string, error) {
 }
 
 // EnsurePrivateFile reapplies and verifies the platform current-user-only
-// boundary on an existing regular file. SQLite sidecar files remain protected
-// by the containing private directory.
+// boundary on one opened, permitted-owner, single-linked regular file without
+// following a final link. Repair is bound to that object; later caller reopens
+// are not. SQLite sidecars remain protected by the private containing directory.
 func EnsurePrivateFile(path string) error {
 	if path == "" {
 		return errors.New("ipc: private file path must not be empty")
@@ -127,6 +128,8 @@ func EnsurePrivateFile(path string) error {
 	return nil
 }
 
+const BrokerDataLockFile = "broker-data.lock"
+
 // LockBrokerDataDirectory prepares and canonically resolves a private data
 // directory, then takes a nonblocking current-user OS lock inside it. The
 // returned canonical path must be used for every later database operation.
@@ -135,7 +138,7 @@ func LockBrokerDataDirectory(path string) (string, *BrokerDataLock, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	lock, err := acquireBrokerLock(directory, "broker-data.lock")
+	lock, err := acquireBrokerLock(directory, BrokerDataLockFile)
 	if err != nil {
 		return "", nil, err
 	}

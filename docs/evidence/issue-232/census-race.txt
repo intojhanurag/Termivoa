@@ -1,0 +1,20 @@
+=== RUN   TestSoakFixtureChildCensusSnapshot
+=== RUN   TestSoakFixtureChildCensusSnapshot/scanner_overlaps_census
+=== RUN   TestSoakFixtureChildCensusSnapshot/unexpected_duplicate_fixture
+=== RUN   TestSoakFixtureChildCensusSnapshot/vanished_scanner_helper
+=== RUN   TestSoakFixtureChildCensusSnapshot/missing_fixture
+=== RUN   TestSoakFixtureChildCensusSnapshot/other_parent_and_marker_substrings
+=== RUN   TestSoakFixtureChildCensusSnapshot/duplicate_with_unexpected_arguments
+=== RUN   TestSoakFixtureChildCensusSnapshot/executable_path_with_spaces
+--- PASS: TestSoakFixtureChildCensusSnapshot (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/scanner_overlaps_census (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/unexpected_duplicate_fixture (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/vanished_scanner_helper (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/missing_fixture (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/other_parent_and_marker_substrings (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/duplicate_with_unexpected_arguments (0.00s)
+    --- PASS: TestSoakFixtureChildCensusSnapshot/executable_path_with_spaces (0.00s)
+=== RUN   TestSoakFixtureChildCensusLive
+--- PASS: TestSoakFixtureChildCensusLive (0.12s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/tests/soak	1.715s
