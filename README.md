@@ -34,7 +34,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   any branch) with one tap, with a random name you can edit, and Claude or
   Codex already running in it. Timed-out git writes clean up their ordinary
   hook children before returning. Next beta: a computer creates one at a time;
-  another request gets a limit message immediately instead of waiting.
+  another request gets a limit message immediately instead of waiting, and
+  other sessions stay available while a slow worktree creation finishes.
 - **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
   its projects and worktrees with blocked, done and working, buzzes when an
   agent is blocked or finished, opens one herdr terminal in Live and makes new

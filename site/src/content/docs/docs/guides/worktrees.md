@@ -36,6 +36,18 @@ new worktree while it is removed. Check the sheet's error and your worktrees
 before trying again. Hooks are trusted programs on your computer; deliberately
 detached programs on macOS or Linux are outside this cleanup.
 
+## Can I use another session while Create waits?
+
+**Next beta:** Termivoa keeps the Sessions list and other session opens
+available while a slow worktree checkout or hook finishes. Creating the
+worktree still needs the computer to finish its own git operation.
+
+| What happens | What to do |
+| --- | --- |
+| **Create** takes time | Open another session while it finishes. |
+| **Termivoa reached a limit on this computer.** | Wait for pending actions to finish. If this repository has 50 worktrees, remove an unused one; if eight sessions are running, close an unused session. |
+| A creation times out or the connection breaks | Check Sessions before creating again; the computer may have completed it. |
+
 ## See your worktrees
 
 A worktree session shows a **⎇ name** badge on the Sessions list and in the line above the terminal. The folders in `~/termivoa/worktrees` open in your editor like any other folder.
