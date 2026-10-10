@@ -18,6 +18,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- **A swipe in a full-screen app scrolls the pane under your finger.**
+  Phone: a swipe or a trackpad scroll in a full-screen app now sends the
+  wheel step at the cell under the finger or pointer, not at the cursor, so
+  `tmux` with split panes and mouse mode, or `vim` with splits, scrolls the
+  right pane. The `▲`/`▼` keys still scroll at the cursor. Host: no change.
+
 - **`pterm` no longer calls itself a private build.** Host: `pterm` and
   `pterm help` now start with "Termivoa, free and open-source beta". Phone:
   no change.
