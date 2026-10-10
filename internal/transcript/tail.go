@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	maxIndex        = 256  // tool calls and results remembered (design section 4.1)
-	maxUUIDs        = 4096 // uuid offsets remembered for rewind detection
-	maxCursors      = 1024 // cursors issued per history
-	driftWindow     = 200  // lines in the drift check
-	driftLimit      = 0.20 // unknown share above which the format is unknown
+	maxIndex        = 256     // tool calls and results remembered (design section 4.1)
+	seedRead        = 1 << 20 // read back at bind for the drift window and the last uuid
+	maxCursors      = 1024    // cursors issued per history
+	driftWindow     = 200     // lines in the drift check
+	driftLimit      = 0.20    // unknown share above which the format is unknown
 	pageBudget      = protocol.MaxChatPageBytes - 16<<10
 	blockOverhead   = 1 // the comma between blocks
 	thoughtMinimum  = time.Second
@@ -53,9 +53,10 @@ type Transcript struct {
 	calls    map[string]protocol.ChatBlock
 	results  map[string]toolResult
 	order    []string
-	uuids    map[string]int64
-	uuidList []string
-	lastTurn int64
+	lastUUID string // the uuid of the last line Poll read; "" when unknown
+	big      *bigScan
+	bigStart int64 // where the unfinished long line began
+	bigPos   int64 // where its scan stopped
 	cursors  map[string]cursor
 	issued   []string
 	drift    [driftWindow]bool
@@ -75,12 +76,12 @@ func newTranscript(file *os.File, agent Process, sessionID, cwd, name string, de
 	transcript := &Transcript{
 		file: file, Agent: agent, SessionID: sessionID, cwd: cwd, name: name, dev: dev, ino: ino,
 		calls: map[string]protocol.ChatBlock{}, results: map[string]toolResult{},
-		uuids: map[string]int64{}, cursors: map[string]cursor{}, grewAt: time.Now(),
+		cursors: map[string]cursor{}, grewAt: time.Now(),
 	}
 	transcript.reader = countingReader{file: file, read: new(atomic.Int64)}
 	transcript.history = newHistoryID()
 	transcript.live, transcript.size = lastLineEnd(transcript.reader, size), size
-	transcript.lastTurn = -1
+	transcript.seed()
 	return transcript
 }
 
@@ -161,22 +162,29 @@ type PollResult struct {
 
 // Poll is the 250 ms tick: fstat the held handle and read new complete
 // lines (at most 8 MiB a tick) into the tool index, the rewind check and the
-// drift check.
+// drift check. A long line that is not finished keeps its scan state, so
+// its bytes are read once (review C-1).
 func (transcript *Transcript) Poll() (PollResult, error) {
 	info, err := transcript.file.Stat()
 	if err != nil {
 		return PollResult{}, err
 	}
 	transcript.mu.Lock()
-	live, size := transcript.live, info.Size()
+	live, size, scan, start, from := transcript.live, info.Size(), transcript.big, transcript.bigStart, transcript.live
+	if scan != nil {
+		from = transcript.bigPos
+	}
 	transcript.mu.Unlock()
-	if size < live {
+	if size < from {
 		return PollResult{Truncated: true}, nil
 	}
-	if size == live {
+	if size == from {
 		return PollResult{}, nil
 	}
-	reader := newLineReader(transcript.reader, live, min(size, live+maxPollRead))
+	reader := newLineReader(transcript.reader, from, min(size, from+maxPollRead))
+	if scan != nil {
+		reader.resume(scan, start)
+	}
 	var result PollResult
 	for {
 		data, off, big, ok := reader.next()
@@ -192,10 +200,11 @@ func (transcript *Transcript) Poll() (PollResult, error) {
 		result.Grew = true
 	}
 	transcript.mu.Lock()
-	if reader.off > transcript.live {
-		transcript.live = reader.off
+	if reader.done > live {
+		transcript.live = reader.done
 		transcript.grewAt = time.Now()
 	}
+	transcript.big, transcript.bigStart, transcript.bigPos = reader.big, reader.bigStart, reader.off
 	if result.Rewound {
 		transcript.newHistoryLocked()
 	}
@@ -211,35 +220,31 @@ func (transcript *Transcript) parse(data []byte, off int64, big *bigScan) entry 
 	return parseClaudeLine(data, off, transcript.cwd)
 }
 
-// observe feeds the index, the uuid offsets, the drift window and (live)
-// the rewind check. It reports a rewind: a new prompt whose parent is older
-// than the last prompt (the user went back to an earlier message).
+// observe feeds the tool index. Live lines (Poll and the bind seed) also
+// feed the drift window, the version and the rewind check; old lines read
+// for a page never do (review S-8). It reports a rewind: a new prompt whose
+// parent is not the line read just before it (review C-3). After a line
+// whose uuid is unknown (a long line) there is no decision.
 func (transcript *Transcript) observe(item entry, live bool) bool {
-	bad := item.kind == kindBad || item.kind == kindUnknown
-	transcript.drift[transcript.driftAt] = bad
-	transcript.driftAt = (transcript.driftAt + 1) % driftWindow
-	transcript.driftN = min(transcript.driftN+1, driftWindow)
-	if item.version != "" && len(item.version) <= maxVersionBytes && protocol.ValidChatVersion(item.version) {
-		transcript.version = item.version
-	}
 	rewound := false
-	if live && item.kind == kindPrompt && item.parent != "" {
-		if parent, ok := transcript.uuids[item.parent]; ok && parent < transcript.lastTurn {
+	if live {
+		bad := item.kind == kindBad || item.kind == kindUnknown
+		transcript.drift[transcript.driftAt] = bad
+		transcript.driftAt = (transcript.driftAt + 1) % driftWindow
+		transcript.driftN = min(transcript.driftN+1, driftWindow)
+		if item.version != "" && len(item.version) <= maxVersionBytes && protocol.ValidChatVersion(item.version) {
+			transcript.version = item.version
+		}
+		if item.kind == kindPrompt && item.parent != "" && transcript.lastUUID != "" && item.parent != transcript.lastUUID {
 			rewound = true
 		}
-	}
-	if item.uuid != "" {
-		if _, ok := transcript.uuids[item.uuid]; !ok {
-			transcript.uuidList = append(transcript.uuidList, item.uuid)
-			if len(transcript.uuidList) > maxUUIDs {
-				delete(transcript.uuids, transcript.uuidList[0])
-				transcript.uuidList = transcript.uuidList[1:]
-			}
+		switch {
+		case item.sidechain:
+		case item.kind == kindBig:
+			transcript.lastUUID = ""
+		case item.uuid != "":
+			transcript.lastUUID = item.uuid
 		}
-		transcript.uuids[item.uuid] = item.off
-	}
-	if item.kind == kindPrompt && item.off > transcript.lastTurn {
-		transcript.lastTurn = item.off
 	}
 	for _, block := range item.blocks {
 		if block.Tool != nil && block.ID[0] == 't' {
@@ -250,6 +255,24 @@ func (transcript *Transcript) observe(item entry, live bool) bool {
 		transcript.remember("t:"+result.id, nil, &result)
 	}
 	return rewound
+}
+
+// seed reads back at most 1 MiB from the end at bind time: the last lines
+// fill the drift window and the version, the last one gives the uuid the
+// next prompt must name as its parent.
+func (transcript *Transcript) seed() {
+	from := max(transcript.live-seedRead, 0)
+	if from > 0 {
+		from = firstLineAfter(transcript.reader, from, transcript.live)
+	}
+	reader := newLineReader(transcript.reader, from, transcript.live)
+	for {
+		data, off, big, ok := reader.next()
+		if !ok {
+			return
+		}
+		transcript.observe(transcript.parse(data, off, big), true)
+	}
 }
 
 func (transcript *Transcript) remember(id string, call *protocol.ChatBlock, result *toolResult) {
@@ -432,12 +455,17 @@ func (transcript *Transcript) newAssembler(turn string) *assembler {
 
 func (transcript *Transcript) pageAfter(history string, from cursor, end int64) protocol.ChatPagePayload {
 	assembler := transcript.newAssembler(from.turn)
-	reader := newLineReader(transcript.reader, from.off, min(end, from.off+maxPageRead))
+	// end is a line end, so a long line inside is complete and is scanned
+	// to its end, never re-read from its start (review C-1).
+	reader := newLineReader(transcript.reader, from.off, end)
 	next, complete := from.off, true
 	for {
+		if reader.read > maxPageRead {
+			complete = false
+			break
+		}
 		data, off, big, ok := reader.next()
 		if !ok {
-			complete = reader.off >= end
 			break
 		}
 		before := len(assembler.out)
@@ -571,14 +599,22 @@ func onChain(entries []entry, anchor string) []entry {
 
 // findStart scans back from end in 64 KiB chunks for the start of the
 // turns-th prompt, reading at most 8 MiB, and never the whole file. A line
-// over maxLine is skipped (it is not a prompt to count).
+// over maxLine is not kept: its keys are checked as it passes (a long
+// prompt still counts). When one line alone is longer than the budget, the
+// page starts at that line, so paging always moves (review C-1).
 func (transcript *Transcript) findStart(end int64, turns int) int64 {
 	floor := max(end-maxPageRead, 0)
 	buffer := make([]byte, chunkSize)
 	var carry []byte // the end of a line whose start is before the chunk
-	big, found := false, 0
-	prompt := func(data []byte, start int64) bool {
-		if big || len(data) == 0 || !isUserLine(data) || parseClaudeLine(data, start, transcript.cwd).kind != kindPrompt {
+	var long *reverseScan
+	found := 0
+	prompt := func(start int64) bool {
+		switch {
+		case long != nil:
+			if !long.prompt() {
+				return false
+			}
+		case len(carry) == 0 || !isUserLine(carry) || parseClaudeLine(carry, start, transcript.cwd).kind != kindPrompt:
 			return false
 		}
 		found++
@@ -597,25 +633,74 @@ func (transcript *Transcript) findStart(end int64, turns int) int64 {
 				continue
 			}
 			start := position + int64(index) + 1
-			if !big {
+			if long != nil {
+				long.add(chunk[index+1 : stop])
+			} else {
 				carry = append(append([]byte(nil), chunk[index+1:stop]...), carry...)
 			}
-			if prompt(carry, start) {
+			if prompt(start) {
 				return start
 			}
-			carry, big, stop = nil, false, index
+			carry, long, stop = nil, nil, index
 		}
-		if !big && stop+len(carry) > maxLine {
-			big, carry = true, nil
-		} else if !big {
+		switch {
+		case long != nil:
+			long.add(chunk[:stop])
+		case stop+len(carry) > maxLine:
+			long = &reverseScan{}
+			long.add(carry)
+			long.add(chunk[:stop])
+			carry = nil
+		default:
 			carry = append(append([]byte(nil), chunk[:stop]...), carry...)
 		}
 	}
 	if floor == 0 {
 		return 0
 	}
-	// The budget ended inside the file: start at the first full line in it.
-	return firstLineAfter(transcript.reader, floor, end)
+	// The budget ended inside the file: start at the first full line in it,
+	// or, when one line fills the whole budget, at that line.
+	if start := firstLineAfter(transcript.reader, floor, end); start < end {
+		return start
+	}
+	return lineStart(transcript.reader, end)
+}
+
+// reverseScan checks a long line for its keys while it is read backward.
+type reverseScan struct {
+	head                           []byte // the first bytes of what was seen, for keys over a chunk edge
+	user, toolUse, sidechain, meta bool
+}
+
+func (scan *reverseScan) add(part []byte) {
+	window := append(append([]byte(nil), part...), scan.head...)
+	scan.user = scan.user || bytes.Contains(window, userKey)
+	scan.toolUse = scan.toolUse || bytes.Contains(window, toolUseKey)
+	scan.sidechain = scan.sidechain || bytes.Contains(window, sidechainKey)
+	scan.meta = scan.meta || bytes.Contains(window, metaKey) || bytes.Contains(window, compactKey)
+	scan.head = window[:min(len(window), bigOverlap)]
+}
+
+func (scan *reverseScan) prompt() bool {
+	return scan.user && !scan.toolUse && !scan.sidechain && !scan.meta
+}
+
+// lineStart is the start of the line that ends at end (reading back as far
+// as that line goes).
+func lineStart(file io.ReaderAt, end int64) int64 {
+	buffer := make([]byte, chunkSize)
+	limit := end - 1 // the line feed that ends the line
+	for position := limit; position > 0; {
+		count := min(int64(chunkSize), position)
+		position -= count
+		if _, err := file.ReadAt(buffer[:count], position); err != nil {
+			return end
+		}
+		if index := bytes.LastIndexByte(buffer[:count], '\n'); index >= 0 {
+			return position + int64(index) + 1
+		}
+	}
+	return 0
 }
 
 func firstLineAfter(file io.ReaderAt, from, end int64) int64 {
@@ -632,7 +717,8 @@ func firstLineAfter(file io.ReaderAt, from, end int64) int64 {
 	return end
 }
 
-// lastLineEnd is the offset after the last line feed at or before size.
+// lastLineEnd is the offset after the last line feed at or before size, so
+// live never starts inside a line (review: low).
 func lastLineEnd(file io.ReaderAt, size int64) int64 {
 	buffer := make([]byte, chunkSize)
 	for position := size; position > 0; {
@@ -643,11 +729,6 @@ func lastLineEnd(file io.ReaderAt, size int64) int64 {
 		}
 		if index := bytes.LastIndexByte(buffer[:count], '\n'); index >= 0 {
 			return position + int64(index) + 1
-		}
-		if size-position > maxLine+chunkSize {
-			// A partial last line over the cap: start live reads after it
-			// is done; nothing before is lost, pages read it.
-			return size
 		}
 	}
 	return 0

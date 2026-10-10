@@ -573,6 +573,9 @@ See [chat-view.md](chat-view.md), sections 8 and 14, and ADR
 - **Storage (rule 19).** Memory only; nothing in SQLite, logs or files.
 - **Not covered.** A process of the same user can write a fake pid file and
   transcript that pass every check (it can already type into the terminal).
+  A phone with control of a shell session can type `pterm chat on` and
+  answer `y`: the on-switch rule (S1) stops casual enabling from Settings,
+  not a device that already controls a shell on the computer.
   A secret shape the mask does not know reaches the phone.
 
 ## Operational and release limits

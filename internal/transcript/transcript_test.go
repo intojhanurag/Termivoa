@@ -242,7 +242,7 @@ func TestLinesOverTheCapAreScannedNotBuffered(t *testing.T) {
 	f.session.Line("user", map[string]any{"message": map[string]any{"role": "user", "content": strings.Repeat("z", 1100<<10)}})
 	page := valid(t, mustPage(t, f.linked(), transcript.PageRequest{Turns: 5}))
 	got := kinds(page.Blocks)
-	if got != "user_text,tool_call,tool_call,omitted" {
+	if got != "user_text,tool_call,tool_call,user_text" || *page.Blocks[3].Text != "Message too large to show" {
 		t.Fatalf("kinds = %s", got)
 	}
 	if page.Blocks[1].Tool.Status != protocol.ChatToolOK || page.Blocks[2].Tool.Status != protocol.ChatToolError ||
@@ -382,5 +382,152 @@ func TestPagesStayUnderTheMessageCap(t *testing.T) {
 	older := valid(t, mustPage(t, tail, transcript.PageRequest{Before: *page.Before, Turns: 60}))
 	if len(older.Blocks) == 0 {
 		t.Fatal("older page is empty")
+	}
+}
+
+func TestMaskingSurvivesEscapesAndHiddenCharacters(t *testing.T) {
+	f := newFixture(t)
+	token := "ghp_" + strings.Repeat("a", 18) + "\u200b" + strings.Repeat("b", 18)
+	f.session.Prompt("\x1b[0mghp_" + strings.Repeat("c", 36) + " x_" + "sk-ant-" + strings.Repeat("d", 20) + " " + token)
+	page := valid(t, mustPage(t, f.linked(), transcript.PageRequest{Turns: 1}))
+	text := *page.Blocks[0].Text
+	for _, leaked := range []string{"cccc", "dddd", "aaaa", "bbbb"} {
+		if strings.Contains(text, leaked) {
+			t.Fatalf("%q leaked: %q", leaked, text)
+		}
+	}
+	if strings.Count(text, "[secret]") != 3 {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestResultsWithInvalidIDsAreDropped(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("go")
+	call := transcripttest.ToolID()
+	f.session.Assistant(transcripttest.MessageID(), transcripttest.ToolUse(call, "Bash", map[string]any{"command": "ls"}))
+	tail := f.linked()
+	f.session.Result("toolu_x/../"+call, "ok", false)
+	tail.Poll()
+	page := valid(t, mustPage(t, tail, transcript.PageRequest{Turns: 1}))
+	if page.Blocks[1].Tool.Status != protocol.ChatToolRunning {
+		t.Fatalf("an invalid tool_use_id updated a call: %+v", page.Blocks[1].Tool)
+	}
+}
+
+// A line over 8 MiB is read once by Poll, across ticks, and pages move past
+// it (review C-1).
+func TestHugeLineIsReadOnceAndPagesMove(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("dump it")
+	call := transcripttest.ToolID()
+	f.session.Assistant(transcripttest.MessageID(), transcripttest.ToolUse(call, "Bash", map[string]any{"command": "cat big"}))
+	tail := f.linked()
+	first := mustPage(t, tail, transcript.PageRequest{Turns: 5})
+	line := []byte(`{"type":"user","uuid":"big1","parentUuid":"x","timestamp":"2026-10-10T10:00:00Z","message":{"role":"user","content":[{"tool_use_id":"` +
+		call + `","type":"tool_result","content":"` + strings.Repeat("y", 10<<20) + `"}]}}` + "\n")
+	half := len(line) / 2
+	if err := f.session.Raw(line[:half]); err != nil {
+		t.Fatal(err)
+	}
+	reads := func(poll func()) int64 { before := tail.BytesRead(); poll(); return tail.BytesRead() - before }
+	if read := reads(func() { tail.Poll() }) + reads(func() { tail.Poll() }); read > int64(half)+(1<<20) {
+		t.Fatalf("the unfinished line was read %d bytes, more than once", read)
+	}
+	if read := reads(func() { tail.Poll() }); read > 0 {
+		t.Fatalf("an idle poll read %d bytes", read)
+	}
+	if err := f.session.Raw(line[half:]); err != nil {
+		t.Fatal(err)
+	}
+	var result transcript.PollResult
+	read := reads(func() { result, _ = tail.Poll() })
+	if !result.Grew || read > int64(len(line)-half)+(1<<20) {
+		t.Fatalf("finishing poll = %+v, read %d", result, read)
+	}
+	f.session.Prompt("after")
+	tail.Poll()
+	// Over the 8 MiB budget the page stops after the long line and the next
+	// one goes on: no page repeats its start.
+	after := valid(t, mustPage(t, tail, transcript.PageRequest{After: first.After, Turns: 5}))
+	if after.Complete || len(after.Blocks) != 1 || after.Blocks[0].Tool.Status != protocol.ChatToolOK {
+		t.Fatalf("after page = %v complete=%v", kinds(after.Blocks), after.Complete)
+	}
+	rest := valid(t, mustPage(t, tail, transcript.PageRequest{After: after.After, Turns: 5}))
+	if !rest.Complete || kinds(rest.Blocks) != "user_text" {
+		t.Fatalf("next page = %v complete=%v", kinds(rest.Blocks), rest.Complete)
+	}
+	// From the newest page back to the start, paging always moves.
+	page := valid(t, mustPage(t, tail, transcript.PageRequest{Turns: 1}))
+	for steps := 0; page.Before != nil; steps++ {
+		if steps > 5 {
+			t.Fatal("paging back does not move")
+		}
+		page = valid(t, mustPage(t, tail, transcript.PageRequest{Before: *page.Before, Turns: 1}))
+	}
+}
+
+func TestLongPromptOpensATurn(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("first")
+	f.session.Prompt(strings.Repeat("p", 1200<<10))
+	f.session.Assistant(transcripttest.MessageID(), transcripttest.Text("done"))
+	page := valid(t, mustPage(t, f.linked(), transcript.PageRequest{Turns: 1}))
+	if got := kinds(page.Blocks); got != "user_text,assistant_text" || page.Before == nil || *page.Blocks[1].Turn != page.Blocks[0].ID {
+		t.Fatalf("kinds = %s before=%v", got, page.Before)
+	}
+}
+
+func TestRewindToAMessageBeforeTheReadRange(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("very old")
+	old := f.session.Assistant(transcripttest.MessageID(), transcripttest.Text("old answer"))
+	for range 30 {
+		f.session.Turn("later")
+	}
+	tail := f.linked()
+	before := tail.History()
+	f.session.SetParent(old)
+	f.session.Prompt("back to the start")
+	if result, _ := tail.Poll(); !result.Rewound || tail.History() == before {
+		t.Fatalf("poll = %+v", result)
+	}
+}
+
+func TestLiveNeverStartsInsideALine(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("one")
+	part := `{"type":"user","uuid":"p2","timestamp":"2026-10-10T10:00:00Z","message":{"role":"user","content":"` + strings.Repeat("q", 2<<20)
+	if err := f.session.Raw([]byte(part)); err != nil {
+		t.Fatal(err)
+	}
+	tail := f.linked()
+	if err := f.session.Raw([]byte(`"}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if result, _ := tail.Poll(); !result.Grew {
+		t.Fatal("the finished line was lost")
+	}
+	page := valid(t, mustPage(t, tail, transcript.PageRequest{Turns: 5}))
+	if got := kinds(page.Blocks); got != "user_text,user_text" {
+		t.Fatalf("kinds = %s", got)
+	}
+}
+
+func TestPagesDoNotFeedTheDriftWindow(t *testing.T) {
+	f := newFixture(t)
+	for range 60 {
+		f.session.Line("brand-new-kind", map[string]any{"data": 1})
+	}
+	for range 300 { // well past the 1 MiB read back at bind
+		f.session.Prompt(strings.Repeat("w", 4<<10))
+	}
+	tail := f.linked()
+	page := mustPage(t, tail, transcript.PageRequest{Turns: 60})
+	for page.Before != nil {
+		page = mustPage(t, tail, transcript.PageRequest{Before: *page.Before, Turns: 60})
+	}
+	if tail.FormatUnknown() {
+		t.Fatalf("old lines read for pages counted as drift: %v", tail.Unknown())
 	}
 }

@@ -4,6 +4,7 @@ package transcript_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -131,8 +132,20 @@ func TestRecheck(t *testing.T) {
 		t.Fatalf("claimed file: %q", got)
 	}
 	_ = os.Remove(filepath.Join(f.root, "sessions", "7000.json"))
+	// Another claude (or claude -p) that ran and left: not our /clear (C-2).
+	if got := tail.Recheck(f.config, f.procs, true); got != transcript.RecheckOK {
+		t.Fatalf("an unrelated newer file: %q", got)
+	}
+	// Our own pid file written after our transcript stopped ties it to us.
+	later := time.Now().Add(time.Second)
+	_ = os.Chtimes(filepath.Join(f.root, "sessions", "4242.json"), later, later)
 	if got := tail.Recheck(f.config, f.procs, true); got != transcript.RecheckCleared {
 		t.Fatalf("cleared: %q", got)
+	}
+	// Linux start times move with btime: 1.5 s apart is the same process (C-4).
+	moved := []transcript.Process{{PID: agentPID, Start: agentStart.Add(1500 * time.Millisecond)}}
+	if got := tail.Recheck(f.config, moved, false); got == transcript.RecheckEnded {
+		t.Fatal("a 1.5 s start jitter ended the agent")
 	}
 	// The path now names another file: re-bind.
 	_ = os.Rename(f.session.Path, f.session.Path+".superseded-1")
@@ -150,4 +163,16 @@ func TestGuardRefusesRealFolders(t *testing.T) {
 	}()
 	home, _ := os.UserHomeDir()
 	transcript.Bind(context.Background(), transcript.Config{Claude: filepath.Join(home, ".claude")}, nil)
+}
+
+func TestBindFailsClosedOverTheFolderLimit(t *testing.T) {
+	f := newFixture(t)
+	f.session.Prompt("hi")
+	defer transcript.SetMaxProjectDirs(3)()
+	for index := range 3 {
+		_ = os.MkdirAll(filepath.Join(f.root, "projects", fmt.Sprintf("-other-%d", index)), 0o700)
+	}
+	if link := f.bind(); link.State != protocol.ChatLinkNone || link.Reason != protocol.ChatReasonNoFile {
+		t.Fatalf("link = %s %s", link.State, link.Reason)
+	}
 }

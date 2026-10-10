@@ -93,3 +93,11 @@ func check(t *testing.T, page protocol.ChatPagePayload) {
 		t.Fatalf("%v: %.400s", err, data)
 	}
 }
+
+func TestParseDropsResultsWithInvalidIDs(t *testing.T) {
+	item := parseClaudeLine([]byte(`{"type":"user","uuid":"u","timestamp":"2026-10-10T10:00:00Z","message":{"role":"user","content":[`+
+		`{"type":"tool_result","tool_use_id":"toolu_1/../x","content":"a"},{"type":"tool_result","tool_use_id":"toolu_ok","content":"b"}]}}`), 0, "/w")
+	if item.kind != kindResults || len(item.results) != 1 || item.results[0].id != "toolu_ok" {
+		t.Fatalf("item = %+v", item)
+	}
+}

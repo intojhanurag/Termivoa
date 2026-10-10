@@ -13,3 +13,10 @@ func ParseAll(data []byte) {
 		off += end + 1
 	}
 }
+
+// SetMaxProjectDirs lowers the folder limit for a test; call the result to restore it.
+func SetMaxProjectDirs(limit int) func() {
+	previous := maxProjectDirs
+	maxProjectDirs = limit
+	return func() { maxProjectDirs = previous }
+}

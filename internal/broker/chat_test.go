@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -80,7 +81,15 @@ func setUpChat(t *testing.T, server *ManagementServer, enabled bool) *chatFixtur
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(func() { _ = hub.setEnabled(context.Background(), false) })
+	t.Cleanup(func() {
+		_ = hub.setEnabled(context.Background(), false)
+		// No chat goroutine outlives its tail or viewer.
+		waitFor(t, func() bool {
+			buffer := make([]byte, 1<<20)
+			stacks := string(buffer[:runtime.Stack(buffer, true)])
+			return !strings.Contains(stacks, "(*chatTail).run") && !strings.Contains(stacks, "(*chatSub).run")
+		})
+	})
 	return fixture
 }
 
@@ -299,11 +308,11 @@ func TestChatTailsAreSharedCappedAndLinger(t *testing.T) {
 		t.Fatalf("one tail per session: %+v", status)
 	}
 	for index := range maxChatTails - 1 {
-		if _, ok := chat.hub.tailFor(fmt.Sprintf("other-%d", index), session); !ok {
+		if _, refused := chat.hub.tailFor(fmt.Sprintf("other-%d", index), session); refused != "" {
 			t.Fatal("room for 8 tails")
 		}
 	}
-	if _, ok := chat.hub.tailFor("ninth", session); ok {
+	if _, refused := chat.hub.tailFor("ninth", session); refused != protocol.ChatReasonBusy {
 		t.Fatal("a ninth tail started")
 	}
 	first.action(t, protocol.ChatClose, protocol.EmptyPayload{})
@@ -314,4 +323,55 @@ func TestChatTailsAreSharedCappedAndLinger(t *testing.T) {
 		_, ok := chat.hub.tails[rpcSessionID]
 		return !ok
 	})
+}
+
+func TestChatNoTailStartsAfterOff(t *testing.T) {
+	fixture, session, _ := newStreamFixture(t)
+	chat := setUpChat(t, fixture.server, true)
+	var wg sync.WaitGroup
+	for index := range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			chat.hub.tailFor(fmt.Sprintf("race-%d", index%6), session)
+		}()
+	}
+	if err := chat.hub.setEnabled(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	// Whatever won the race, after off returned no tail may start or stay.
+	if _, refused := chat.hub.tailFor("after", session); refused != protocol.ChatLinkOff {
+		t.Fatalf("tailFor after off = %q", refused)
+	}
+	if status := chat.hub.status(); status.Tails != 0 {
+		t.Fatalf("tails after off: %+v", status)
+	}
+}
+
+func TestChatPageReadWhileTurnedOffIsNotSent(t *testing.T) {
+	fixture, _, _ := newStreamFixture(t)
+	chat := setUpChat(t, fixture.server, true)
+	chat.agent.Prompt("secret plan")
+	previous := chatPageRead
+	chatPageRead = func() { _ = chat.hub.setEnabled(context.Background(), false) }
+	t.Cleanup(func() { chatPageRead = previous })
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	request := client.action(t, protocol.ChatOpen, protocol.ChatOpenPayload{Limit: 10})
+	client.await(t, protocol.ChatState, request)
+	state := chatState(t, client.await(t, protocol.ChatState, request))
+	if state.Link != protocol.ChatLinkOff {
+		t.Fatalf("after off = %+v", state)
+	}
+	for {
+		select {
+		case message := <-client.messages:
+			if message.Type == protocol.ChatPage {
+				t.Fatal("a page read before off was sent after it")
+			}
+		case <-time.After(200 * time.Millisecond):
+			return
+		}
+	}
 }
