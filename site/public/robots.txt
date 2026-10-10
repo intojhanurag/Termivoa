@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://termivoa.vercel.app/sitemap-index.xml
-Sitemap: https://termivoa.vercel.app/sitemap-home.xml
+Sitemap: https://termivoa.com/sitemap-index.xml
+Sitemap: https://termivoa.com/sitemap-home.xml

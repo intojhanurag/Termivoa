@@ -260,7 +260,7 @@ export function VoicePanel({ snapshot, onMic, onCancel, onDone }: {
         <p role="alert" className="error voice-status">{snapshot.error}</p>
       ) : (
         <p role="status" className="voice-status">
-          {listening ? <><span className="dot red" aria-hidden="true" />LISTENING · {clock(snapshot.elapsed)}</> : 'TAP THE MIC'}
+          {listening ? <><span className="dot red" aria-hidden="true" />Listening · {clock(snapshot.elapsed)}</> : 'Tap the mic'}
         </p>
       )}
       <div className="voice-actions">

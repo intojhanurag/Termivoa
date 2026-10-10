@@ -6,6 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance
+
+- **History uses less host CPU and memory** (#219). Host: page construction
+  measures each normalized row once instead of encoding a growing page
+  repeatedly, while preserving the row and message limits. Phone: no app
+  change; the same **history** action reads the same pages.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,
@@ -109,6 +116,34 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Phone: a side menu for computers, Settings by computer, and the Geist
+  font (`docs/ui-revamp.md`; docs: `guides/computers.md`). With two or more
+  computers, a menu button ("Computers and menu") and a computer pill ("All
+  computers" or "● mac") at the top of Sessions open a side menu: All
+  computers, one row for each computer (its state, such as "2 sessions · 1
+  working" or "can't reach", and an amber count of what needs you there),
+  then Needs you, Wall, Settings and + Add a computer. A chosen computer
+  filters Sessions, herdr and Needs you; an amber pill names another
+  computer that needs you. The computer chips are gone; the tabs are
+  Sessions · herdr · Needs you ("All" is now "Sessions"). In All computers,
+  the lists have a header for each computer (the "on mac" tag on herdr
+  projects is gone). One computer: no side menu. Settings has a main page
+  (Computers: one card for each computer with herdr, GitHub and project
+  chips; Found on your network; + Add a computer; This phone: Name,
+  Notifications, Terminal text size, Build, Log out) and a page for each
+  computer (herdr, GitHub, and This computer: Projects, Check again, Rename,
+  Remove). "Settings → Integrations" and "This device" are gone. Texts:
+  "Can't reach" for a computer that does not answer; Needs you says "Some
+  computers did not answer. See Sessions."; sentence case for state words
+  ("● Control", "Read-only", "Taking control…", "Exited", "Listening ·",
+  "Tap the mic", "git missing", "Connected"). Geist and Geist Mono (SIL Open
+  Font License 1.1) come with the app; nothing loads from the internet. No
+  protocol or stored-data change. Host: no change.
+- **Lower host overhead while watching a busy terminal** (#220). Host: typed
+  terminal messages use the same semantic validators before serialization,
+  without parsing their own JSON again. Incoming messages remain strictly
+  validated. Phone: Live and Wall use the same controls and terminal frames.
+
 - Phone, UI consistency (no feature removed; less text): every
   confirmation of a destructive or multi-line action (Terminate session,
   Send N lines, Paste N lines, Remove worktree, Remove anyway, Remove a
@@ -129,6 +164,26 @@ All notable changes are documented here. The format follows
   Safari." Host: no change.
 
 ### Fixed
+
+- Terminal screen bounds (#237). Host: strict decoding rejects snapshot row
+  positions outside the existing 0–199 range before doing coordinate
+  arithmetic, including oversized integers that could overflow the old
+  check. Valid chunks ending at 200 remain accepted. Phone: its existing
+  row-position limit is unchanged. No protocol fields or revision change.
+
+- Phone: no change. Host: desktop attach rejects invalid snapshot row ranges
+  safely and requests a fresh screen instead of allowing integer overflow
+  in its row assembler (#247). Valid screens and protocol are unchanged.
+
+- Wall performance (#221). Host: screen publication waits for the next frame
+  a viewer can receive, avoiding Live-rate screen copies for a thumbnail-only
+  session or a blocked viewer. Phone: Wall tiles still update up to 5 times
+  per second and reach the final screen; an open Live terminal keeps its rate.
+- Phone: notifications can reach a healthy phone even when many other push
+  subscriptions do not answer. Host: each request gets a bounded share of
+  the delivery window; each delivery keeps at most four requests open. Temporary failures
+  keep the subscription, while expired subscriptions are still removed
+  (#207). No protocol or database change.
 
 - Git write cleanup (#222). Phone: a timed-out commit, push or worktree
   creation no longer leaves ordinary hook children running after failure.

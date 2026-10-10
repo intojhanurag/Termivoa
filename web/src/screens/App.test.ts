@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike, installView,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen, liveOn, queueNext, queueOnArrival, queueScreen, sessionsView,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen, liveOn, queueItems, queueNext, queueOnArrival, queueScreen, sessionsView,
 } from './App';
 import { inboxItems } from './Inbox';
 import { ApiError } from '../api/http';
@@ -542,6 +542,14 @@ describe('the Needs you queue', () => {
     expect(liveOn({ name: 'live', session: b }, a)).toBe(false);
     expect(liveOn({ name: 'sessions' }, a)).toBe(false);
     expect(liveOn({ name: 'preview', session: a, port: 3000 }, a)).toBe(false);
+  });
+
+  it('with a computer chosen in the drawer, Next stays on that computer; once it left the list, every computer counts', () => {
+    const items = queueItems(inboxItems([a, b, c], [], {}), [home, vps], home.host);
+    expect(items.map((one) => one.names[0])).toEqual(['a', 'c']);
+    expect(queueNext(items, new Set(), { session: a })).toMatchObject({ left: 1, next: { names: ['c'] } });
+    expect(queueItems(inboxItems([a, b, c], [], {}), [home, vps], undefined)).toHaveLength(3);
+    expect(queueItems(inboxItems([a, b, c], [], {}), [home, vps], 'gone.tailx.ts.net')).toHaveLength(3);
   });
 
   it('counts an item the user answered as gone, and does not count the one on screen', () => {

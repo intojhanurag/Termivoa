@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted, and a computer that you connect to GitHub talks to GitHub.
@@ -113,7 +113,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 - **Opening never takes control.** It is read-only until you tap **Take control**.
 - **No takeover.** Termivoa never kicks another herdr client off a terminal.
 - **No herdr prefix keys.** Termivoa sends `ctrl+b` to the agent as a plain `ctrl+b`, so the phone cannot send herdr's prefix commands. If you set another prefix key in herdr's `config.toml`, a phone with control could send that key; `pterm doctor` warns about it.
-- **Off switch.** **Settings → Integrations → On** stops Termivoa from reading herdr on that computer.
+- **Off switch.** **On** in the **herdr** part of a computer's page in **Settings** stops Termivoa from reading herdr on that computer.
 
 ## What does GitHub change?
 
@@ -121,7 +121,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 Not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
 :::
 
-When you tap **Connect** in **Settings → Integrations**, that computer logs in to GitHub with the Termivoa GitHub App. Nothing changes on a computer that you do not connect.
+When you tap **Connect** on a computer's page in **Settings**, that computer logs in to GitHub with the Termivoa GitHub App. Nothing changes on a computer that you do not connect.
 
 | Question | Answer |
 | --- | --- |
@@ -139,7 +139,7 @@ When you tap **Connect** in **Settings → Integrations**, that computer logs in
 
 ### How do I remove Termivoa's access on GitHub?
 
-**Disconnect** in **Settings → Integrations** (or `pterm github disconnect`) removes the login at GitHub and deletes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
+**Disconnect** on a computer's page in **Settings** (or `pterm github disconnect`) removes the login at GitHub and deletes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
 
 `pterm uninstall --delete-data` deletes the login from the computer but does not remove it at GitHub. Disconnect first.
 
@@ -184,7 +184,7 @@ With several computers, each computer sends its own notifications straight to yo
 - With several computers, malware or a hacked account on home reaches every computer added through it.
 - With **Found on your network** anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
 - A preview from another computer can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
-- The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
+- The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home cannot be reached, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - **Next beta:** if you change herdr's prefix key from `ctrl+b`, a phone with control of a herdr terminal could send that prefix key to herdr. At worst it detaches the phone. `pterm doctor` warns about it.
 - **Next beta:** a GitHub code that someone else started, a stolen GitHub login, or a backup of a connected computer gives access to your chosen repositories until you revoke **Termivoa** on GitHub. See [What does GitHub change?](#what-does-github-change)
 - The controls have automated tests, but no independent security audit yet.
@@ -198,6 +198,10 @@ Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access
 ### Can someone on the internet reach my terminal?
 
 No. Only devices in your tailnet can.
+
+### Does this website count visitors?
+
+Yes, only this website (termivoa.com). It counts page views with Vercel Web Analytics, which sets no cookies. The Termivoa app and your computers send nothing to it.
 
 ## Report a vulnerability
 

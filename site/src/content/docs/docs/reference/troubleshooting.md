@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
-description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-08
+description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, read-only sessions, missing notifications, worktrees and failed git pushes.
+lastUpdated: 2026-10-10
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -51,7 +51,7 @@ Wait a minute, then run `pterm pair` again.
 
 Run `pterm pair` and [pair your phone](/docs/pair-your-phone/) again. The phone was revoked (`pterm revoke`), logged out, or expired (30 days, or 7 days unused).
 
-## "READ-ONLY" and you cannot type
+## "Read-only" and you cannot type
 
 Tap **Take control**. Another device has control, or the phone reconnected and now only watches.
 
@@ -78,6 +78,8 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 5. Keep the computer awake; it sends them.
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
+
+**Next beta:** a temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
 
 ## Next is not there after a notification tap
 
@@ -111,7 +113,7 @@ delivery = "herdr"
 
 `delivery` can be `"off"`, `"herdr"`, `"terminal"` or `"system"`. Then run `herdr server reload-config`; if nothing changes, restart herdr.
 
-**Next beta:** in **Settings → Integrations**, a herdr card with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
+**Next beta:** on a computer's page in **Settings**, the **herdr** part with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
 
 ## macOS blocks pterm (Gatekeeper)
 
@@ -359,7 +361,7 @@ Update Termivoa on that computer. Computers can be updated one at a time; the ap
 
 ### A computer is gone from the list
 
-Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it in **Settings → Computers**.
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it on its page in **Settings** (tap its card, then **Remove**).
 
 ### Log out says "Could not sign out of vps"
 
@@ -406,7 +408,7 @@ The app says "The code expired or vps refused it. Run pterm pair --via on vps ag
 
 ### No Add button for a new computer
 
-**Found on your network** in **Settings → Computers** shows a computer only while it waits in `pterm setup` or `pterm pair --via` in a terminal.
+**Found on your network** in **Settings** shows a computer only while it waits in `pterm setup` or `pterm pair --via` in a terminal.
 
 | You see | What to do |
 | --- | --- |
@@ -482,14 +484,14 @@ Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` lin
 
 - herdr is not installed. Install herdr 0.8.2 or later.
 - Termivoa cannot find it. It looks in the Homebrew folder (macOS), `/usr/local/bin`, `/usr/bin` (Linux), `~/.local/bin` and `~/.cargo/bin`, and then on the `PATH` that Termivoa runs with. It checks again about every 30 seconds.
-- **On** is off for that computer in **Settings → Integrations**. Turn it on.
+- **On** is off on that computer's page in **Settings**. Turn it on.
 - Termivoa on that computer is older than the next beta. Update it.
 
 ### The herdr card says "Not installed"
 
 herdr is not on that computer. Tap **Install herdr**: Termivoa opens a session there with herdr's install command typed in. Press Enter to run it, wait until it ends, then tap **Check again** on the card. The card then says **Not running** and has **Start herdr**.
 
-If the card says "Run `pterm doctor` on mac." and has no **Install herdr**, a herdr program is there but Termivoa will not use it. `pterm doctor` names the reason and the fix.
+If the **herdr** part says "Run `pterm doctor` on mac." and has no **Install herdr**, a herdr program is there but Termivoa will not use it. `pterm doctor` names the reason and the fix.
 
 ### "herdr did not start"
 
@@ -563,7 +565,7 @@ There are two limits. At most 4 herdr terminals can be open at once for each com
 
 ### "herdr is off on mac"
 
-**On** is off for that computer in **Settings → Integrations**. Turn it on.
+**On** is off on that computer's page in **Settings**. Turn it on.
 
 ### "Still working on mac… It shows in the list when it is ready."
 
@@ -583,7 +585,7 @@ Someone attached to that terminal directly in herdr, or its pane closed at that 
 These entries are not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
 :::
 
-### There is no GitHub row in Settings → Integrations
+### There is no GitHub part on a computer's page in Settings
 
 Check each cause. `pterm github status` on the computer says "GitHub: not available in this build" when the build has no GitHub.
 
@@ -651,7 +653,7 @@ GitHub refuses a push from Termivoa's login when it changes a file in `.github/w
 
 ### git fails with "Termivoa is not connected to GitHub on this computer."
 
-You disconnected GitHub on that computer, and the folder was cloned by Termivoa, so git uses Termivoa's login there. Connect again in **Settings → Integrations**. Or, to use your own git login in that folder, remove Termivoa's lines from the folder's git settings:
+You disconnected GitHub on that computer, and the folder was cloned by Termivoa, so git uses Termivoa's login there. Connect again: in **Settings**, tap the computer's card, then **Connect**. Or, to use your own git login in that folder, remove Termivoa's lines from the folder's git settings:
 
 ```sh
 git config --unset-all credential.https://github.com/<owner>/<name>.git.helper

@@ -2,7 +2,7 @@
 
 Status: **version 3 (2026-10-03): implemented.** History: the owner approved the idea; v2 was the chosen design after two reviews of v1; the security re-check of the push shape ("sound with changes") is resolved in this text (section 7); the owner approved v2. Version 3 makes this text match the code (branch `feat/found-on-network`). The implementation still needs the owner's review before merge (AGENTS.md rule 24). ADR [0007](decisions/0007-found-on-network.md). Builds on [multi-computer.md](multi-computer.md) (ADR [0005](decisions/0005-multi-computer.md)).
 
-Goal, in the owner's words: "login to Tailscale, see all devices, Add". A computer that waits to be added shows in **Settings → Computers** under **Found on your network** with an **Add** button. No link to move. The QR code, the link and the paste flow stay.
+Goal, in the owner's words: "login to Tailscale, see all devices, Add". A computer that waits to be added shows in **Settings** under **Found on your network** with an **Add** button. No link to move. The QR code, the link and the paste flow stay.
 
 Words used here: **home** serves the app (for example `mac`). The **new computer** is the one to add (for example `vps`). An **offer** is a bound grant that the new computer sent to home.
 
@@ -40,7 +40,7 @@ The design rests on these facts about the code before this feature (`origin/main
 ### What the user does
 
 1. On `vps`: `pterm setup`, answer 2 ("Yes, add this computer to it"), pick `mac` (the list shows each full address). Or, when `vps` is already set up: `pterm pair --via mac`.
-2. On the phone: **Settings → Computers → Found on your network**: `vps` — **Add**.
+2. On the phone: **Settings → Found on your network**: `vps` — **Add**.
 3. **Add this computer?** shows address, machine and owner. Tap **Add vps**, then **Continue**. The phone shows a code and "type y in the terminal on vps".
 4. On `vps`: the prompt names this computer (`vps`), the app at `mac`, and the same code. Type `y`. `vps` is in the app.
 
@@ -243,7 +243,7 @@ Approve only if your phone shows 123-456 and says "type y in the terminal on vps
 
 The second line keeps the app's full origin and its owner (tags for a tagged home), both from the pending item: a machine name alone can be a look-alike (`mac` in another tailnet, or another user's `mac` in a team tailnet), which the origin and the owner tell apart. Version 3 had the same facts in longer words ("wants to use THIS computer … from the Termivoa app at …", and "If it names another computer, shows another code, or shows nothing, answer N."); "Approve only if" already says that.
 
-After `y`, `pterm pair --via` and setup's answer 2 print `Done. vps is in your Termivoa app on mac. Open the app and tap it.` (setup then `Setup is done.`). A machine name longer than 12 characters adds `Tip: give it a short name in the app: Settings → Computers → Rename.`
+After `y`, `pterm pair --via` and setup's answer 2 print `Done. vps is in your Termivoa app on mac. Open the app and tap it.` (setup then `Setup is done.`). A machine name longer than 12 characters adds `Tip: give it a short name in the app: Settings, tap the computer, then Rename.` (since the UI revamp, 2026-10-10, Rename is on the computer's page; this host text still names the old path)
 
 The quoted words are the phone's code screen ("If it matches, type y in the terminal on {label}."). The review's draft quoted the confirm sheet ("Check it on vps"), but the code screen is what shows next to the code. This sentence is what stops the wrong-home relay (section 6, item 4): in that relay, the phone names the hostile computer, not `vps`.
 
@@ -251,7 +251,7 @@ The quoted words are the phone's code screen ("If it matches, type y in the term
 
 ## 5. The phone
 
-In **Settings → Computers**, between the list and **+ Add a computer**, a **Found on your network** block (`FoundBlock` in `web/src/screens/Computers.tsx`; the poll is `watchFound` in `web/src/computers.ts`):
+In **Settings** (main page), between the list and **+ Add a computer**, a **Found on your network** block (`FoundBlock` in `web/src/screens/Computers.tsx`; the poll is `watchFound` in `web/src/computers.ts`):
 
 | State | What shows |
 | --- | --- |
