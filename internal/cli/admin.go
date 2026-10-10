@@ -413,7 +413,7 @@ func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant p
 	})
 	line, waiting := shown, "Waiting for your phone (Ctrl+C stops)…"
 	if delivered {
-		line += fmt.Sprintf("\nOn your phone, open Termivoa → Settings → Computers and tap Add next to %q.", wait.self)
+		line += fmt.Sprintf("\nOn your phone, open Termivoa → Settings → Found on your network and tap Add next to %q.", wait.self)
 		waiting = fmt.Sprintf("Waiting for your phone (up to %d minutes; Ctrl+C stops)…", int(OfferWait/time.Minute))
 	}
 	if err := writeString(output, fmt.Sprintf("Adding this computer (%s) to your Termivoa app on %s.\n%s\n%s\n", wait.self, home, line, waiting)); err != nil {

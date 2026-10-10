@@ -180,6 +180,11 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- **`pterm pair --via` names the right place in the app.** Host: while it
+  waits, it said "open Termivoa → Settings → Computers", a page the app no
+  longer has; it now says "Settings → Found on your network" (also in
+  `pterm help`). Phone: no change.
+
 - **The side menu no longer rings All computers.** Phone: on iPhone, opening
   the side menu put the focus on **All computers**, and Safari drew a white
   box around it. The menu itself now takes the focus; Tab and VoiceOver

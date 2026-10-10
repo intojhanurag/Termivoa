@@ -29,7 +29,7 @@ Available commands:
                                      Add this computer to the Termivoa app at that
                                      computer. While it waits (up to 10 minutes),
                                      the app shows this computer under Settings →
-                                     Computers → Found on your network: tap Add.
+                                     Found on your network: tap Add.
                                      It also prints a two-minute add-computer link
                                      and, on a terminal, its QR code for the app's
                                      own scanner (not the phone's Camera app). It

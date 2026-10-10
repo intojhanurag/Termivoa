@@ -114,7 +114,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   setting in the docs after it.
 - Found on your network: ADR 0007 and `docs/found-on-network.md` (owner
   approved v2 2026-10-03); implemented (a waiting `pterm pair --via` or setup
-  offers the computer to home; **Settings → Computers → Found on your
+  offers the computer to home; **Settings → Found on your
   network → Add**), with unit tests and multi-computer harness checks
   `F-*` (`scripts/e2e-multicomputer/README.md`). Open: the real two-computer
   and real-phone checks (Next 3).
