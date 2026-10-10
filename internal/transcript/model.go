@@ -20,17 +20,23 @@ import (
 // than this past the cut is masked to the end of what is kept.
 const maskMargin = 16 << 10
 
-// secretPattern is defense in depth, not a guarantee (design section 8).
-var secretPattern = regexp.MustCompile(
-	`-----BEGIN [A-Z0-9 ]{0,40}-----(?s:.*?)(?:-----END [A-Z0-9 ]{0,40}-----|$)` +
-		`|\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}` +
-		`|\bgithub_pat_[A-Za-z0-9_]{20,}` +
-		`|\bsk-ant-[A-Za-z0-9_-]{10,}` +
-		`|\bsk-[A-Za-z0-9_-]{16,}` +
-		`|\b(?:AKIA|ASIA)[0-9A-Z]{16}\b` +
-		`|\bxox[bpas]-[A-Za-z0-9-]{10,}` +
-		`|\bAIza[0-9A-Za-z_-]{35}` +
-		`|\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}`)
+// The secret patterns are defense in depth, not a guarantee (design
+// section 8). A token prefix matches at the start or after any character
+// that is not a letter or digit (review S-4: "_ghp_…" or "[0mghp_…" too).
+var (
+	pemPattern   = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]{0,40}-----(?s:.*?)(?:-----END [A-Z0-9 ]{0,40}-----|$)`)
+	tokenPattern = regexp.MustCompile(`(^|[^A-Za-z0-9])(?:` +
+		`(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}` +
+		`|github_pat_[A-Za-z0-9_]{20,}` +
+		`|sk-ant-[A-Za-z0-9_-]{10,}` +
+		`|sk-[A-Za-z0-9_-]{16,}` +
+		`|(?:AKIA|ASIA)[0-9A-Z]{16}` +
+		`|xox[bpas]-[A-Za-z0-9-]{10,}` +
+		`|AIza[0-9A-Za-z_-]{35}` +
+		`|eyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,})`)
+	// ansiPattern is a terminal escape sequence (CSI, OSC or a two-byte one).
+	ansiPattern = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])`)
+)
 
 var bearerPattern = regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^\s"'\\]+`)
 
@@ -40,7 +46,9 @@ var secretHints = []string{"-----BEGIN", "gh", "github_pat_", "sk-", "AKIA", "AS
 
 const secretMark = "[secret]"
 
-// mask replaces the fixed secret patterns with [secret].
+// mask replaces the fixed secret patterns with [secret]. Callers clean the
+// text first, so hidden characters and escape sequences cannot split a
+// token past the mask (review S-4).
 func mask(text string) string {
 	hinted := false
 	for _, hint := range secretHints {
@@ -52,7 +60,8 @@ func mask(text string) string {
 	if !hinted {
 		return text
 	}
-	text = secretPattern.ReplaceAllLiteralString(text, secretMark)
+	text = pemPattern.ReplaceAllLiteralString(text, secretMark)
+	text = tokenPattern.ReplaceAllString(text, "${1}"+secretMark)
 	return bearerPattern.ReplaceAllString(text, "${1}"+secretMark)
 }
 
@@ -60,6 +69,9 @@ func mask(text string) string {
 // (bidi controls, zero-width; review S3), no control characters except tab
 // and line feed when multiline (carriage returns are dropped).
 func clean(text string, multiline bool) string {
+	if strings.IndexByte(text, 0x1b) >= 0 {
+		text = ansiPattern.ReplaceAllString(text, "")
+	}
 	ok := utf8.ValidString(text)
 	if ok {
 		for _, r := range text {
@@ -128,7 +140,7 @@ func cutRunes(text string, limit int) string {
 // maxBytes and maxLines. It returns the text and the bytes of raw not shown.
 func shown(raw string, maxBytes, maxLines int, multiline bool) (string, int) {
 	window := cutBytes(raw, maxBytes+maskMargin)
-	full := clean(mask(window), multiline)
+	full := mask(clean(window, multiline))
 	text := full
 	if maxLines > 0 {
 		text = cutLines(text, maxLines)
@@ -164,7 +176,7 @@ func relative(cwd, path string) string {
 	} else if filepath.IsAbs(path) {
 		path = filepath.Base(path)
 	}
-	text := strings.TrimSpace(clean(mask(path), false))
+	text := strings.TrimSpace(mask(clean(path, false)))
 	return cutRunes(text, protocol.MaxChatEditPathRunes)
 }
 
@@ -197,7 +209,7 @@ func hunk(old, new string) string {
 		}
 	}
 	// Mask whole strings before any line is cut (review S7).
-	add('-', mask(cutBytes(old, 64<<10)))
-	add('+', mask(cutBytes(new, 64<<10)))
-	return cutBytes(cutLines(clean(out.String(), true), protocol.MaxChatHunkLines), protocol.MaxChatHunkBytes)
+	add('-', mask(clean(cutBytes(old, 64<<10), true)))
+	add('+', mask(clean(cutBytes(new, 64<<10), true)))
+	return cutBytes(cutLines(out.String(), protocol.MaxChatHunkLines), protocol.MaxChatHunkBytes)
 }

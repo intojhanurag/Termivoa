@@ -46,6 +46,7 @@ type entry struct {
 	results   []toolResult
 	sessionID string
 	cwd       string
+	sidechain bool
 }
 
 type toolResult struct {
@@ -135,7 +136,7 @@ func parseClaudeLine(data []byte, off int64, cwd string) entry {
 		return result
 	}
 	result.uuid, result.version = line.UUID, line.Version
-	result.sessionID, result.cwd = line.SessionID, line.Cwd
+	result.sessionID, result.cwd, result.sidechain = line.SessionID, line.Cwd, line.IsSidechain
 	if line.ParentUUID != nil {
 		result.parent = *line.ParentUUID
 	} else if line.LogicalParentUUID != nil {
@@ -188,7 +189,7 @@ func parseUser(result *entry, content json.RawMessage) {
 		return
 	}
 	var texts []string
-	images := 0
+	images, hasResults := 0, false
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
@@ -196,10 +197,14 @@ func parseUser(result *entry, content json.RawMessage) {
 		case "image", "document":
 			images++
 		case "tool_result":
-			result.results = append(result.results, readResult(block))
+			hasResults = true
+			// An ID the agent never issues can name no call (review S-5).
+			if toolIDPattern.MatchString(block.ToolUseID) {
+				result.results = append(result.results, readResult(block))
+			}
 		}
 	}
-	if len(result.results) > 0 {
+	if hasResults {
 		result.kind = kindResults
 		for _, text := range texts {
 			if strings.HasPrefix(text, interruptPrefix) {

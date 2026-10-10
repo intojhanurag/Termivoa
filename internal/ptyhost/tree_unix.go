@@ -11,7 +11,10 @@ import (
 // start times, at most maxTreeProcesses. It returns nil once the session has
 // ended. The chat view binds an agent by its PID and start time
 // (docs/chat-view.md, section 4.3).
-func (p *Process) TreeProcesses(context.Context) ([]TreeProcess, error) {
+func (p *Process) TreeProcesses(ctx context.Context) ([]TreeProcess, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if p.isDone() {
 		return nil, nil
 	}
@@ -40,6 +43,9 @@ func (p *Process) TreeProcesses(context.Context) ([]TreeProcess, error) {
 	}
 	if p.isDone() {
 		return nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return tree, nil
 }

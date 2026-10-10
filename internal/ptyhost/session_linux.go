@@ -12,11 +12,6 @@ type processInfo struct {
 	start                time.Time
 }
 
-// clockTicks is USER_HZ, the unit of /proc/<pid>/stat starttime.
-// ponytail: 100 on every mainstream Linux build; read sysconf(_SC_CLK_TCK)
-// (cgo) if a host with another value shows up.
-const clockTicks = 100
-
 // bootTime reads btime from /proc/stat: when the system booted.
 func bootTime() time.Time {
 	data, err := os.ReadFile("/proc/stat")
@@ -70,7 +65,7 @@ func liveProcesses() ([]processInfo, error) {
 		info := processInfo{pid: pid, parent: parent, session: sid}
 		if len(fields) > 19 && !booted.IsZero() {
 			if ticks, err := strconv.ParseInt(fields[19], 10, 64); err == nil {
-				info.start = booted.Add(time.Duration(ticks) * time.Second / clockTicks)
+				info.start = booted.Add(ticksDuration(ticks))
 			}
 		}
 		live = append(live, info)

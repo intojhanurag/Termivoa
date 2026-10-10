@@ -25,15 +25,20 @@ import (
 const (
 	maxPIDFile      = 4 << 10
 	maxHeaderRead   = 64 << 10
-	maxProjectDirs  = 10000
 	maxSessionFiles = 256
 	startSlack      = 5 * time.Second
-	sameStart       = time.Second
+	sameStart       = 2 * time.Second // Linux start times move with btime
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-var errRefused = errors.New("transcript: file refused")
+// maxProjectDirs bounds the project folders a bind reads (a variable for tests).
+var maxProjectDirs = 10000
+
+var (
+	errRefused        = errors.New("transcript: file refused")
+	errTooManyFolders = errors.New("transcript: too many project folders")
+)
 
 // Process is one process of the session's tree.
 type Process struct {
@@ -76,6 +81,9 @@ func Bind(ctx context.Context, config Config, processes []Process) Link {
 		return Link{State: protocol.ChatLinkUnsupported}
 	}
 	guardRoot(config.Claude)
+	if ctx.Err() != nil {
+		return Link{State: protocol.ChatLinkOff}
+	}
 	root, err := os.OpenRoot(config.Claude)
 	if err != nil {
 		if config.CustomRoot {
@@ -151,7 +159,7 @@ func ProjectFolder(cwd string) string {
 // readPIDFile reads <claude>/sessions/<pid>.json and checks it names this
 // process: the same pid, a start within 5 s, a session UUID.
 func readPIDFile(root *os.Root, process Process) (string, bool) {
-	data, err := readSmall(root, "sessions/"+strconv.Itoa(process.PID)+".json")
+	data, err := readSmall(root, pidFileName(process.PID))
 	if err != nil {
 		return "", false
 	}
@@ -168,6 +176,8 @@ func readPIDFile(root *os.Root, process Process) (string, bool) {
 	}
 	return record.SessionID, true
 }
+
+func pidFileName(pid int) string { return "sessions/" + strconv.Itoa(pid) + ".json" }
 
 func startedAt(raw json.RawMessage) (time.Time, bool) {
 	var millis int64
@@ -234,9 +244,15 @@ func sessionFolders(root *os.Root, sessionID string) ([]string, error) {
 		return nil, nil
 	}
 	defer projects.Close()
+	// At most 10,000 project folders are read. With more, the folder that
+	// holds the transcript may be unread, so the bind fails closed
+	// (none(no_file)) instead of linking a wrong or partial match (S-7).
 	entries, err := projects.ReadDir(maxProjectDirs)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
+	}
+	if len(entries) == maxProjectDirs {
+		return nil, errTooManyFolders
 	}
 	var folders []string
 	for _, entry := range entries {
@@ -321,8 +337,15 @@ func (transcript *Transcript) Recheck(config Config, processes []Process, idle b
 	if sessionID, ok := readPIDFile(root, transcript.Agent); ok && sessionID != transcript.SessionID {
 		return RecheckRebind
 	}
-	if idle && transcript.newerUnclaimed(root, info.ModTime()) {
-		return RecheckCleared
+	// /clear only with evidence that ties it to this agent (review C-2): its
+	// own pid file was written after our transcript stopped, and a newer
+	// transcript in the folder is named by no pid file. Another claude (or
+	// claude -p) in the same folder alone never ends the link.
+	if idle {
+		if pidInfo, err := root.Lstat(pidFileName(transcript.Agent.PID)); err == nil &&
+			pidInfo.ModTime().After(info.ModTime()) && transcript.newerUnclaimed(root, info.ModTime()) {
+			return RecheckCleared
+		}
 	}
 	return RecheckOK
 }

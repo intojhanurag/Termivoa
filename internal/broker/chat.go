@@ -183,21 +183,26 @@ func (hub *chatHub) noteFormat(version string, unknown float64) {
 }
 
 // tailFor returns the session's tail, starting one when there is room.
-func (hub *chatHub) tailFor(sessionID string, session ManagedSession) (*chatTail, bool) {
+// Under the same lock as the switch, so no tail starts after Chat was
+// turned off (review S-1): then it answers off.
+func (hub *chatHub) tailFor(sessionID string, session ManagedSession) (*chatTail, string) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
+	if !hub.enabled {
+		return nil, protocol.ChatLinkOff
+	}
 	if tail, ok := hub.tails[sessionID]; ok {
-		return tail, true
+		return tail, ""
 	}
 	if len(hub.tails) >= maxChatTails {
-		return nil, false
+		return nil, protocol.ChatReasonBusy
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	tail := &chatTail{hub: hub, id: sessionID, session: session, ctx: ctx, cancel: cancel,
 		subs: map[*chatSub]bool{}, link: protocol.ChatLinkSearching, bound: make(chan struct{})}
 	hub.tails[sessionID] = tail
 	go tail.run()
-	return tail, true
+	return tail, ""
 }
 
 func (hub *chatHub) markCleared(sessionID, agentSession string) {
@@ -402,8 +407,8 @@ func (tail *chatTail) check() {
 	ctx, cancel := context.WithTimeout(tail.ctx, chatPageTimeout)
 	defer cancel()
 	processes, err := tail.hub.processes(ctx, tail.session)
-	if err != nil {
-		return
+	if err != nil || tail.ctx.Err() != nil {
+		return // after Chat is off, no bind runs (the tail's ctx is cancelled)
 	}
 	if file != nil && link == protocol.ChatLinkLinked {
 		now := time.Now()
@@ -629,11 +634,14 @@ func (stream *sessionConnection) openChat(ctx context.Context, request protocol.
 	var tail *chatTail
 	// A tail that ended its linger right after the lookup is replaced.
 	for attempt := 0; attempt < 2 && stream.chatSub == nil; attempt++ {
-		var ok bool
-		if tail, ok = hub.tailFor(stream.sessionID, stream.session); !ok {
+		var refused string
+		if tail, refused = hub.tailFor(stream.sessionID, stream.session); refused != "" {
 			stream.chatBusy.Store(false)
-			return stream.send(ctx, request, protocol.ChatState,
-				protocol.ChatStatePayload{Link: protocol.ChatLinkNone, Reason: ptrTo(protocol.ChatReasonBusy)})
+			state := protocol.ChatStatePayload{Link: protocol.ChatLinkOff}
+			if refused == protocol.ChatReasonBusy {
+				state = protocol.ChatStatePayload{Link: protocol.ChatLinkNone, Reason: ptrTo(protocol.ChatReasonBusy)}
+			}
+			return stream.send(ctx, request, protocol.ChatState, state)
 		}
 		stream.chatSub = tail.subscribe(stream)
 	}
@@ -657,6 +665,11 @@ func (stream *sessionConnection) openChat(ctx context.Context, request protocol.
 		}
 		state := tail.state()
 		envelope := request
+		if stream.revoked() { // review S-3: nothing after a revocation
+			tail.busy.Store(false)
+			stream.chatBusy.Store(false)
+			return
+		}
 		if stream.sendWhenRoom(stream.viewer.ctx, envelope, protocol.ChatState, state) != nil ||
 			state.Link != protocol.ChatLinkLinked && state.Link != protocol.ChatLinkEnded {
 			tail.busy.Store(false)
@@ -669,13 +682,25 @@ func (stream *sessionConnection) openChat(ctx context.Context, request protocol.
 }
 
 // sendPage reads and sends one page off the actor, then frees both slots.
+// chatPageRead is a test seam between reading a page and sending it.
+var chatPageRead = func() {}
+
 func (stream *sessionConnection) sendPage(tail *chatTail, request protocol.Envelope, pageRequest transcript.PageRequest) {
 	page, linked, err := tail.page(pageRequest)
+	chatPageRead()
 	// Free the slots before replying: the client may ask again at once.
 	tail.busy.Store(false)
 	stream.chatBusy.Store(false)
 	ctx := stream.viewer.ctx
 	if ctx.Err() != nil || stream.revoked() {
+		return
+	}
+	// Chat may have been turned off while the page was read (review S-2).
+	tail.mu.Lock()
+	stopped := tail.stopped
+	tail.mu.Unlock()
+	if stopped || !stream.server.chat.isEnabled() {
+		_ = stream.sendWhenRoom(ctx, request, protocol.ChatState, protocol.ChatStatePayload{Link: protocol.ChatLinkOff})
 		return
 	}
 	switch {
