@@ -345,7 +345,7 @@ func TestSoakSessionLimitAndBrokerKill(t *testing.T) {
 		t.Fatalf("ninth session error = %v, want limit_exceeded", err)
 	}
 	t.Logf("ninth session: %v", err)
-	waitFor(t, 5*time.Second, "eight children", func() bool { return len(childPIDs(h.broker.Process.Pid)) == 8 })
+	waitFor(t, 5*time.Second, "eight children", func() bool { return len(fixtureChildPIDs(t, h.broker.Process.Pid)) == 8 })
 	time.Sleep(10 * time.Second) // let every history reach its row cap
 	t.Logf("8 busy sessions, no viewers: %s", h.sample(start))
 	if n := len(h.sessions(ctx)); n != 8 {
@@ -366,7 +366,7 @@ func TestSoakSessionLimitAndBrokerKill(t *testing.T) {
 	created = append(created[1:], replacement)
 	t.Logf("slot reused after terminate: %s", replacement.ID)
 
-	children := childPIDs(h.broker.Process.Pid)
+	children := fixtureChildPIDs(t, h.broker.Process.Pid)
 	if len(children) != 8 {
 		t.Fatalf("children before kill = %v", children)
 	}
@@ -392,7 +392,7 @@ func TestSoakSessionLimitAndBrokerKill(t *testing.T) {
 			t.Errorf("session %s after broker restart = %q, want lost", session.ID, states[session.ID])
 		}
 	}
-	if n := len(childPIDs(h.broker.Process.Pid)); n != 0 {
+	if n := len(fixtureChildPIDs(t, h.broker.Process.Pid)); n != 0 {
 		t.Errorf("restarted broker spawned %d children; prior commands must not rerun", n)
 	}
 	t.Logf("restarted broker lists %d prior live sessions as lost; no children rerun", len(created))

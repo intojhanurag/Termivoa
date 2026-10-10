@@ -338,7 +338,7 @@ type hostSample struct {
 	cpu                   time.Duration
 	heapBytes, totalBytes int64
 	goroutines            int64
-	children              int
+	children              int // terminal fixtures only; excludes scanner helpers
 }
 
 func (h *soakHost) sample(start time.Time) hostSample {
@@ -352,7 +352,7 @@ func (h *soakHost) sample(start time.Time) hostSample {
 	s := hostSample{at: time.Since(start)}
 	s.rssKiB, _ = strconv.ParseInt(fields[0], 10, 64)
 	s.cpu = parsePSTime(fields[1])
-	s.children = len(childPIDs(h.broker.Process.Pid))
+	s.children = len(fixtureChildPIDs(h.t, h.broker.Process.Pid))
 	if data, err := os.ReadFile(h.metricsPath); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 		fmt.Sscanf(lines[len(lines)-1], "%d %d %d", &s.heapBytes, &s.totalBytes, &s.goroutines)
@@ -365,12 +365,38 @@ func (s hostSample) String() string {
 		s.at.Seconds(), float64(s.rssKiB)/1024, s.cpu.Seconds(), mib(s.heapBytes), mib(s.totalBytes), s.goroutines, s.children)
 }
 
-func childPIDs(parent int) []int {
-	out, _ := exec.Command("pgrep", "-P", strconv.Itoa(parent)).Output()
+// fixtureChildPIDs counts every direct terminal fixture, including unexpected
+// duplicates. Scanner helpers are not sessions. Read identity and ancestry in
+// one snapshot: querying each PID separately races helper exit and PID reuse.
+func fixtureChildPIDs(t testing.TB, parent int) []int {
+	t.Helper()
+	out, err := exec.Command("ps", "-ww", "-axo", "pid=,ppid=,args=").Output()
+	if err != nil {
+		t.Fatalf("ps terminal fixture census: %v", err)
+	}
+	return fixtureChildPIDsFromSnapshot(parent, string(out))
+}
+
+func fixtureChildPIDsFromSnapshot(parent int, snapshot string) []int {
 	var pids []int
-	for _, field := range strings.Fields(string(out)) {
-		if pid, err := strconv.Atoi(field); err == nil {
-			pids = append(pids, pid)
+	for _, line := range strings.Split(snapshot, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, parentErr := strconv.Atoi(fields[1])
+		if pidErr != nil || parentErr != nil || ppid != parent {
+			continue
+		}
+		// Match the fixture marker after the argument separator, not as a
+		// substring of a helper path. Count duplicates even with unexpected
+		// rate or trailing arguments; TestSoakChild accepts those too.
+		for i := 3; i+1 < len(fields); i++ {
+			if fields[i-1] == "--" && fields[i] == childMarker {
+				pids = append(pids, pid)
+				break
+			}
 		}
 	}
 	return pids

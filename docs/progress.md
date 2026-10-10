@@ -189,6 +189,30 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Soak terminal census ignores scanner helpers (#232, 2026-10-08; branch `fix/issue-232`, not merged)
+
+- **Verified defect.** During #220 measurement, the three-session soak
+  intermittently counted an `lsof` scanner as a fourth terminal. A per-PID
+  command lookup also raced helper lifetime. Neither implies an extra PTY.
+- **Fix.** Read PID, parent PID and arguments in one `ps` invocation and
+  count every direct terminal fixture by its exact argument marker. Duplicate
+  unexpected fixture PIDs still count; missing fixtures still reduce the
+  count. Existing PID identity/liveness and broker-kill checks remain intact.
+  No shipped runtime or public documentation behavior changes.
+- **Checks.** `go test -race -tags soak ./tests/soak -run
+  '^TestSoakFixtureChildCensus' -count=1 -v` and `go vet -tags soak
+  ./tests/soak` passed with Go 1.27.1. Live regressions exercise actual PTY
+  fixtures with overlapping / vanished `lsof`, duplicates and missing
+  fixtures. `PTERM_SOAK_RATE=65536 PTERM_SOAK_DURATION=30s go test -tags
+  soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v` passed:
+  three fixtures throughout, one reconnect, unchanged identities/liveness.
+- **Evidence and pending.** [Issue #232 evidence](evidence/issue-232/README.md)
+  has commands and output. The 30-second run used 64 KiB/s/session under
+  concurrent machine load; it is a correctness gate, not an isolated
+  performance comparison or a default 1 MiB/s gate. Parent integration /
+  combined soak, full tagged suite including the eight-session broker-kill
+  rerun, longer stress/24-hour soak and native Windows remain pending.
+
 ### GitHub: set up a repository on a computer from the phone (2026-10-07, branch `feat/github-integration`; not merged)
 
 - **Why.** The owner approved the design ([github-integration.md](github-integration.md),
