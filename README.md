@@ -25,7 +25,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
 ## Features
 
 - **Many live sessions.** Start shells or coding agents on your computer and
-  switch between them with tabs. A dot shows new output.
+  switch between them with tabs. A dot shows new output. Screens are bounded
+  to 400 columns and 200 rows; next beta also rejects malformed screen-update
+  row positions on the computer.
 - **Files.** Browse, search and read your project's files on the phone, and
   tap a path like `src/app.ts:42` in the terminal to open it there.
 - **Worktrees.** Start a task in its own folder and branch from `main` (or

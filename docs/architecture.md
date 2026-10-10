@@ -222,6 +222,13 @@ validation, then serializes them without decoding its own JSON. Non-terminal
 notices keep the strict wire round trip. All receiving trust boundaries keep
 `DecodeHost`/`DecodeClient`; see [terminal-delivery.md](terminal-delivery.md).
 
+Live row bounds are enforced before coordinate arithmetic. For snapshot
+chunks, Go rejects `startRow` outside 0–199, then checks the row count against
+`MaxRows - startRow` to avoid signed addition overflow. Valid chunks may end
+exactly at 200. History offsets are already bounded before addition; patch
+indexes compare directly with validated screen dimensions. The browser's
+existing schema bounds and protocol fields/revision are unchanged (#237).
+
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
 `web/src/generated/protocol.ts`, plus the revision constants. It fails on an

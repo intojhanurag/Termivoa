@@ -10,6 +10,10 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Terminal screen bounds.** The computer rejects malformed row positions
+  in terminal screen updates; the phone already applies that limit. See
+  [What limits apply to the terminal screen?](/docs/guides/live-terminal/#what-limits-apply-to-the-terminal-screen).
+
 - **Less host overhead for busy terminals.** Watching changing output in Live or Wall uses less CPU and temporary memory on your computer. The terminal controls stay the same. See [What changes for busy terminals?](/docs/guides/live-terminal/#what-changes-for-busy-terminals).
 
 - **History uses less CPU and temporary memory on your computer.** Tap **history** and copy as usual. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).

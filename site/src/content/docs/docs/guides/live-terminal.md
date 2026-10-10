@@ -28,6 +28,20 @@ Termivoa never queues or resends typing. If the connection breaks while you type
 
 The tab bar at the top shows your running sessions. Tap a tab to switch; each opens read-only. A dot marks new output; an amber dot means it waits for you. **+** starts a new session.
 
+## What limits apply to the terminal screen?
+
+Termivoa keeps terminal screens bounded while you read and type.
+
+| Item | Limit |
+| --- | --- |
+| Screen width | Up to 400 columns |
+| Screen height | Up to 200 rows |
+| Screen updates | Rows must stay within the allowed screen bounds |
+
+**Next beta:** the computer also rejects malformed row positions in received
+terminal screen updates. The phone already applies that limit. No setting is
+needed.
+
 ## Use the agent keys and key bar
 
 With control, the dock under the terminal shows one-tap agent keys and a key bar with keys a phone keyboard lacks.

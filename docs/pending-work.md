@@ -1,6 +1,8 @@
 # Pending work
 
 The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
+
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -21,6 +23,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Shared semantic validators, exact generated payload types and message
   budgets stay enforced; see [terminal-delivery.md](terminal-delivery.md)
   and [measurement evidence](evidence/issue-220/README.md).
+
+- Strict snapshot row coordinates (#237; branch `fix/issue-237`, not merged):
+  Go enforces the existing 0–199 start-row bound before arithmetic and keeps
+  legal chunks ending at 200. Boundary and cross-language validation checks
+  are recorded in [issue #237 evidence](evidence/issue-237/README.md).
+  Parent integration / PR checks and real-device gates remain pending.
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
