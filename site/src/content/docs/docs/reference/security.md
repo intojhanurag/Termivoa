@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-10
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted, and a computer that you connect to GitHub talks to GitHub.
@@ -198,6 +198,10 @@ Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access
 ### Can someone on the internet reach my terminal?
 
 No. Only devices in your tailnet can.
+
+### Does this website count visitors?
+
+Yes, only this website (termivoa.com). It counts page views with Vercel Web Analytics, which sets no cookies. The Termivoa app and your computers send nothing to it.
 
 ## Report a vulnerability
 
