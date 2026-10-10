@@ -60,7 +60,7 @@ describe('Drawer', () => {
 
   it('is a labelled dialog with All computers and one row per computer: tile, label, state line, amber count', () => {
     const page = html();
-    expect(page).toContain('<dialog class="drawer" aria-labelledby="drawer-title"><div class="drawer-panel"><h2 id="drawer-title" class="caps">Computers</h2>');
+    expect(page).toContain('<dialog class="drawer" tabindex="-1" aria-labelledby="drawer-title"><div class="drawer-panel"><h2 id="drawer-title" class="caps">Computers</h2>');
     expect(page).toContain('aria-current="false"><span class="drawer-tile all" aria-hidden="true">');
     expect(page).toContain('<span class="drawer-label">All computers</span></span><span class="drawer-count" aria-hidden="true">3</span><span class="visually-hidden">, 3 need you</span>');
     expect(page).toContain('<button type="button" class="drawer-row is-ok" aria-current="true"><span class="drawer-tile" aria-hidden="true">V</span><span class="drawer-text"><span class="drawer-label"><bdi>vps</bdi></span><span class="drawer-state"><span class="visually-hidden">, </span>vps line</span></span><span class="drawer-count" aria-hidden="true">2</span>');

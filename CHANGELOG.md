@@ -180,6 +180,11 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- **The side menu no longer rings All computers.** Phone: on iPhone, opening
+  the side menu put the focus on **All computers**, and Safari drew a white
+  box around it. The menu itself now takes the focus; Tab and VoiceOver
+  still reach every row. Host: no change.
+
 - Terminal screen bounds (#237). Host: strict decoding rejects snapshot row
   positions outside the existing 0–199 range before doing coordinate
   arithmetic, including oversized integers that could overflow the old
