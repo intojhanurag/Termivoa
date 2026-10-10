@@ -103,6 +103,17 @@ The client ID is public: anyone can copy it and show a login page that says "Ter
 
 For each row the broker also answers `here` and `taken`: one `Lstat` of `~/<name>`, and, when a real directory owned by the user with a real `.git` directory is there, one read of its `origin` with `git config --file <dir>/.git/config` (never `git -C` in a folder that is not checked; `--file` follows no includes). The same repository → `here`. Anything else at that name → `taken`. A saved project elsewhere with that `origin` → `here`. These are cached with the list. (On the owner's Mac today 27 repositories are in `~` and only the home folder is a project; without the `Lstat` no row would say "on mac".)
 
+The phone's optional push-age renderer (`GitHub.pushedText`) constructs a
+Date and checks its finite timestamp before `toISOString` (#254). The wire
+schema's nonnegative integer can exceed JavaScript's representable date
+range; such an optional value contributes no age, while the parsed
+repository, other metadata, search and action affordances remain. Valid
+dates retain their existing elapsed labels. This is local display handling,
+not a protocol bound, compatibility path or change to received/stored data.
+The regression parses the actual response then renders RepoList with one
+invalid-date row and one valid row, preserving both names/actions and the
+valid row's age.
+
 ### 6.4 Set up
 
 `POST /api/v1/github/setup` with `{ "repo": "owner/name" }`.

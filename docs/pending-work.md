@@ -175,6 +175,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Approximate 30-day months/365-day years, explicit threshold/invalid-date
   tests and rendered-row regressions. See
   [evidence](evidence/issue-215/verification.md).
+
+- **Done locally, pending private PR gates (#254):** GitHub repository rows
+  render when an optional push date is outside the displayable range; only
+  the age is omitted. Real parsed-response SSR regression and valid-date
+  boundaries pass. See [evidence](evidence/issue-254/verification.md).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 

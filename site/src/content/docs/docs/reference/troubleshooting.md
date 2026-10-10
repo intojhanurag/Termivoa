@@ -816,3 +816,7 @@ See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
 ## Why can I not close a herdr workspace's last tab?
 
 **Next beta:** Termivoa closes a workspace to end its last tab. When **Close workspace** is off, close its linked worktrees first, or close workspaces sharing the project's main folder in herdr on the computer. If the list changed during a close, inspect it again before trying another action.
+
+## Why does a GitHub repository have no push age?
+
+**Next beta:** Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).

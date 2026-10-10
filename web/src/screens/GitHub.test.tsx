@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { HTTPGitHubRepo, HTTPGitHubResponse, HTTPGitHubSetup } from '../generated/protocol';
+import { parseHttpBody } from '../protocol/httpBody';
 import {
   BIG_KB, clock, ConnectBody, connectProblem, copyCode, DEVICE_URL, filterRepos, GitHubRowView, githubInfo, githubSources, INSTALL_GIT, installUrl, isBig,
   nextMode, pushedText, RepoList, repoMeta, setupProblem, SetupBody, sizeText, timeLeft, unreadableText, type GitHubSource, type ReposStatus,
@@ -24,6 +25,16 @@ const computerPage = (entry: ComputerEntry) => renderToStaticMarkup(
 const answer = (extra: Partial<HTTPGitHubResponse> = {}): HTTPGitHubResponse => ({ state: 'notConnected', app: 'termivoa', ...extra });
 
 describe('helpers', () => {
+  it('omits unrenderable optional push dates and preserves valid date labels', () => {
+    for (const at of [8_640_000_000_000_001, NaN, Infinity, -Infinity]) expect(pushedText(at, NOW)).toBeUndefined();
+    expect(pushedText(undefined, NOW)).toBeUndefined();
+    expect(pushedText(NOW - 2 * HOUR, NOW)).toBe('2 h ago');
+    expect(pushedText(NOW - 30 * HOUR, NOW)).toBe('yesterday');
+    expect(pushedText(NOW + HOUR, NOW)).toBe('just now');
+    // The representable boundary and epoch are valid dates, not omissions.
+    expect(pushedText(8_640_000_000_000_000, NOW)).toBe('just now');
+    expect(pushedText(0, NOW)).toBeDefined();
+  });
   it('builds the install address only from a schema-valid slug', () => {
     expect(installUrl('termivoa')).toBe('https://github.com/apps/termivoa/installations/new');
     expect(installUrl('evil.com/x')).toBeUndefined();
@@ -219,6 +230,21 @@ describe('the repository list', () => {
     expect(page).toContain('octo-demo · private · 3 yr ago');
     expect(page).not.toContain('1095 d ago');
     expect(pushedText(NOW + 86_400_000, NOW)).toBe('just now');
+  });
+
+  it('renders schema-parsed repositories despite one out-of-Date-range push timestamp', () => {
+    const body = parseHttpBody('githubReposResponse', { repos: [
+      repo('archive-demo', { pushedAt: 8_640_000_000_000_001, fork: true, archived: true }),
+      repo('recent-demo'),
+    ] });
+    expect(body.repos[0]!.pushedAt).toBe(8_640_000_000_000_001);
+    const page = list({ kind: 'ok', at: NOW, body });
+    expect(page).toContain('<span class="gh-repo-name">archive-demo</span>');
+    expect(page).toContain('<span class="gh-repo-meta">octo-demo · private · fork · archived</span>');
+    expect(page).toContain('aria-label="Set up archive-demo"');
+    expect(page).toContain('<span class="gh-repo-name">recent-demo</span>');
+    expect(page).toContain('octo-demo · private · 2 h ago');
+    expect(page).not.toContain('Invalid Date');
   });
 
   it('loading, error and empty', () => {

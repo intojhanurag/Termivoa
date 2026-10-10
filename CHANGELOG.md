@@ -277,6 +277,12 @@ All notable changes are documented here. The format follows
   three-year-old push. Months and years are approximate elapsed units.
   Host: timestamps and data are unchanged; no host behavior change.
 
+- **GitHub repository rows survive an unusable push date (#254).** Phone:
+  an optional last-push timestamp that cannot be displayed omits only its
+  age; repository names, metadata and available actions still render.
+  Valid dates keep their existing labels. Host: no timestamp, protocol,
+  access or stored-data change.
+
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.
