@@ -3397,3 +3397,24 @@ required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
   passed29.965s/16.376s/2.070s/3.115s; vet and frozen Astro29-page/link build
   passed. No owner account or remote API action was used. Implementation is
   ready for owner review; hosted checks and #255/#256 fixes remain separate.
+
+## 2026-10-08: issue #217, complete byte-limited History
+
+- Revalidated on `08f0332`: a real retained styled terminal has 1,632 rows
+  across 40 byte-limited pages. The added phone regression fails at page 25
+  before the fix (`ready` instead of `loading`). Evidence:
+  [issue-217](evidence/issue-217/README.md).
+- The phone now follows a contiguous cursor until `complete`. An invalid,
+  incomplete or over-budget read drops partial rows and shows unavailable,
+  instead of splicing the current screen after missing rows. Limits: 5,000
+  rows/requests, 32 MiB retained UTF-16 text, 128 MiB received UTF-16 page
+  data, five restarts and one 60-second deadline across restarts. Host and
+  protocol unchanged. Design: [terminal-history.md](terminal-history.md).
+- Passed: `pnpm install --frozen-lockfile`, `pnpm --dir web typecheck`,
+  `pnpm --dir web exec vitest run src/terminal/Connection.test.ts` (100/100),
+  `go test ./internal/protocol -run TestStyledRetainedHistoryRequiresMoreThan25Pages -count=1 -v`,
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && pnpm exec astro build`
+  (29 pages, links valid), `git diff --check`.
+- Pending before merge: broader coordinated repository checks and independent
+  adversarial review. Owner-dependent iPhone/Android History selection and
+  Copy checks remain pending. No production config, runtime or pairing changed.

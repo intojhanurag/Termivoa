@@ -94,6 +94,20 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 3. Tap **Copy N lines**, for example **Copy 3 lines**.
 4. Tap **Done**.
 
+**Next beta:** Termivoa loads all retained History rows even when colored
+output needs more pages. It shows a complete frozen view, or says
+**History unavailable right now. Return to live and try again.**
+
+| What you see | What to do |
+| --- | --- |
+| **Loading history…** | Wait for the frozen view. |
+| **History unavailable right now. Return to live and try again.** | Tap **Done** and open **history** again. Try when output has slowed. |
+| **New output · Return to live** | Your selection stays frozen; tap the button to see the new output. |
+
+Termivoa keeps up to 5,000 history rows and 32 MiB on the computer. A loading
+attempt stops after a minute or when its limits are reached; it shows unavailable
+rather than joining an incomplete history to the current screen.
+
 ## Change the text size
 
 In the session menu (**⋯**), open **Settings** and tap **A−** or **A+** under **Terminal text size**.

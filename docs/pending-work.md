@@ -68,6 +68,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 - herdr create quota counts pending and attempted changes, and refunds
   preflight refusals once in their original window (#209), for **New worktree**
   and agent **New tab**. Owner real-phone checks remain in Next 5.
+
+- History no longer silently skips retained styled rows after 25 byte-limited
+  pages (#217, Next beta). Reads follow a contiguous cursor to completion;
+  timeout or budget exhaustion shows unavailable. Regression covers the real
+  1,632-row/40-page retained-history fixture. Physical phone selection remains
+  an owner-verification gate.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

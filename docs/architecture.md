@@ -222,6 +222,16 @@ and closes their connections. Live and uploads keep their existing separate
 streams. See [gateway-rpc.md](gateway-rpc.md), including the distinction
 between canceled gateway exchanges and existing broker-owned worktree jobs.
 
+### Retained history on the phone
+
+History follows each byte-limited page's contiguous cursor until `complete`,
+then appends the frozen screen. The old 25-page assumption could hide retained
+rows after styled output (#217). The phone caps one loading attempt at 5,000
+rows, 5,000 requests across restarts, 32 MiB of UTF-16 retained text, 128 MiB
+of received UTF-16 page data and 60 seconds. A failure drops the partial rows
+and shows unavailable; it never invents a continuous transcript. See
+[terminal-history.md](terminal-history.md) for token and lifetime rules.
+
 ## 4. Protocols
 
 Viewer publication is demand-driven (#221): `Session.captureAfter` retains

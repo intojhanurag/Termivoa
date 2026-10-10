@@ -785,3 +785,18 @@ To fix it, give each file its own copy again. Your backup keeps its copy.
 
 Do not delete the database or loosen its permissions to get past this error.
 No new pairing is needed.
+
+## Why does History say unavailable?
+
+**Next beta:** Termivoa says **History unavailable right now. Return to live
+and try again.** if the computer cannot finish a consistent history read,
+output keeps changing, or the read reaches its limits. A loading attempt has
+one minute. Tap **Done**, let output slow, then tap **history** again. It
+never shows missing rows as a continuous transcript.
+
+| Situation | What remains usable |
+| --- | --- |
+| History cannot finish | The live terminal, typing with control and a fresh History attempt |
+| A full-screen application is open | Its current screen; use the application's own scroll controls for older output |
+
+See [Copy from history](/docs/guides/live-terminal/#copy-from-history).

@@ -94,6 +94,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **History and copy.** Scroll back through bounded history and copy text.
   Next beta: preparing History pages uses less CPU and temporary memory on
   your computer.
+  Next beta reads byte-limited pages to completion, including styled output;
+  an incomplete read shows unavailable instead of skipping rows.
   In full-screen apps such as Claude Code, swipe on the terminal to scroll.
 - **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
   **Your turn**. Answer Claude Code and Codex questions with one tap; a

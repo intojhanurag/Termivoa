@@ -6,6 +6,8 @@ lastUpdated: 2026-10-10
 lastUpdated: 2026-10-08
 
 lastUpdated: 2026-10-09
+
+lastUpdated: 2026-10-08
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
@@ -50,6 +52,10 @@ New features on `main` show here until the next beta ships.
 - **Fixed: private-file permission repair.** Termivoa refuses linked or unsafe private files before changing their permissions. Normal owned files keep their identity and private permissions. A saved GitHub login that is linked to another file is unavailable until the local file is inspected. See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
 
 - **Safer GitHub login removal.** Removing the saved login preserves another file linked to the same stored contents. Local deletion does not securely erase copies or backups. See [How do I disconnect?](/docs/guides/github/#how-do-i-disconnect).
+
+- **Fixed: missing rows in History.** Colored output could make History skip
+  recent retained rows after loading 25 pages. It now reads to completion;
+  an incomplete read shows unavailable. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
 - **GitHub from the phone.** **Settings → Integrations** has a row **GitHub on mac** for each computer. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)
 - **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, right after **All**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).
 - **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **CLOSED** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
