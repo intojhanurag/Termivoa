@@ -123,7 +123,7 @@ A held finger that slides sends arrow keys, and a two-finger tap sends Esc (**Ne
 | This computer already follows the most chats it allows | A computer follows at most 8 chats at a time. Leave Chat on another session. |
 | Chat could not load | Check the connection and tap **Try again**. |
 
-No **Chat | Terminal** switch at all? The computer runs an older Termivoa, or Chat does not support it (Windows), or no agent runs in the session.
+No **Chat | Terminal** switch at all? Chat is off on that computer (run `pterm chat on` there, then open the session again), the computer runs an older Termivoa or Windows, or Chat already said it cannot read this session's agent.
 
 ## "Delivery uncertain"
 

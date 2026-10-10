@@ -29,7 +29,7 @@ Only the computer can turn Chat on, so a paired device alone can never start rea
 
 ## How do I switch between Chat and the terminal?
 
-Once Claude Code works or asks something in a session, the line under the session tabs shows a **Chat | Terminal** switch.
+When Chat is on for the computer, the line under the session tabs shows a **Chat | Terminal** switch. If a session has no agent that Chat can read, Chat says so, and after you tap **Terminal** the switch goes away for that session.
 
 | Tap | What you see |
 | --- | --- |

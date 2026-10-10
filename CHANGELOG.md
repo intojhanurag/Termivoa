@@ -18,8 +18,8 @@ All notable changes are documented here. The format follows
   write. `pterm chat off`, `pterm chat status` and a `pterm doctor` line;
   any paired phone can turn it off. macOS and Linux. Protocol revision 8.
 - **Chat view, phone side** ([#285](https://github.com/intojhanurag/Termivoa/issues/285),
-  ADR 0014). Phone: a **Chat | Terminal** switch under the session tabs once
-  Claude Code works in a session; Chat shows your messages, the agent's
+  ADR 0014). Phone: a **Chat | Terminal** switch under the session tabs when
+  Chat is on for the computer; Chat shows your messages, the agent's
   replies (sanitized markdown: no pictures, no web page code; links open
   only after a confirm sheet with the full address), tool steps in one box,
   edits with their changed lines and **Open in Changes ›**, **Thought for

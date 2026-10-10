@@ -7,7 +7,7 @@ import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { agentRuns, areaClick, ChangesWait, changedPath, chatOffered, liveTabs, SessionLost, TabBar, ViewSwitch } from './Live';
+import { areaClick, ChangesWait, changedPath, chatOffered, liveTabs, SessionLost, TabBar, ViewSwitch } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -234,33 +234,22 @@ describe('session lost', () => {
 
 describe('the Chat | Terminal switch', () => {
   const on = { protocolRevision: 8, chat: { enabled: true } };
-  const facts = { agent: true, chatShown: false, unsupported: false, provider: false };
+  const facts = { chatShown: false, unsupported: false, provider: false };
 
-  it('shows only for a computer with Chat (revision 8 and settings.chat) and a session with an agent', () => {
+  it('shows only for a computer with Chat on (revision 8 and settings.chat.enabled)', () => {
     expect(chatOffered(on, facts)).toBe(true);
-    // Off on that computer: the switch still shows, and Chat says how to turn it on.
-    expect(chatOffered({ protocolRevision: 8, chat: { enabled: false } }, facts)).toBe(true);
+    expect(chatOffered({ protocolRevision: 8, chat: { enabled: false } }, facts)).toBe(false);
     expect(chatOffered({ protocolRevision: 7, chat: { enabled: true } }, facts)).toBe(false);
     expect(chatOffered({ protocolRevision: 8 }, facts)).toBe(false);
     expect(chatOffered(undefined, facts)).toBe(false);
-    expect(chatOffered(on, { ...facts, agent: false })).toBe(false);
     expect(chatOffered(on, { ...facts, provider: true })).toBe(false);
   });
 
   it('hides after the computer said it cannot read that agent, but not while Chat is on screen', () => {
     expect(chatOffered(on, { ...facts, unsupported: true })).toBe(false);
     expect(chatOffered(on, { ...facts, unsupported: true, chatShown: true })).toBe(true);
-    // The agent exited while Chat is open: the switch stays, so Terminal is one tap away.
-    expect(chatOffered(on, { ...facts, agent: false, chatShown: true })).toBe(true);
-  });
-
-  it('counts an agent only once it works, asks or rests after work: a quiet shell is idle too', () => {
-    const at = '2026-10-10T10:00:00Z';
-    expect(agentRuns(undefined)).toBe(false);
-    expect(agentRuns({ state: 'idle', stateSince: at })).toBe(false);
-    expect(agentRuns({ state: 'idle', stateSince: at, afterWork: true })).toBe(true);
-    expect(agentRuns({ state: 'working', stateSince: at })).toBe(true);
-    expect(agentRuns({ state: 'waiting', stateSince: at })).toBe(true);
+    // Turned off while Chat is open: the switch stays, so Terminal is one tap away.
+    expect(chatOffered({ protocolRevision: 8, chat: { enabled: false } }, { ...facts, chatShown: true })).toBe(true);
   });
 
   it('finds the changed file of a Chat edit, also when the session sits below the repository top', () => {

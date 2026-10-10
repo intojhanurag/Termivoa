@@ -3742,13 +3742,16 @@ and browser run after explicit nonempty guard also pass. No runtime edits.
   scripts/check` (includes `pnpm typecheck`, `pnpm test:web`, `pnpm
   build:web`); `cd site && pnpm install --frozen-lockfile --ignore-workspace
   && npx astro build` (30 pages, all internal links valid).
-- E2E: `PW=<playwright-core> node scripts/e2e-multicomputer/chat.mjs` runs a
-  real mac dev stack and the neutral demo agent, with the host chat **faked
-  in the page** (the host side, M1a, is not merged): 8 of 8 checks pass
-  (CH1–CH8; [evidence](evidence/chat-view-phone/chat.md)). A real-host e2e
-  and docs screenshots stay pending until M1a lands.
+- Rebased on `feat/chat-view-host` (M1a, PR #298). E2E with the real host:
+  `PW=<playwright-core> node scripts/e2e-multicomputer/chat.mjs` (one mac dev
+  stack, `scripts/fakeagent` in a temp HOME, no real agent): 9 of 9 checks
+  pass (CH1–CH9). Write-to-phone latency over 40 stamped turns: p50 62 ms,
+  p95 84 ms (budget 400/750 ms). Evidence:
+  [m1b-e2e.md](evidence/chat-view/m1b-e2e.md). The e2e showed that agent
+  state counts a plain shell as working, so the switch now shows when Chat
+  is on for the computer and hides after the host says `unsupported`.
 - Bundle: new lazy `Chat` chunk about 20 KB (6.5 KB gzip) plus CSS 5.9 KB
   (1.6 KB gzip); Live grew by about 2.1 KB (0.75 KB gzip); the entry chunk did
   not grow.
 - No real transcript, agent, credential or provider credit used. Branch
-  `feat/chat-view-phone`; depends on the host pull request (M1a).
+  `feat/chat-view-phone`, PR #297 on top of PR #298 (M1a).

@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, type ReactNode, useRef, useState, useSyncExternalStore } from 'react';
-import { FEATURE_REVISION, type AgentStatus, type HTTPSettingsResponse, type KeyName } from '../generated/protocol';
+import { FEATURE_REVISION, type HTTPSettingsResponse, type KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
@@ -77,28 +77,21 @@ export function changedPath(paths: ReadonlyArray<string>, path: string): string 
 const viewModes = new Map<string, ViewMode>();
 /** Sessions whose agent Chat cannot read: no switch after leaving the Chat screen. */
 const noChat = new Set<string>();
-/** Sessions where an agent has worked or asked: the switch stays while it sits idle. */
-const agentSeen = new Set<string>();
-
-/**
- * An agent runs: it works or asks, or it went idle after work. A plain shell at its prompt is idle too (the broker
- * says idle for any quiet program), so idle alone is not an agent.
- */
-export const agentRuns = (agent: AgentStatus | undefined): boolean => agent !== undefined && (agent.state !== 'idle' || agent.afterWork === true);
 
 /**
  * The Chat | Terminal switch shows for a session of a computer that has Chat
- * (revision 8 and settings.chat), when an agent runs there (or Chat is already
- * on screen), and not after the computer said it cannot read that agent.
+ * on (revision 8 and settings.chat.enabled), or while Chat is on screen, and
+ * not after the computer said it cannot read that session's agent. The host
+ * decides what has an agent: the phone's agent state counts any output as
+ * work, so it cannot tell a shell from an agent.
  */
 export function chatOffered(settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'chat'> | undefined, facts: {
-  readonly agent: boolean;
   readonly chatShown: boolean;
   readonly unsupported: boolean;
   readonly provider: boolean;
 }): boolean {
   if (settings === undefined || settings.protocolRevision < FEATURE_REVISION.chat || settings.chat === undefined || facts.provider) return false;
-  return facts.chatShown || (facts.agent && !facts.unsupported);
+  return facts.chatShown || (settings.chat.enabled && !facts.unsupported);
 }
 
 /** The segmented Chat | Terminal switch under the tabs. */
@@ -392,9 +385,7 @@ export function Live({
   };
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const wantChat = viewModes.get(draft) === 'chat';
-  if (agentRuns(status.agent ?? current.agent)) agentSeen.add(draft);
   const offered = chatOffered(settings, {
-    agent: agentSeen.has(draft),
     chatShown: wantChat,
     unsupported: noChat.has(draft),
     provider: provider !== undefined,
