@@ -6,7 +6,7 @@
 //   node scripts/docs-screenshots/computers.mjs [--web-build]
 //
 // --web-build runs pnpm build:web and embed-web.sh first; without it the
-// embedded internal/webassets/dist is used. Writes phone-computers-*.webp
+// embedded internal/webassets/dist is used. Writes phone-computers-*.webp (found, confirm, code, adding, sessions, drawer, offline)
 // (390×844) next to this file; copy them to site/src/assets/docs/.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +44,11 @@ try {
     const s = made.json.session ?? made.json;
     await api(tool, `${stack.origin}/api/v1/sessions/${s.id}`, 'PATCH', { operationId: crypto.randomUUID(), generation: s.generation, title });
   };
-  const sessions = async () => { await app.front(); await app.go(`${mac.origin}/`); await app.waitText('Sessions'); };
+  const sessions = async () => {
+    await app.front(); await app.go(`${mac.origin}/`); await app.waitText('Sessions');
+    // The Home Screen hint pushes the list down; close it the way a user would.
+    if (await app.eval(`document.body.innerText.includes('add Termivoa to your Home Screen')`)) await click(app, 'Not now');
+  };
 
   step = 'pair';
   await app.go(`${mac.origin}/`);
@@ -96,6 +100,13 @@ try {
   await sleep(2000);
   await shot('computers-sessions');
 
+  // The side drawer: All computers, mac and vps, then Needs you, Wall, Settings, + Add a computer.
+  step = 'drawer';
+  await click(app, 'Computers and menu');
+  await until(() => app.eval(`!!document.querySelector('.drawer[role=dialog]')`), { what: 'the drawer' });
+  await shot('computers-drawer');
+  await app.eval(`document.querySelector('.drawer').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+
   step = 'offline';
   await vps.stop();
   await sessions();
@@ -116,7 +127,7 @@ process.exit(process.exitCode ?? 0);
 
 /** PNG (DPR 3) to WebP at 390 CSS px wide through a canvas; a crop is { y, h } in CSS px. */
 async function convert(page) {
-  for (const name of ['computers-found', 'computers-confirm', 'computers-code', 'computers-adding', 'computers-sessions', 'computers-offline']) {
+  for (const name of ['computers-found', 'computers-confirm', 'computers-code', 'computers-adding', 'computers-sessions', 'computers-drawer', 'computers-offline']) {
     let data;
     try { data = readFileSync(join(PNG, `${name}.png`)).toString('base64'); } catch { continue; }
     const c = crops[name] ?? { y: 0, h: 844 };

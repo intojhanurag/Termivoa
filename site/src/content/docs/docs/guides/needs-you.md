@@ -1,7 +1,7 @@
 ---
 title: Needs you
 description: Termivoa's Needs you tab lists every agent that waits for you on all your computers, and a Next button takes you from one answer to the next.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-10
 ---
 
 Termivoa puts every coding agent that waits for you, on all your computers, in one list called **Needs you**, and a **Next** button takes you from one to the next.
@@ -12,21 +12,21 @@ This page describes a feature that is not in `v0.1.0-beta.3` yet. It is a change
 
 ## Where is the Needs you tab?
 
-On the Sessions list, **Needs you** is a tab in the tab row, right after **All**. An amber number on it counts what waits for an answer, for example **Needs you 3**.
+On the Sessions list, **Needs you** is the last tab in the tab row, after **Sessions** (and **herdr**, when a computer has it). An amber number on it counts what waits for an answer, for example **Needs you 3**.
 
 | Case | What you see |
 | --- | --- |
 | At least one agent waits for an answer | The **Needs you** tab, with the count. |
 | Nothing waits | No **Needs you** tab. |
-| One computer and no herdr | The tab row shows only while something waits, with **All** and **Needs you**. |
+| One computer and no herdr | The tab row shows only while something waits, with **Sessions** and **Needs you**. |
 | You are on the tab and the last item is answered | The tab stays while it is open. The list says "Nothing needs you." |
-| A computer does not answer | The list says "Some computers did not answer. See All." It does not say "Nothing needs you." then. |
+| A computer does not answer | The list says "Some computers did not answer. See Sessions." It does not say "Nothing needs you." then. |
 
-The count is the same whichever tab or computer you look at. It counts all your computers.
+With one computer chosen in the [side menu](/docs/guides/computers/#how-do-i-switch-between-computers), the tab counts and lists only that computer. In **All computers**, it counts all your computers. The side menu shows the count of each computer, and its **Needs you** row opens the tab for all computers.
 
 ## What is in the list?
 
-The list has two parts. The app shows the state words, **Finished** and the status line in capital letters.
+The list has two parts.
 
 | Part | Row | State word | Also on the row |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ The list has two parts. The app shows the state words, **Finished** and the stat
 | Under **Finished** | A herdr worktree or workspace that is done, and that you did not open on this phone since you opened the app | `done` | The word "herdr" |
 
 - In each part, the longest wait is first.
-- With several computers, each row shows the computer's colour dot and name.
+- With several computers and **All computers** chosen, each row shows the computer's colour dot and name.
 - The count on the tab and the **Next** button use only the top part. **Finished** rows are there to read, not to answer.
 - On this tab, the status line under **Sessions** says "3 need you" or "1 needs you". When nothing waits, the list says "Nothing needs you."
 
@@ -79,9 +79,9 @@ A link to a session, a reload, and Back or Forward do not start it. Only a tap o
 | Not shown | Why |
 | --- | --- |
 | Terminal text | A row shows names and a state word. The only screen text is the question, the same one the Sessions row shows. |
-| A computer that cannot be reached | Its notice is on the **All** tab, and the list says "Some computers did not answer. See All." Its agents come back when the computer answers. |
+| A computer that cannot be reached | Its notice is on the **Sessions** tab, and the list says "Some computers did not answer. See Sessions." Its agents come back when the computer answers. |
 | herdr that is off, not running or too old | Its notice is on the **herdr** tab. See [What if herdr has a problem?](/docs/guides/herdr/#what-if-herdr-has-a-problem) |
-| Sessions that work, exited or are lost | They do not wait for you. They are on the **All** tab. |
+| Sessions that work, exited or are lost | They do not wait for you. They are on the **Sessions** tab. |
 
 ## Common questions
 
@@ -91,7 +91,7 @@ Termivoa remembers which done herdr rows you opened only until you close or relo
 
 ### Two agents are blocked in one herdr worktree. Why is there one row?
 
-A herdr worktree or workspace is one row. Open it and use the chips on top to go to its other tab.
+A herdr worktree or workspace is one row. Open it and use the tab chips on top to go to its other tab.
 
 ### Does Needs you change anything on my computers?
 

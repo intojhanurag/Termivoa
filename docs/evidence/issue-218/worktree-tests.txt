@@ -1,0 +1,7 @@
+RUN  v5.0.1 <repository>/web
+
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  22:50:21
+   Duration  273ms (transform 76%, import 16%, tests 8%, worker 1%)

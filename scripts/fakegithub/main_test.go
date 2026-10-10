@@ -170,7 +170,17 @@ func TestGitCloneNeedsALiveToken(t *testing.T) {
 	if err := clone(access); err != nil {
 		t.Fatal(err)
 	}
-	if last := s.gitAuths[len(s.gitAuths)-1]; !last.OK || last.N != 1 || last.User != "octo-demo" {
+	s.mu.Lock()
+	n := len(s.gitAuths)
+	var last gitAuth
+	if n > 0 {
+		last = s.gitAuths[n-1]
+	}
+	s.mu.Unlock()
+	if n == 0 {
+		t.Fatal("clone recorded no authentication")
+	}
+	if !last.OK || last.N != 1 || last.User != "octo-demo" {
 		t.Fatalf("auth record %+v", last)
 	}
 }

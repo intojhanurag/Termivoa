@@ -1,7 +1,7 @@
 ---
 title: Pair your phone
 description: Connect a phone to Termivoa with a one-time QR code and a 6-digit code check, add it to the Home Screen, then rename or remove paired phones.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 Termivoa pairs a phone with a one-time QR code from `pterm pair` and a 6-digit code that you check on both screens.
@@ -50,12 +50,12 @@ On Android, Chrome can also add it to the home screen.
 
 ## Add another computer
 
-Pair the phone with one computer first; it becomes home. To use more computers from the same app, run `pterm pair --via <home>` on each other computer, then tap **Add** next to it in **Settings → Computers → Found on your network**, or scan, paste or tap its link in the app. You check the code the same way. See [Use several computers](/docs/guides/computers/).
+Pair the phone with one computer first; it becomes home. To use more computers from the same app, run `pterm pair --via <home>` on each other computer, then tap **Add** next to it in **Settings → Found on your network**, or scan, paste or tap its link in the app. You check the code the same way. See [Use several computers](/docs/guides/computers/).
 
 ## See and rename your phones
 
 `pterm devices` lists paired phones, their status and last use.
-Rename one with `pterm devices rename <device-id> <label>`, or on the phone in **Settings → This device**.
+Rename one with `pterm devices rename <device-id> <label>`, or on the phone in **Settings → This phone → Name**.
 
 ## Remove a phone
 

@@ -933,7 +933,7 @@ type GatewayRPCProviderUpdatePayload struct {
 	Request    HTTPProviderUpdateRequest `json:"request"`
 }
 
-// PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.
+// PATCH /api/v1/providers/{provider}: Settings → (computer) on this computer.
 type HTTPProviderUpdateRequest struct {
 	Enabled *bool                     `json:"enabled,omitempty"`
 	Notify  []HTTPProviderNotifyState `json:"notify,omitempty"`
@@ -1290,7 +1290,7 @@ type HTTPSettingsResponse struct {
 // Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
 // client ID) or on Windows: the app shows no GitHub row for this computer.
 //
-// Revision 7. The GitHub row of this computer in Settings → Integrations.
+// Revision 7. The GitHub row of this computer in Settings → (computer).
 type HTTPGitHubInfo struct {
 	Login *string         `json:"login,omitempty"`
 	State HTTPGitHubState `json:"state"`
@@ -2057,9 +2057,9 @@ const (
 
 // ready: the host reads the provider. notRunning: installed, but its server does not
 // answer. unsupported: the installed version is too old or its data cannot be read. off:
-// turned off in Settings → Integrations on this computer. notInstalled (revision 5): the
+// turned off in Settings → (computer) on this computer. notInstalled (revision 5): the
 // provider's program is not on this computer; it has no tab and no list, only a card in
-// Settings → Integrations.
+// Settings → (computer).
 type HTTPProviderState string
 
 const (

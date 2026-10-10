@@ -31,6 +31,33 @@ function welcome() {
 }
 
 describe('parseHostMessage', () => {
+  it('enforces snapshot start-row schema bounds shared with the Go decoder', () => {
+    const black = { r: 0, g: 0, b: 0, a: 255 };
+    const row = { runs: [{
+      column: 0,
+      style: {
+        foreground: black, background: black, bold: false, faint: false,
+        italic: false, blink: false, reverse: false, conceal: false,
+        strikethrough: false, underline: 'none',
+      },
+      cells: Array.from({ length: 20 }, () => ({ text: ' ', width: 1, continuation: false, contentClipped: false })),
+    }] };
+    // Build the numeric token literally: JSON.parse rounds large integers in
+    // JavaScript, but they must still fail the existing maximum of 199.
+    const wire = (startRow: string) => JSON.stringify({
+      version: 1, type: 'snapshot.rows', requestId,
+      sessionId: brokerGeneration, generation: brokerGeneration,
+      payload: { snapshotId: brokerGeneration, revision: '1', startRow: 'ROW_TOKEN', rows: [row] },
+    }).replace('"ROW_TOKEN"', startRow);
+    for (const startRow of ['0', '199']) {
+      const message = parseHostMessage(wire(startRow));
+      expect(message.type === 'snapshot.rows' && message.payload.startRow).toBe(Number(startRow));
+    }
+    for (const startRow of ['-1', '200', '-9223372036854775808', '9223372036854775807', '9223372036854775806']) {
+      expect(() => parseHostMessage(wire(startRow))).toThrow(InvalidProtocolMessageError);
+    }
+  });
+
   it('returns a schema-validated host message', () => {
     const message = parseHostMessage(JSON.stringify(welcome()));
     expect(message.type).toBe('welcome');
