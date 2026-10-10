@@ -12,6 +12,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **herdr create allowance.** Refusals before creation starts keep the allowance shared by **New worktree** and agent **New tab**. Attempted creates still count if they fail. See [When does a create use my allowance?](/docs/guides/herdr/#when-does-a-create-use-my-allowance).
+
 - **Start the first herdr agent.** **New worktree** and **New tab** offer supported installed agents even with none running, and keep installed choices when their last agent stops. Discovery does not run an agent. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
 
 - **Smaller phone downloads.** App files transfer compressed on first open and after updates when the phone supports it. No new setup step. See [Download changes](/docs/quick-start/#what-changes-for-downloads-in-the-next-beta).

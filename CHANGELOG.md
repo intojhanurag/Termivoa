@@ -222,6 +222,13 @@ All notable changes are documented here. The format follows
   says "codex is not available in herdr now." Host: a bounded, cached Go
   check of canonical executable presence augments herdr's start-kind
   allowlist; no agent command is executed during discovery.
+
+- herdr create allowance (#209). Phone: a stale project, unavailable agent
+  kind or another refusal before creation starts no longer uses one of the
+  3 creates per minute; **New worktree** and agent **New tab** can be tried
+  again after correcting the choice. Host: reserve a unit before calling
+  herdr and return it only for a marked preflight refusal, once, in its
+  original window. Attempted changes still count even if they fail.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

@@ -282,7 +282,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | S7 | Too many processes | 4 provider sessions; 10 s end rule; one create at a time per computer |
 | S8 | Kicking the owner's own attach | Never `--takeover` |
 | S9 | Path or private text disclosure | No paths and no terminal titles in the list, in any HTTP body or in a push; group IDs are hashes. Live shows the open terminal's own folder to its viewer, as for every session |
-| S10 | Abuse of routes | A limiter in the broker keyed by device ID: `open` 20 per minute, `create` 3 per minute, `PATCH` 10 per minute (`limit_exceeded`) |
+| S10 | Abuse of routes | A limiter in the broker keyed by device ID: `open` 20 per minute, `create` 3 pending/attempted changes per minute (preflight refusals refund once in their original window, #209), `PATCH` 10 per minute (`limit_exceeded`) |
 | S11 | Environment leak to herdr children | Fixed env: `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the broker's lookup path), `TERM=xterm-256color`, `COLORTERM=truecolor`, `HERDR_SOCKET_PATH` |
 | S12 | A peer computer lies in its herdr data | Same as any peer response: lenient per-item validation, generic peer errors, text only |
 | S13 | Prefix commands from the phone | `0x02` doubled in provider-session input (section 6, rule 7) |
@@ -591,3 +591,33 @@ authorization, stored settings, or protocol revision are introduced.
 
 Primary mapping source: [herdr v0.9.3 canonical launch commands](https://github.com/herdrdev/herdr/blob/v0.9.3/src/detect/mod.rs#L153-L185).
 Evidence: [issue #208](evidence/issue-208/README.md).
+
+## Create admission accounting (issue #209, 2026-10-08)
+
+The broker reserves a create unit under the limiter mutex before invoking
+`Create` or an agent-bearing `newTab`. The unit belongs to the exact
+per-device create window object. A one-shot finish commits an attempted
+change or refunds a refusal before any mutating operation was attempted.
+Refused calls can be retried manually without spending the create allowance;
+the app does not retry an operation automatically.
+
+`herdr.RefusedBeforeStart` identifies a private error wrapper applied only
+to preflight paths. It preserves `errors.Is` and the fixed public error
+classification. An error code by itself is insufficient: `ErrNotGit` and
+manage's `ErrTargetMissing` also occur after a mutating RPC. Those unmarked
+errors keep their create charge, as do timeouts, ambiguous outcomes and
+partial success. The wrapper adds no protocol field.
+
+| Condition | Accounting |
+| --- | --- |
+| Busy, unavailable state, unknown group/kind, local not-git or agent-tab size refusal before a mutation | Reserved create unit returned |
+| Worktree or tab mutation attempted, including an error or unknown result | Unit consumed |
+| Concurrent requests | Pending units count toward the same limit of 3; provider's existing create lock remains |
+| Duplicate finish | `sync.Once` prevents a second refund or refund after commit |
+| Expiry or clock reset | Old window pointer cannot refund a replacement window, even at the same timestamp |
+| Manage route | Its separate 30/min attempt budget remains charged; only its agent-tab create reservation can be refunded |
+
+No automatic retransmission, new credentials, pairing, data storage or
+network surface is introduced. The limiter helper's ordinary `take` callers
+(open, update, manage and GitHub) retain their existing fixed-window rules.
+See [evidence](evidence/issue-209/create-admission.md).

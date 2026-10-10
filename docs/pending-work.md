@@ -64,6 +64,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   **New tab**, and keeps installed choices after the last agent stops (#208).
   Availability is read-only and bounded; real-agent launches and owner phone
   checks remain in Next 5. See [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
+
+- herdr create quota counts pending and attempted changes, and refunds
+  preflight refusals once in their original window (#209), for **New worktree**
+  and agent **New tab**. Owner real-phone checks remain in Next 5.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

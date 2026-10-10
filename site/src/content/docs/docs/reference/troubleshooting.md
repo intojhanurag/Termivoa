@@ -529,6 +529,15 @@ Termivoa started herdr's server, but it did not answer in time. Run `herdr serve
 
 **Next beta:** Termivoa checks commands without starting them. An agent installed only through herdr's shell settings may be missing until it runs there once. Check that herdr supports starting that kind and that the command is installed for the computer running Termivoa, then tap **Check again**. Choices are limited to 16, with running kinds first. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
 
+### Why does herdr say "too many requests; wait a minute and try again"?
+
+Termivoa limits repeated creates on each computer. **Next beta:** a refusal
+before creation starts keeps your allowance; an attempted create still
+counts if it fails. **New worktree** and **New tab** with an agent share
+three attempts per minute. Wait about a minute before another create. If a
+tab or worktree already exists, open it to continue rather than creating it
+again. There is also a separate limit for repeated workspace-menu actions.
+
 ### "The tab is ready, but the agent did not start."
 
 herdr made the tab, but no agent showed in it within about 15 seconds (the time that herdr gives an agent to start). Open the tab and look at its terminal. If it says "command not found", that agent is not installed on the computer. Else start the agent there. The **New worktree** sheet says "The worktree is ready, but the agent did not start." for the same cause.

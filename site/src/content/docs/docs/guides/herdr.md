@@ -145,6 +145,19 @@ A worktree is a second folder of a git repository on its own branch. herdr makes
 
 The sheet says "herdr makes the folder and a new branch from where shop is now." It takes up to about 45 seconds. Then the new terminal opens. Termivoa sends the first prompt when herdr says that the agent is ready for input.
 
+### When does a create use my allowance?
+
+**Next beta:** Termivoa allows three attempted creates per minute for each
+phone on each computer, shared by **New worktree** and **New tab** with an
+agent. A refusal before creation starts keeps that allowance. Correct the
+choice and try again yourself; Termivoa does not retry a create automatically.
+
+| What happened | Uses the create allowance? |
+| --- | --- |
+| A project or workspace is gone, a kind is unavailable, or herdr is busy before creation | No |
+| Creation was attempted, even if it failed or the answer was lost | Yes |
+| A tab or worktree exists but its agent or first prompt failed | Yes; open the existing terminal to continue |
+
 If something goes wrong, the app says why:
 
 | Message | What to do |
@@ -152,7 +165,7 @@ If something goes wrong, the app says why:
 | “fix-login” already exists in shop. Pick another name. | Use another branch name. |
 | shop is not in git, so it cannot have worktrees. | Use a project that is in git. |
 | herdr could not make the worktree. Nothing was opened. Try again or pick another name. | Try again, or pick another name. |
-| too many requests; wait a minute and try again | This phone asked for more than 3 new worktrees or agent tabs in a minute. Wait a minute. |
+| too many requests; wait a minute and try again | This phone has 3 pending or attempted creates in a minute, shared by new worktrees and agent tabs. Wait a minute. |
 | herdr is busy with another change; try again | Another change runs in herdr on that computer. Try again in a few seconds. |
 | herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again. | The same two causes, on a computer that you added. Wait a minute. |
 | The worktree is ready, but the agent did not start. | Open the worktree and start the agent yourself. If its terminal says "command not found", install that agent on the computer. |
