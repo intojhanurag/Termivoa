@@ -1,0 +1,7 @@
+=== RUN   TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen
+    gateway_worktree_availability_test.go:113: list completed in 6.744291ms while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: authenticate completed in 3.314958ms while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: live-open completed in 4.296833ms while the git hook remained blocked
+--- PASS: TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen (0.63s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	2.271s

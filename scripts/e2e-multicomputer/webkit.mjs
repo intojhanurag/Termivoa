@@ -75,11 +75,11 @@ try {
     body: JSON.stringify({ operationId: crypto.randomUUID(), projectId: p, shellProfileId: s }) }).then((r) => r.status), [vps.origin, settings.projects[0].id, settings.shellProfiles[0].id]);
   await tool.close();
   await page.goto(`${mac.origin}/`);
-  await page.locator('.session-row', { hasText: 'vps ·' }).first().waitFor({ timeout: 20000 });
+  await page.locator('section[aria-label="vps"] .session-row').first().waitFor({ timeout: 20000 });
   await page.screenshot({ path: join(out, 'webkit-sessions.png') });
-  check('W3', 'WebKit: the Sessions list shows the vps session with its label', created === 200, `create ${created}; chips ${await page.locator('[aria-label=Computers] .chip').allInnerTexts()}`);
+  check('W3', 'WebKit: the Sessions list shows the vps session under the vps header', created === 200, `create ${created}; drawer pill ${await page.locator('.drawer-pill').innerText()}; computer headers ${await page.locator('h2.computer-group').allInnerTexts()}`);
   started = Date.now();
-  await page.locator('.session-row', { hasText: 'vps ·' }).first().click();
+  await page.locator('section[aria-label="vps"] .session-row').first().click();
   await until(async () => /[%$#]\s*$/m.test(await terminal()), { what: 'prompt' });
   const openMs = Date.now() - started;
   if ((await text()).includes('Take control')) await page.getByRole('button', { name: 'Take control' }).click();

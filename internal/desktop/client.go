@@ -70,7 +70,7 @@ func (client *FrameClient) AddSnapshotRows(generation string, payload protocol.S
 		client.assembly = nil
 		return err
 	}
-	if len(payload.Rows) == 0 || payload.StartRow < 0 || payload.StartRow+int64(len(payload.Rows)) > int64(len(assembly.rows)) {
+	if len(payload.Rows) == 0 || payload.StartRow < 0 || payload.StartRow >= int64(len(assembly.rows)) || int64(len(payload.Rows)) > int64(len(assembly.rows))-payload.StartRow {
 		client.assembly = nil
 		return resync(errors.New("snapshot row chunk is outside the declared screen"))
 	}

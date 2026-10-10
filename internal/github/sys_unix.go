@@ -41,9 +41,6 @@ func killGroup(command *exec.Cmd) {
 	}
 }
 
-// openNoFollow makes an open fail on a symlink.
-const openNoFollow = syscall.O_NOFOLLOW
-
 // renameNoReplace is the system's exclusive rename (a seam for tests).
 var renameNoReplace = renameNoReplaceSystem
 

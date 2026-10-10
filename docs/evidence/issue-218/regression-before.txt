@@ -1,0 +1,6 @@
+=== RUN   TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen
+    gateway_worktree_availability_test.go:111: list waited behind a running git hook: context deadline exceeded
+--- FAIL: TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen (0.82s)
+FAIL
+FAIL	github.com/intojhanurag/phone-terminal/internal/broker	1.388s
+FAIL

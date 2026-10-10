@@ -47,23 +47,23 @@ const (
 func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProviderCreateRequest) (protocol.HTTPProviderCreateResponse, error) {
 	var response protocol.HTTPProviderCreateResponse
 	if !provider.create.TryLock() {
-		return response, ErrBusy
+		return response, refused(ErrBusy)
 	}
 	defer provider.create.Unlock()
 	provider.mu.RLock()
 	current := provider.view
 	provider.mu.RUnlock()
 	if current.state != protocol.HTTPProviderStateReady {
-		return response, ErrUnavailable
+		return response, refused(ErrUnavailable)
 	}
 	group, ok := current.groups[request.GroupID]
 	switch {
 	case !ok:
-		return response, ErrTargetMissing
+		return response, refused(ErrTargetMissing)
 	case !group.git:
-		return response, ErrNotGit
+		return response, refused(ErrNotGit)
 	case request.Agent != nil && !slices.Contains(current.kinds, *request.Agent):
-		return response, ErrKind
+		return response, refused(ErrKind)
 	}
 
 	var created struct {

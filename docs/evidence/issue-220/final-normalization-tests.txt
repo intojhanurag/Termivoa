@@ -1,0 +1,2 @@
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	0.819s
+ok  	github.com/intojhanurag/phone-terminal/internal/terminal	1.134s

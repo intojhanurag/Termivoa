@@ -9,13 +9,13 @@
 >
 > "there is no sense of computer has installed or not gh … Be professional feature, not like bulky to user, every edge case should be cover"
 
-So: one **Connect** in **Settings → Integrations**, no terminal, no `gh`, then a list of repositories, and one tap puts a repository on the chosen computer. "Drop" is read as **skip**: Termivoa never deletes or overwrites a folder (section 8).
+So: one **Connect** in **Settings → (the computer) → GitHub**, no terminal, no `gh`, then a list of repositories, and one tap puts a repository on the chosen computer. "Drop" is read as **skip**: Termivoa never deletes or overwrites a folder (section 8).
 
 ## 2. What the user sees
 
 | Step | Screen | Picture |
 | --- | --- | --- |
-| 1 | **Settings → Integrations** has one row for each computer, "GitHub on mac", like "herdr on mac": **Connect**, or the account name with **Set up a repository** and **Disconnect**. It shows also on a computer with no herdr | [g1](evidence/github-integration/g1-settings-card.png) |
+| 1 | **Settings → (the computer)** has a GitHub block, "GitHub on mac", like the herdr block: **Connect**, or the account name with **Set up a repository** and **Disconnect**. It shows also on a computer with no herdr | [g1](evidence/github-integration/g1-settings-card.png) |
 | 2 | **Connect** shows a code and **Copy code and open GitHub**. GitHub opens; the user pastes the code and authorizes | [g2](evidence/github-integration/g2-connect-code.png) |
 | 3 | One time for each GitHub account: **Choose on GitHub** (all repositories, or only some) | [g4](evidence/github-integration/g4-choose-repositories.png) |
 | 4 | **Set up a repository**: a search box and the list. A repository that is already on that computer has the tag "on mac" | [g3](evidence/github-integration/g3-repository-list.png) |
@@ -94,7 +94,7 @@ The client ID is public: anyone can copy it and show a login page that says "Ter
 - One row, one writer. Every use goes through one function that holds a lock, refreshes when less than 5 minutes are left, and **commits the new pair to the database before it returns it**. The old pair is dead from GitHub's answer on, so there is nothing to keep. The pair is lost when the broker stops between GitHub's answer and the commit, or when the answer does not arrive in the 10 s limit after GitHub already rotated; the broker then tries one time more with the same refresh token (a lab item: does GitHub accept it?), and after that the row says **Connect** again.
 - An expired refresh token (6 months) → the pair is deleted; "GitHub is not connected on mac now."
 - A `bad_refresh_token` that the broker does not expect (the token is not old) means that something else used it. It gets its own line: "Another program used this login. Revoke Termivoa on GitHub, then connect again." with the link. Connecting again does **not** cut off a thief; only the revoke on github.com does.
-- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then deletes the stored pair (as built: the file `github.json`, overwritten with zeros, then removed; section 17). When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
+- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then removes the stored pair's filename. Draft correction #256 (ADR 0013, owner approval pending) uses unlink-only removal instead of overwriting an inode that may be shared with another file. This does not securely erase copies or backups (section 17). When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
 - The tokens are a secret type that prints as `[redacted]` (as `internal/auth/secret.go` does), not a formatter rule. `pterm doctor` prints only "GitHub: connected as <login>".
 
 ### 6.3 The list
@@ -149,7 +149,7 @@ credential.https://github.com/<owner>/<name>.git.helper = !<pterm> github-creden
 
 The first, empty line makes git forget the helpers from the user's system and global config **for this repository's address only**, so the 8-hour token is never sent to the macOS Keychain or to `~/.git-credentials`, and never goes stale there. The cost, stated in the docs: in a folder that Termivoa cloned, git uses Termivoa's login for that repository. That is why the app asks for read and write (section 5). A folder that was already there (`alreadyHere`) is **not** changed; it keeps the user's own login.
 
-After **Disconnect** the line stays. The helper then prints one line on stderr: "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations." and git fails with its own message.
+After **Disconnect** the line stays. The helper then prints one line on stderr: "Termivoa is not connected to GitHub on this computer. In Termivoa, open Settings, tap this computer, then Connect." (Since the UI revamp, 2026-10-10, Connect is on the computer's page in Settings; this helper text still names the old path.) and git fails with its own message.
 
 When that repository has no `user.name`, and the user has none in the global config, the broker sets the repository's own `user.name` to the login and `user.email` to GitHub's no-reply address for that account, so the first commit does not fail on a new computer.
 
@@ -315,7 +315,7 @@ Two independent reviews of this document and ADR 0010, 2026-10-06. Both: **appro
 | --- | --- | --- | --- |
 | S1 | `GIT_ASKPASS=<pterm> github-askpass` cannot work (git runs it as one path), and a token in the environment is readable and inherited | Blocker | Removed. One helper through git config; no token in any environment (6.5, 6.6) |
 | S2 | "Termivoa's helper is asked first" is false; global helpers are asked first and then **store** the token (Keychain, `~/.git-credentials`) | Blocker | The reset line scoped to the repository's address, and `password_expiry_utc`; a test with a global `store` helper (6.6, section 12) |
-| S3 | "Cannot revoke" is wrong: `POST /credentials/revoke` needs no authentication | Should-fix | **Disconnect** revokes both tokens; `secure_delete` (6.2) |
+| S3 | "Cannot revoke" is wrong: `POST /credentials/revoke` needs no authentication | Should-fix | **Disconnect** attempts revocation of both tokens; local file removal is not secure erasure (ADR 0013) |
 | S4 | "A visible sign" overstates: after a thief's refresh the owner sees the plain "not connected" line, connects again, and the thief keeps a pair | Should-fix | Its own line and the revoke link; the ADR says that reconnecting does not cut off a thief (6.2, section 10) |
 | S5 | A repository named `.ssh`, `.config` or `.aws` lands in the home folder; the owner pattern allowed `..` | Should-fix | No leading `.` or `-`; the owner pattern has no dot (6.4) |
 | S6 | The lost-pair window is not milliseconds: a timeout after GitHub rotated loses it too | Should-fix | Said so; one retry; a lab item (6.2) |
@@ -350,8 +350,8 @@ What the build does differently from sections 1–14, and why. Each line was che
 
 | Design | Build | Why |
 | --- | --- | --- |
-| One table `github_account` in the database (section 7) | One file `github.json` (mode 0600) in the broker's data folder, written with a 0600 temp file and a rename; deleted by writing zeros over it, then removing it. A damaged file reads as "not connected" | The schema file is checksummed: a new table would have forced every computer to delete its database and pair the phone again. The file has the same exposure as the database (same user, same folder) |
-| `secure_delete` on the table (6.2) | Zeros over the file before the remove | No table. The ceiling is the same: a copy-on-write file system or a backup can keep old blocks |
+| One table `github_account` in the database (section 7) | One file `github.json` (mode 0600) in the broker's data folder, written with a 0600 temp file and a rename; draft #256 removes only the filename. A damaged file reads as "not connected" | The schema file is checksummed: a new table would have forced every computer to delete its database and pair the phone again. The file has the same exposure as the database (same user, same folder) |
+| `secure_delete` on the table (6.2) | Draft #256 uses unlink-only file removal (ADR 0013), not zero overwrite | Overwriting a hard-linked inode corrupts other names. Neither overwrite nor unlink guarantees erasure from COW storage, snapshots or backups; remote revocation remains separate |
 | Six routes (section 7) | Three: `GET /api/v1/github`, `POST /api/v1/github` with `action` (connect, cancel, disconnect, setup, stop), `GET /api/v1/github/repos` | One action route is the pattern of herdr manage; fewer routes, the same limits for each action |
 | State `unavailable` | No GitHub field at all in the settings when the build has no app or the computer is not macOS or Linux; the phone shows no row | The phone cannot tell "no app" from "old Termivoa" anyway |
 | Problem word `githubUnreachable` | `gitHubDown`; connect problem `codeExpired`; set-up phase `finished` | The generated Go names of `expired`, `unreachable` and `done` clashed with existing protocol names |
@@ -367,3 +367,28 @@ Known limits found while building (in `docs/pending-work.md`):
 
 - A refusal from a computer other than home shows the app's general "That computer could not do this." (existing app behaviour for every peer error), so "GitHub is busy…" shows only for home.
 - An organisation member who is not an owner sees an empty list until an owner approves the app; the sheet offers **Choose on GitHub**.
+
+
+### How does confirmed uninstall revoke the saved login? (#213)
+
+Proposed/implemented in the draft owner-review branch; see
+[ADR0011](decisions/0011-uninstall-github-revocation.md) and
+[uninstall-github.md](uninstall-github.md). After consent, unregister/stop and
+exclusive data ownership, the GitHub package reads its saved pair and makes
+Disconnect's existing bounded revoke request. It neither calls New nor scans
+Git/sweeps clones/refreshes credentials. Parent cancellation preserves the
+saved pair; remote-only outage permits requested local deletion with the
+manual GitHub applications hint. The private directory and lock marker remain
+so a second broker cannot replace the lock during contents removal. No
+protocol, stored schema, scopes or pairing changes; owner approval is pending.
+
+## 18. Shared private-file repair (#255)
+
+The local implementation on `fix/issue-255` uses the shared IPC guard described
+in [private-file-permissions.md](private-file-permissions.md), ADR 0012. Token
+loading refuses final symlinks and hard-linked token files before permission
+repair can change another object. Valid owned token files are tightened to
+0600 on the same open inode; the existing atomic save remains unchanged.
+The guard does not bind a later `os.ReadFile` reopen to its handle and is not
+a sandbox against a hostile process in the same account. No token format,
+network, OAuth scope or pairing change. **DO NOT MERGE without owner review.**

@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-10
 
 ## Start here
 
@@ -14,6 +14,472 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### UI revamp: side drawer, Settings by computer, Geist (2026-10-10, branch `feat/ui-revamp`; not merged)
+
+- **Why.** With two or more computers, the computer chips crowded Sessions
+  and Settings was one long page. The owner approved the designs on
+  2026-10-10 ([ui-revamp.md](ui-revamp.md); pictures in
+  [`evidence/ui-revamp/`](evidence/ui-revamp/)). Not critical under rule 24:
+  no change to authentication, pairing, trust, network surface, protocol or
+  stored secrets.
+- **What.** Phone only (commit b737be0): the side drawer (`Drawer.tsx`) with
+  All computers, each computer's state and count, Needs you, Wall, Settings,
+  + Add a computer; the amber pill; tabs Sessions · herdr · Needs you; a
+  header per computer in All computers. Settings by computer
+  (`SettingsComputer.tsx`, `Settings.tsx`, `Computers.tsx`): Computers cards
+  with chips, This phone, and one page per computer (herdr, GitHub, This
+  computer). Geist and Geist Mono bundled (`fonts.css`). Texts: "Can't
+  reach", "See Sessions.", sentence case for state words. Host: no change.
+- **Docs.** Every "Settings → Integrations", "Settings → Computers", "This
+  device", "All" tab and upper-case label in the docs site, README,
+  CHANGELOG (Unreleased), `architecture.md`, `pending-work.md` and the design
+  documents now names the new screens; `guides/computers.md` has "How do I
+  switch between computers?" and "Where are a computer's settings?";
+  release notes have a Next beta bullet. Screenshots retaken with
+  `scripts/docs-screenshots/` (demo data).
+- **Commands and evidence.** `pnpm typecheck`; `pnpm test:web` (1080
+  pass); `GOTOOLCHAIN=go1.27.1 sh scripts/check` (pass); e2e
+  `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build`
+  161 PASS, 0 FAIL, 0 SKIP (new checks U1-U9: drawer, filter, amber pill,
+  Settings levels and Back, Add a computer, Geist from the app's origin,
+  drawer close paths, New session on the chosen computer, the queue on the
+  chosen computer) and `phase-a.mjs` 32 PASS, 0 FAIL; screenshots with
+  `scripts/docs-screenshots/` (demo data); `cd site && npx astro build`
+  (pass, links valid). Design pictures in `docs/evidence/ui-revamp/`.
+- **Reviews.** One independent review (verdict: merge after fixes; no lost
+  control): the queue and the status line now follow the chosen computer,
+  the drawer is a native modal `<dialog>`, New session opens on the chosen
+  computer, the choice clears on a new pairing; small fixes in Settings.
+  The e2e run then found two host texts that named the old page
+  (`cmd/pterm/github.go`, `internal/cli/admin.go`); both now say "Settings,
+  tap the computer". Issues filed from the run: #269, #270.
+- **Open.** Not tested on a real phone. Follow-ups in
+  [pending-work.md](pending-work.md) (Polish next, item 7).
+
+### Website: termivoa.com and visitor counting (2026-10-10, branch `chore/site-domain-analytics`)
+
+- **What.** The owner bought `termivoa.com` (Cloudflare Registrar; DNS at
+  Cloudflare, records "DNS only"; Vercel serves the site, `www` redirects
+  with 308). Every `termivoa.vercel.app` link in the repository and the
+  site now uses `https://termivoa.com` (Astro `site`, canonical, Open Graph,
+  `robots.txt`, sitemaps, README, install docs); `termivoa.vercel.app` keeps
+  working. History entries keep the old address.
+- **Visitor counting.** Vercel Web Analytics on the landing page and the
+  docs: one script from the site's own origin (`/_vercel/insights/script.js`),
+  no cookies. The landing page's CSP now allows `script-src 'self'` and
+  `connect-src 'self'`. The security page says so (Common questions). The
+  app and the computers send nothing.
+- **Owner steps.** Enable Web Analytics in the Vercel project; change the
+  GitHub App's Homepage URL and Setup URL to `https://termivoa.com` and
+  `https://termivoa.com/docs/guides/github/`.
+
+### Patched source-map build dependency (2026-10-08, #226)
+
+- Confirmed the root high-severity dependency gate fails for
+  `source-map-js` 1.2.1, also present in the independent website lockfile.
+- Both lockfiles now resolve the compatible patched 1.2.2. The root workspace
+  has a narrow override for versions below that release. No runtime or
+  protocol change, and no audit threshold change.
+- Passed with Node 24.11.0/pnpm 10.33.0: frozen root install,
+  `pnpm protocol:check`, `pnpm typecheck`, all 1,048 web tests,
+  `pnpm build:web`, and `pnpm audit --audit-level high` (exit 0).
+  Frozen independent website install, Astro build and all internal links
+  also passed. The independent website audit still fails for two high
+  advisories outside this issue; root retains two moderate advisories.
+- Evidence: [issue-226](evidence/issue-226/README.md). Independent PR review,
+  hosted required checks and merge remain pending. Separate dependency
+  remediation is tracked by #227 and #228.
+
+### Patched protocol-generator dependency (2026-10-08, #227)
+
+- Confirmed `quicktype` 26.0.0 pins vulnerable `stream-json` 3.5.0.
+  A parent-scoped override resolves that edge to patched 3.6.0. No shipped
+  Node runtime, protocol/schema change or audit exclusion was introduced.
+- With Node 24.11.0/pnpm 10.33.0, frozen install and the full `scripts/check`
+  passed: generation drift, Go vet/tests including vendored modules,
+  TypeScript, all 1,048 web tests and production build. Generated files
+  are unchanged. `pnpm audit --json` now reports zero moderate advisories;
+  its exit remains 1 for the unrelated source-map high advisory (#226).
+- Evidence: [issue-227](evidence/issue-227/README.md). Independent review,
+  required hosted checks and merge remain pending; physical-phone and
+  native Windows/Linux gates remain open.
+
+### Fake GitHub fixture race (#216, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1:
+  `go test -race -count=3 -run '^TestGitCloneNeedsALiveToken$' ./scripts/fakegithub`
+  exited 1 with `main_test.go:173` reading the authentication slice while
+  `main.go:516` appended to it.
+- The assertion now copies the final record under the fixture's mutex and
+  checks it after unlocking. Adjacent test reads occur before the HTTP
+  server starts; the control route already locks its copy. Test code only;
+  no host or phone behaviour changes.
+- Passed: the focused command with `-count=20`, the whole fixture package
+  with `go test -race -count=10 ./scripts/fakegithub`, and
+  `go vet ./scripts/fakegithub`. Evidence:
+  [issue-216](evidence/issue-216/README.md). The repository-wide race suite
+  remains pending for the coordinating merge gate; real-device and 24-hour
+  soak gates remain pending.
+
+### Coordinated soak status verification (#224, 2026-10-08)
+
+- `PTERM_SOAK_DURATION=30s go test -tags soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v`
+  passed: three children, one reconnect, all three final screens match,
+  and 998–1,000 complete output samples per session.
+- `PTERM_SOAK_THROTTLE_DURATION=20s go test -tags soak ./tests/soak -run '^TestSoakThrottledPhones$' -count=1 -v`
+  passed: all three viewer rates produced samples and matched final screens.
+  The 100 KiB/s viewer's valid slow tail remained visible.
+- These runs overlapped other checks and are not isolated CPU/latency
+  benchmarks. The separate intermittent helper-child assertion (#232) did
+  not occur in this run. Native platforms, real phones and 24-hour soak
+  remain pending. Details: [issue-224](evidence/issue-224/README.md).
+
+### Soak latency samples require complete status records (#224, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1, with
+  `go test -tags soak -count=1 -run '^TestObserveStatus' ./tests/soak`:
+  the parser accepted a partial timestamp as `497597h` of latency, sampled
+  an unchanged record twice and accepted a future timestamp as `-985ms`.
+  Every byte split of the printed status through the terminal emulator is
+  now covered by a regression.
+- The synthetic child writes an explicit end marker. The viewer validates
+  complete fields, session/PID/sequence consistency and timestamp order,
+  and samples each observed write once. Paused/static records and valid
+  slow-link delays remain measurable. A run with no complete measurements
+  now fails. Only the soak harness changes; no product code or protocol.
+- Passed: `go test -tags soak -race -count=20 -run '^TestObserveStatus' ./tests/soak`,
+  `go vet -tags soak ./tests/soak` and `git diff --check`. Evidence and metric
+  limits: [issue-224](evidence/issue-224/README.md). A new busy/throttled soak
+  is pending for the coordinator, without competing benchmark work. Earlier
+  soak output-to-frame tails may contain the parser defect; input RTT and
+  memory are separate metrics. Real-device and 24-hour soak gates stay open.
+
+### Owned browser teardown (#260, 2026-10-09, `fix/issue-260`; local PR preparation)
+
+- **Reproduced.** The shared browser helper returned before a real delayed child
+  exited: the focused baseline assertion failed after about 26 ms with
+  `exitCode === null`, despite a close acknowledgement. This explains why an
+  immediate profile removal can race later browser writes.
+- **Changed.** One shared close promise observes child exit, waits up to 3 s for
+  graceful close, 1 s after TERM and 1 s after KILL, and then up to 1 s for its
+  own WebSocket close. Failure rejects. Pending CDP timers and listeners are
+  cleaned; new requests during teardown are refused. Only the owned child is
+  signaled. [Internal test design](../scripts/e2e-multicomputer/README.md#how-does-owned-browser-teardown-finish).
+- **Executed with Node 24.** `node --check scripts/e2e-multicomputer/lib.mjs`
+  and `node --check scripts/e2e-multicomputer/browser.test.mjs`: pass.
+  `CHROME='<existing Chromium executable>' node --test
+  scripts/e2e-multicomputer/browser.test.mjs`: 10 pass, 0 fail, 0 skipped,
+  about 14.6 s. Actual Chrome 151.0.7922.34 exited and its temporary profile was
+  removed immediately without retries. Real delayed-child, TERM/KILL escalation,
+  concurrent close, pending request cleanup and child/socket timeout failures
+  are covered. [Evidence](evidence/issue-260/verification.md).
+- **Scope and gates.** Test tooling only; no shipped Go runtime, protocol,
+  authentication, phone UI or public feature change. No dependencies installed.
+  Full app flows, physical devices and native Windows were not run for this
+  change. Public docs/site are unchanged, so no public feature or site-build
+  result is invented. Hosted CI remains disabled by explicit owner decision;
+  coordinating review, private PR and merge remain with the root agent.
+
+### GitHub roadmap status corrected (2026-10-08, #225)
+
+- The current roadmap still said the GitHub integration was unmerged.
+  `gh pr view 212 --json state,mergedAt,mergeCommit,url` confirms merge
+  commit `465250c`; the same command for #229 confirms App build
+  configuration merged at `08f0332`. Both commits are in current main.
+- Updated only the current roadmap status and links. Real-phone device and
+  installation flows, refresh-token retry and credential-helper verification
+  remain open. Historical progress entries retain their original status.
+- `git diff --check` passed. Independent PR review, required hosted checks
+  and merge remain pending. No runtime, protocol or public-doc claim changes.
+
+### History page CPU and allocation reduction (#219, 2026-10-08)
+
+- **Verified defect:** the page builder repeatedly encoded all preceding rows.
+  Two synthetic 80-column benchmark runs measured 131.5–132.9 ms and
+  133.3–135.2 MB allocated per page before the fix.
+- **Changed:** reuse row-bounding JSON lengths, add row delimiters, and
+  encode only small generated metadata per candidate. Existing bounds,
+  exact page cutoff, pagination and validation remain unchanged. After:
+  2.37–2.39 ms and 5.77 MB allocated per page. No schema or pairing change.
+- **Evidence:** [issue-219](evidence/issue-219/README.md), with before/after
+  benchmark output and test/build logs. Commands include the protocol suite,
+  affected-package vet/race checks, final history race tests and the frozen
+  site install plus Astro build (29 pages). Exact-budget, one-byte-over,
+  escape/style/link/clipping and completion metadata regressions pass.
+- **Pending:** coordinator full-repository check and independent review;
+  physical-phone, native Windows/Linux and 24-hour soak gates remain pending.
+  Phone page-count correctness is the separate issue #217.
+
+### Busy-terminal message construction (#220, 2026-10-08)
+
+- **Verified defect:** strict self-decoding consumed 55.10% of broker CPU
+  samples in a three-session, 64 KiB/s/session, 30-second profile.
+- **Changed:** shared envelope/semantic validators check exact generated
+  terminal payloads before serialization; low-rate notices and every receiving
+  trust boundary retain strict JSON decoding. Required arrays and byte bounds
+  remain checked. Malformed Go text/links keep the original wire round trip
+  after JSON replacement, preserving OSC8 behavior and validating expanded
+  byte lengths. No schema, revision, data or pairing change.
+- **Measured initial optimization (before the final UTF-8 eligibility guard):**
+  with identical diagnostic overlays and heavy checks paused, broker CPU was
+  140% before and 30% after; input p95 was
+  32.39–33.98 ms before and 22.49–25.26 ms after. All three final screens
+  matched after one reconnect. An 80-column/24-row patch benchmark fell
+  from 6.54–6.68 ms / 6.42–6.44 MB allocated to 0.298–0.302 ms / 0.289–0.290 MB with the final guard.
+- **Evidence:** [issue-220](evidence/issue-220/README.md), with benchmark,
+  profile, package/vet/race and site-build logs, commands and parity tests.
+  Final-head profile stopped at 16 s on the scanner census race despite the
+  diagnostic filter; final full-soak validation remains pending.
+- **Not passed:** the original soak harness has a separate child-count
+  assertion defect (#232): a legitimate lsof scanner counts as a fourth
+  session child. Original baseline and changed-build failures are retained.
+  The measurement-only overlay excludes only confirmed lsof names and is
+  not part of this PR or a substitute for the original gate. Timestamp
+  probe correctness is the separate #224; phone/native OS/24-hour gates,
+  coordinator full checks and independent review remain pending.
+
+### 2026-10-08 — #221: Wall capture follows usable viewer slots
+
+Reproduced on `08f0332`: a 5 fps thumbnail caused 78 screen copies in 1.61 s;
+an unacknowledged snapshot caused 77 in 1.43 s. The actor now retains dirty
+output until the earliest ready viewer slot with a reusable timer. Blocked
+sends/acknowledgements pause publication; Live keeps its cadence. Attach,
+resize, exit and valid snapshot catch-up retain direct captures. Independent
+agent scans still copy screens. No schema or protocol change.
+
+Passed `go test ./internal/broker -count=1` (92.530 s), focused viewer/thumbnail/
+snapshot/lifecycle tests, focused broker race tests (17.370 s),
+`go vet ./internal/broker ./internal/terminal`, frozen workspace install and
+`pnpm protocol:check`, frozen site install plus `npx astro build` (29 pages,
+valid links). Real-core capture benchmark: 157,917 B at 80×24; 985,181 B at
+200×60; 6,559,095 B at 400×200. Measurements used shared development load;
+no total-host CPU or full-soak claim. Commands, raw results and doc coverage:
+[`evidence/issue-221/README.md`](evidence/issue-221/README.md).
+
+Pending: parent integration/PR review, integrated busy soak, iPhone/Android
+Wall + Live checks and Windows evidence. No push/PR/merge/deploy by the helper.
+
+### Later phones get notification attempts after many hung subscriptions (#207, 2026-10-08)
+
+- Reproduced against `08f0332` via a Go source overlay: 25 and 64 fake
+  subscriptions, with all but the last hanging and the production timeout
+  ratio preserved, returned zero accepted messages after the shared deadline.
+- Each request now gets a bounded share of half the remaining send window,
+  with the other half reserved for encryption, scheduling and cleanup.
+  Four workers, 64 subscriptions and rate/in-flight bounds stay unchanged.
+  Temporary timeouts and cancellation keep subscriptions; expired or invalid
+  ones still leave. No schema or protocol change, no new pairing.
+- Passed on macOS arm64/Go 1.27.1: `go test -race -count=10 ./internal/webpush`,
+  `go test -race ./internal/store`, `go vet ./internal/webpush ./internal/store`
+  and `git diff --check`. With Node 24.11.0/pnpm 10.33.0,
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`
+  passed (29 pages, all internal links valid). The tests reach the healthy
+  endpoint before the deadline, try every endpoint within four workers,
+  finish without live requests and retain transiently failing subscriptions.
+- Evidence, reproduction and slow-service tradeoff:
+  [issue-207](evidence/issue-207/README.md). Full repository checks, independent
+  PR review and hosted checks remain for the coordinator. No real pushes
+  sent; real iPhone and other real-device gates stay open.
+
+### Smaller immutable phone asset downloads (#223, 2026-10-08)
+
+- Reproduced the original handler with a source overlay: a request accepting
+  gzip received 19,000 raw fixture bytes without content encoding.
+- Vite now creates gzip sidecars from final immutable asset files. A bundle
+  regression caught premature compression before Vite's preload rewrite;
+  moving compression to `closeBundle` made decoded bytes match exactly.
+  Original service-worker URLs, offline Wall behavior and source-map
+  exclusions are preserved. The gateway never compresses API bodies.
+- Passed with Go 1.27.1 / Node 24.11.0: full `scripts/check`, gateway race
+  suite and vet, bundle/offline regressions, frozen docs install/Astro build
+  with all links valid. The embedded production handler regression
+  transferred TerminalView as 132,274 gzip bytes instead of 690,359 raw
+  bytes. It verifies decoded equality, not only build size estimates.
+- Evidence: [issue-223](evidence/issue-223/README.md); internal design:
+  [static assets](static-assets.md). Independent adversarial PR review,
+  required hosted checks and merge remain pending. Physical-phone/cellular
+  and external reverse-proxy measurements remain pending.
+- Review fix: `Content-Length` is set only on a full 200, so a 412
+  (`If-Match` mismatch) no longer declares a body it does not send.
+
+### 2026-10-09: owner approved #213 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-213/owner-approval.md) supersedes owner-pending
+
+### 2026-10-09: owner approved #255 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-255/owner-approval.md) supersedes owner-pending
+
+### 2026-10-09: owner approved #256 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-256/owner-approval.md) supersedes owner-pending
+statements in earlier dated entries. Independent reviews remain recorded;
+native Windows/Linux and real-phone gates remain pending. For this internal
+documentation update, `git diff --check` passed and the staged additions were
+reviewed. Runtime, tests and public docs are unchanged; no new test run or
+hosted check success is claimed. Required GitHub checks still block merge.
+
+### Private-file repair final documentation gate (#255, 2026-10-09)
+
+- Consolidated the #255 fix entry into the existing Unreleased **Fixed**
+  section; retained all older release headings and entries. Documentation-only
+  correction after checked runtime head `4a09144`; no runtime change.
+- Independent feasibility reviewer pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`
+  and returned source/local-evidence GO: denied-open advice finding resolved;
+  Windows IPC cross-test build, cross-vet and diff check independently passed.
+  Native Windows/Linux execution and owner approval remain pending.
+- Coordinator reported the combined #255/#256/#260/#265 local gate passed:
+  all Go race tests (broker 108.5 s), Go vet, protocol generation drift, web
+  typecheck, 1,080 web tests and build, zero govulncheck findings, and static
+  macOS/Windows/Linux amd64/arm64 builds. This is aggregate branch evidence,
+  not a fresh check on this isolated branch or evidence from merged main.
+  [Evidence](evidence/issue-255/private-file-repair.md). No issues closed.
+- Draft PR #264 remains **DO NOT MERGE without owner review**; hosted CI
+  stays denied. No push, merge or deployment by this agent.
+
+
+### Private-file repair Windows denied-open correction (#255, 2026-10-09)
+
+- Independent feasibility review found a source-level advice gap at `ac2e9b5`:
+  requesting WRITE_DAC before owner inspection lost the existing `icacls`
+  hint for an inspectable Administrators-owned file when that open was denied.
+- Added denial-only nonmutating inspection through a no-reparse/no-delete-share
+  READ_CONTROL/attribute handle. Only a verified regular single-linked
+  Administrators-owned object receives the existing advice; inspection refusal
+  preserves the original access-denied cause without guessing ownership.
+  Applies to private-file and Windows broker-lock initial denied opens.
+- Added native OWNER_RIGHTS fixture with explicit allowed-inspection and
+  denied-repair preconditions, production EnsurePrivateFile assertion,
+  unchanged owner/DACL and an inspection-denied state. Privileged owner-setup
+  limitations skip explicitly; production assertions fail normally. Compiled
+  only; actual Administrators-owner recovery/denial execution remains pending.
+- Focused macOS race count10 passed (IPC 1.695 s / GitHub 2.137 s); vet for
+  IPC/GitHub/host/broker passed. Windows IPC test cross-build and cross-vet
+  passed. Frozen site install/build passed again (29 pages, all internal links).
+  Independent feasibility follow-up source review found no new blocker,
+  conditional on native evidence. [Evidence](evidence/issue-255/private-file-repair.md).
+  Final pinned review, native platforms, integration and owner
+  approval remain pending. Draft PR #264 stays **DO NOT MERGE**; CI denied.
+
+
+### Private-file repair local implementation (#255, 2026-10-09; not merged)
+
+- Parent opened critical design draft PR #264 at `3b0bdff` before local runtime
+  work. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) remain proposed and **DO NOT MERGE
+  without owner review**. No approval or CI enablement is claimed.
+- Shared IPC guard now repairs one validated object: Unix no-follow/nonblocking
+  open, owner/type/link checks before descriptor chmod, final path identity;
+  Windows handle type/reparse/link/owner checks, handle DACL repair, bounded
+  same-object Administrators recovery and no-delete sharing. The Windows
+  broker lock repairs the same opened file that it locks. Legitimate files
+  retain identity; linked/private unsafe files are refused.
+- `go test -race -count=10 -run '^Test(PrivateFile|TokenFileUnsafe)'
+  ./internal/ipc ./internal/github` passed (1.548 s / 1.955 s). Broad race
+  for IPC/GitHub/host passed (2.285 s / 15.970 s / 2.474 s); broker upload
+  race passed (1.889 s). `go vet` for those four packages passed. Windows
+  and Linux IPC cross-test builds passed with `CGO_ENABLED=0`; compile only.
+  Full commands and test scope: [evidence](evidence/issue-255/private-file-repair.md).
+- Updated internal map/design/roadmap and GitHub design, README feature list,
+  Unreleased host/phone fix, existing GitHub guide, security/troubleshooting
+  and Next beta notes. Existing sidebar entries still cover these pages;
+  no new CLI command or major landing-page feature. Frozen site install and
+  Astro build passed (29 pages; all internal links valid).
+- Root independent security source review found no code blocker, conditional
+  on test/platform evidence. Pending: independent final feasibility review,
+  native Windows/Linux execution (especially actual Administrators owner
+  recovery), whole integration, phone checks and explicit owner approval.
+  Hosted CI is explicitly denied, so no enablement, bypass, merge or deploy.
+
+
+### Private-file permission repair architecture (#255, 2026-10-08)
+
+- Branch `fix/issue-255`, fresh base `origin/main` (`08f0332`); design-only
+  milestone. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) are **DO NOT MERGE without owner review**
+  under rule 24. No runtime changes or owner approval are claimed.
+- `go test -count=1 -v -run '^TestIssue255' ./internal/github ./internal/ipc`
+  with temporary synthetic reproduction tests failed as expected: a refused
+  token symlink changed its outside target from 0644 to 0600, and an accepted
+  hard link changed its shared outside inode to 0600. Temporary test files
+  were removed after the reproduction. [Evidence](evidence/issue-255/private-file-repair.md).
+- Inspected shared-guard callers and Unix/Windows owner/type/security rules.
+  Proposed repair through the validated handle, no-follow/reparse refusal,
+  single-link validation and path-identity checks; preserve Windows owner
+  recovery and legitimate-file repair. Later caller reopens and same-user
+  hostile filesystem mutations are explicitly outside the guarantee.
+- Pending: parent opens the design draft before implementation; independent
+  security and feasibility reviews; implementation/tests/full rules 22/25
+  docs/site build; native Windows/Linux verification; explicit owner approval.
+  Hosted CI is explicitly denied; no enabling, bypass, merge or deployment.
+
+### 2026-10-09 — #256: independent reviews recorded, owner gate still open
+
+Coordinator security and history-agent feasibility/alternatives reviews pinned
+`0da5258750bf09d6915f6c4cfd35530c90480b6b` and found no blocker. The coordinator's
+focused race gate
+`GOTOOLCHAIN=go1.27.1 go test -race ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$' -count=1 -timeout=60s`
+passed, 1.689 s; the feasibility reviewer independently ran
+`go test ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$|^TestDeleteDoesNotFollowASymlink$|^TestDisconnectRevokesAndDeletes$' -count=1 -v`
+on macOS arm64: passed, 0.664 s, no skips. Reviews verified fixed-name/content
+preservation, absence/error handling, unchanged caller behavior and simpler
+unlink alternatives. Go's Windows removal internals may inspect/adjust
+attributes, so the ADR/design now explicitly qualify no inspection as an
+application-code statement rather than a claim about the OS implementation.
+No runtime/public behavior changed in this documentation follow-up.
+
+[Evidence](evidence/issue-256/README.md) records reviewed head and commands.
+The coordinator pushed the implementation to existing draft PR #261; no
+approval/merge/deployment claim. Explicit owner approval, combined integration,
+broader required checks, native Linux/Windows and real-phone evidence remain
+pending. CI is denied. `git diff --check` is the documentation-only check;
+implementation race/vet/protocol/site results remain those recorded below.
+
+### 2026-10-09 — #256: unlink-only local implementation prepared for review
+
+After design-only `f5c685e` opened as draft PR #261, local cleanup now removes
+only the fixed token filename. No inode content write or size buffer remains;
+missing succeeds and other errors propagate. Hard-link and replaced-hard-link
+tests fail before the change and pass after it with outside bytes unchanged.
+Symlink/replaced-symlink, normal/missing/damaged files, empty/nonempty
+directories, repeat removal and caller-local-error regressions pass.
+
+Passed focused `go test ./internal/github` (0.998 s), full package
+`go test -race ./internal/github -count=1 -timeout=120s` (15.351 s),
+`go vet ./internal/github`, Linux/Windows amd64 test compilation with CGO=0,
+frozen workspace install plus `pnpm protocol:check`, frozen site install and
+`npx astro build` (29 pages, valid links). A task-owned common test initially
+referenced Unix-only service fixtures; it was split by the service's build tags
+before final checks. [Evidence](evidence/issue-256/README.md) includes baseline
+and permanent red/green results, commands, limits and full22/25 doc coverage.
+
+Independent final security/feasibility review, owner approval, parent integration,
+broader gates, native Linux/Windows and real-phone evidence remain pending.
+DO NOT MERGE before owner review. CI remains denied. No owner tokens or startup
+settings touched, no remote GitHub call; #213/#255 are separate. No push/PR/
+merge/deploy by the implementing helper beyond the coordinator's draft action.
+
+### 2026-10-08 — #256 design: remove the token name without overwriting
+
+Reproduced the inherited hard-link corruption on `08f0332` with
+`go test -overlay <temporary-overlay.json> ./internal/github -run
+'^TestAudit213HardlinkDeleteDoesNotMutateOtherName$' -count=1 -v`: outside
+synthetic file unchanged=false (50 bytes). No owner account/network used.
+ADR 0013 compares unlink-only cleanup with link checks, overwrite and quarantine;
+the design proposes no inode writes and makes no secure-erasure claim.
+[`evidence/issue-256/README.md`](evidence/issue-256/README.md) records the gate.
+
+This checkpoint changes documentation only. Draft PR and local implementation,
+permanent tests/race/vet/platform checks, full public docs/frozen site build,
+independent security/feasibility reviews and explicit owner approval are pending.
+No CI enablement, push, PR, merge or deployment by the helper. #213/#255 separate.
 
 ### Summary (2026-09-27)
 
@@ -48,6 +514,56 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### Soak terminal census ignores scanner helpers (#232, 2026-10-08; branch `fix/issue-232`, not merged)
+
+- **Verified defect.** During #220 measurement, the three-session soak
+  intermittently counted an `lsof` scanner as a fourth terminal. A per-PID
+  command lookup also raced helper lifetime. Neither implies an extra PTY.
+- **Fix.** Read PID, parent PID and arguments in one `ps` invocation and
+  count every direct terminal fixture by its exact argument marker. Duplicate
+  unexpected fixture PIDs still count; missing fixtures still reduce the
+  count. Existing PID identity/liveness and broker-kill checks remain intact.
+  No shipped runtime or public documentation behavior changes.
+- **Checks.** `go test -race -tags soak ./tests/soak -run
+  '^TestSoakFixtureChildCensus' -count=1 -v` and `go vet -tags soak
+  ./tests/soak` passed with Go 1.27.1. Live regressions exercise actual PTY
+  fixtures with overlapping / vanished `lsof`, duplicates and missing
+  fixtures. `PTERM_SOAK_RATE=65536 PTERM_SOAK_DURATION=30s go test -tags
+  soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v` passed:
+  three fixtures throughout, one reconnect, unchanged identities/liveness.
+- **Evidence and pending.** [Issue #232 evidence](evidence/issue-232/README.md)
+  has commands and output. The 30-second run used 64 KiB/s/session under
+  concurrent machine load; it is a correctness gate, not an isolated
+  performance comparison or a default 1 MiB/s gate. Parent integration /
+  combined soak, full tagged suite including the eight-session broker-kill
+  rerun, longer stress/24-hour soak and native Windows remain pending.
+
+### Overflow-safe snapshot coordinates (#237, 2026-10-08; branch `fix/issue-237`, not merged)
+
+- **Reproduced.** Strict `DecodeHost` accepted one row starting at maximum
+  `int64`, violating the existing schema maximum of 199. The permanent
+  regression failed on three overflowing chunks before the fix.
+- **Fixed.** Check the declared start-row range before comparing the row
+  count with remaining capacity by subtraction. Legal chunks ending exactly
+  at 200 still pass. Valid wire behavior, fields and protocol revision stay
+  unchanged; this is a validation defect, not a demonstrated remote exploit.
+  Adjacent history offsets / patch indexes were audited and boundary-tested.
+  The separate direct desktop API overflow was reported under rule 21.
+- **Verified.** `go test ./internal/protocol ./internal/desktop
+  ./internal/terminal`, `go vet` and `go test -race` on the same packages
+  passed. Focused snapshot / adjacent-coordinate regressions passed.
+  With Node 24.11.0, the browser validation / snapshot assembly suites
+  passed 22 tests; web typecheck and `pnpm protocol:check` passed with no
+  generated drift. `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` passed with all internal links valid.
+- **Docs/evidence.** [Issue #237 evidence](evidence/issue-237/README.md)
+  records reproduction, before/after regression and actual checks. The
+  architecture, private terminal capability spec, roadmap, Unreleased,
+  README, Live terminal guide and Next beta notes are updated. The guide is
+  already in the sidebar. No new access/data, commands or failure modes.
+  Parent full integration / PR checks, real-device and native Windows gates
+  remain pending; no push/PR/merge/deployment from this task.
 
 ### GitHub: set up a repository on a computer from the phone (2026-10-07, branch `feat/github-integration`; not merged)
 
@@ -2610,6 +3126,277 @@ on the owner's Mac, which ends running sessions.
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
 
+## 2026-10-08: separate docs audit (#228)
+
+- Baseline independent site audit reproduced three high/one moderate findings;
+  root workspace auditing omitted the separate lockfile.
+- Stacked on #226; patched only the site postcss-nested/parser edge to 7.1.6.
+  Frozen install and `npx astro build` passed all 29 pages and link validation.
+  All eight emitted CSS files have unchanged SHA-256 digests.
+- Raw audit still exits 1 with two high/zero moderate. Read the primary
+  advisories and locked source; neither remaining unpatched input path is
+  demonstrated reachable from visitors in this static trusted-source build.
+  Exact versions/paths/status and re-review triggers are recorded in
+  `docs/dependencies.md`; no claim that the upstream vulnerabilities are fixed.
+- Added independent site build/audit to the existing vulnerability CI job.
+  Root threshold unchanged. `node --test scripts/audit-site.test.mjs` passed
+  six fail-closed regressions; `node scripts/audit-site.mjs` passed while
+  printing both retained unpatched findings. New findings, paths, versions,
+  available patches, audit errors or report drift block the new gate.
+- Evidence: `docs/evidence/issue-228/README.md`. Independent review, hosted
+  required checks, CI-minutes permission and merge remain pending. No runtime,
+  credentials, public deployment or private/public repository setting changed.
+
+- Independent #228 review reproduced two unsupported report shapes accepted by
+  the initial checker. Explicit object/severity validation and a fifth
+  regression now reject them; final reviewer verification remains pending.
+
+Independent nested-report review also reproduced array-like findings/path
+objects that could hide a new path. Explicit array/entry validation and the
+sixth regression now reject both; valid live audit output still passes.
+Coordinator review for #260 reran all10teardown tests (14.627s, zero skips),
+including actual installedChromium immediate profile removal. Full helper
+diff reviewed with no blocker; frozen site install/Astro29pages+links pass.
+No shipped runtime or public docs change. Hosted CI remains disabled by owner.
+
+## 2026-10-08: desktop snapshot row bounds (#247)
+
+Direct API baseline panicked at MaxInt64+1 row; subtraction-based height
+checks now reject/reset before indexing. Eight invalid boundaries plus valid
+last-row recovery pass. `go test -race ./internal/desktop ./internal/protocol
+-count=1` and vet pass; evidence under docs/evidence/issue-247. Protocol/valid
+render behavior unchanged. Native platforms and hosted checks remain pending;
+owner asked to keep CI disabled. Frozen docs validation follows.
+
+Frozen Astro29-page build/link validation passed; independent review's
+desktop/protocol race rerun passed3.165s/4.965s. The reviewer caught a missing
+Next beta entry, which is now added; final docs rebuild after that change passed (29 pages and all links).
+
+## Issue #222 — git write process ownership (2026-10-08)
+
+Branch `fix/issue-222`, baseline `08f0332`. Real pre-commit hook descendants
+survived canceled `runWrite` in both inherited/closed-output cases (exit 1,
+6.694 s). After correction, both pass in 0.946 s. The write runner now owns
+an isolated Unix session/group or a suspended-start Windows Job before hooks
+run, terminates its children, waits for git and closes resources before result
+or worktree rollback. Identity, signing, hooks and git/ssh configuration stay
+in use; no protocol change or automatic retry. A deliberately detached Unix
+program remains outside this group boundary: hooks are not sandboxed.
+
+- `go test -race -count=5 -run '^Test(Write(Process|Cancellation|Successful)|WorktreeCancellation)' ./internal/gitchanges` — PASS, 25.296 s; actual hook/PID, closed-pipe, post-checkout rollback, success/environment and controlled process tree tests.
+- `go test -race ./internal/gitchanges` — PASS, 11.441 s.
+- `go test -race -run '^Test(SessionStream.*(Changes|Commits)|Worktree)' ./internal/broker` — PASS, 4.826 s.
+- `go vet ./internal/gitchanges` — PASS.
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -o /dev/null ./internal/gitchanges` and the Linux equivalent — PASS, compile only. The initial inherited-CGO cross-compile failed against the Mac C/assembly compiler; no tool installation.
+- `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` — PASS, 29 pages and all internal links valid (Node 24.11.0, pnpm 10.33.0).
+- `git diff --check` — PASS.
+
+Evidence: [process cleanup](evidence/issue-222/process-cleanup.md).
+Updated architecture, the Changes design, roadmap, README, phone/host
+Unreleased notes, public Changes/worktrees guides, security, troubleshooting
+and Next beta release notes. Existing sidebar entries reach both guides;
+no new page/CLI command. Native Windows/Linux, whole scripts/check, hosted CI,
+owner phone gates and private PR/review/merge/site deployment remain pending
+for the coordinator. No owner processes, real agents, credentials or startup
+configuration were touched.
+
+## Issue #236 — worktree create admission (2026-10-08)
+
+- Branch `fix/issue-236`, base `08f0332`. The audit's original-client probe
+  retained ten canceled broker creates and ten connections behind the
+  mutex. Three new permanent regressions failed on the unmodified broker:
+  busy admission queued, pre-admission cancellation was discarded, and
+  closed callers stayed queued during shutdown.
+- Fix: one accepted worktree create with `TryLock`, zero waiting operations.
+  Check cancellation before and after acquisition; detach it only for
+  accepted durable work. Extra requests, including a concurrent duplicate,
+  receive correlated `limit_exceeded` without a new receipt. Accepted work
+  still completes after disconnect, and its later replay returns the same
+  session. The phone has fixed limit text covering busy creation and
+  capacity, with no extra host/peer error disclosure.
+- Passed: `go test ./internal/broker ./internal/gatewayclient
+  ./internal/gitchanges`; `go test -race ./internal/broker -run
+  '^(TestWorktree|TestManagementServeCancellation)' -count=1`; `go vet` on
+  those three packages. The four focused admission tests also passed,
+  including twenty closed IPC callers leaving while the active slot is
+  held, and a real Git hook proving accepted disconnect, duplicate
+  refusal, authorization, shutdown completion and exactly one replayed job.
+  After adding failure-path admission reuse, `go test -race
+  ./internal/broker -run '^TestWorktreeAdmission' -count=1 -v` passed again.
+- Passed with Node 24.11.0: `pnpm install --frozen-lockfile`;
+  `pnpm --filter @phone-terminal/web test -- src/screens/Worktree.test.tsx`
+  (the full 57-file/1,048-test suite ran); `pnpm typecheck`;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro
+  build` (29 pages, all internal links valid). `git diff --check` passed.
+- Evidence: [issue-236/verification.md](evidence/issue-236/verification.md).
+  Architecture, [worktrees.md](worktrees.md), roadmap, README, changelog,
+  existing Worktrees guide/sidebar, Next beta notes and troubleshooting are
+  covered. No protocol, command, stored-data, pairing or trust change.
+- Pending: coordinator PR/adversarial review, required full checks, push,
+  merge and site deployment; real phones and native Windows (the real Git
+  hook fixture is POSIX-only), native Linux and 24-hour soak. No unrelated
+  issue bundled. Accepted work retains its existing Git/rollback limits;
+  shutdown has no new hard total deadline. No fresh database or pairing.
+
+## 2026-10-08: issue #218, slow RPC isolation
+
+- Reproduced on `08f0332` using a real private IPC broker, gateway client,
+  temporary git repository and a blocked post-checkout hook. The Sessions
+  read timed out after 250 ms behind create before the fix. After it, list,
+  authentication and new Live-open finish while the hook waits; bad auth is
+  still refused and the released create produces exactly one session.
+- Known slow exchanges now have four independent IPC slots, without an
+  admission queue; overload is refused before dialing. Cancellation and
+  shutdown interrupt active dials/exchanges, correlation remains checked,
+  and written mutations are never automatically retried. Worktree limit
+  advice covers overload without incorrectly claiming too many worktrees.
+  Review fix: the cached preview check stays on the fast connection (a
+  module-heavy preview page got 429s), and GitHub/herdr create/manage use
+  four separate slots so they cannot block session create/terminate.
+  Design: [gateway-rpc.md](gateway-rpc.md); evidence:
+  [issue-218](evidence/issue-218/README.md).
+- Passed: full `go test ./internal/gatewayclient ./internal/gateway -count=1`,
+  selected broker/client `go test -race` availability, cancellation, shutdown,
+  correlation, recovery and origin tests (exact command in evidence),
+  `go vet ./internal/gatewayclient ./internal/broker`, frozen web install,
+  Worktree 13/13 tests, web typecheck, frozen site install and Astro build
+  (29 pages, valid links), `git diff --check`.
+- Existing broker-owned worktree calls may survive caller cancellation; this
+  fix bounds active gateway exchanges, not that pre-existing broker queue.
+  Its separate reproduction was sent to the coordinating audit workflow.
+- Pending before merge: broader coordinated checks and independent adversarial
+  review. Real phones and native Windows/Linux checks remain owner gates.
+  No protocol, trust, database, pairing or production configuration change.
+
+## 2026-10-08 — Issue #208: offer installed herdr agent kinds before the first launch
+
+- Confirmed on `08f0332`: the running-only filter gave an empty choices list
+  with fake installed claude/codex and no agents; fake first-agent create
+  returned `herdr: agent kind is not offered`. Both failing tests ran before
+  the fix. No real agent or provider credit was used.
+- Added bounded read-only Go command-presence discovery on the poll loop
+  (24 canonical commands, first 64 absolute PATH entries, 4096-byte entry
+  limit; help-derived allowlist at most 64 names). The cache refreshes every
+  30 s, on settings refresh, and after capability probes. Choices still cap
+  at 16 and prefer running kinds; herdr performs the actual launch.
+- Updated the architecture and both herdr designs, roadmap, README,
+  Unreleased phone/host notes, guide, Next beta release notes, troubleshooting
+  and the existing protocol field's semantic description / generated comments.
+  The existing herdr sidebar entry remains. No command, stored data, access,
+  or security guarantee changed; no new protocol field or revision.
+- Passed: `go test -race -count=5 -run
+  '^(TestInstalledKinds|TestCreateStartsFirstInstalledAgent|TestManageStartsFirstInstalledAgent)'
+  ./internal/herdr` (23.631 s); `go test -race ./internal/herdr
+  ./internal/protocol ./internal/broker` (70.789 / 5.937 / 107.036 s);
+  `go vet ./internal/herdr ./internal/protocol ./internal/broker`;
+  the 68 ProviderCreate/ProviderManage web tests; `pnpm typecheck`;
+  `pnpm build:web`; `pnpm protocol:check` (generated files match the staged
+  schema description); staged diff and addition secret / artifact review;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`
+  (29 pages, all internal links valid).
+- Evidence: [issue-208/README.md](evidence/issue-208/README.md). Full
+  `scripts/check`, real-agent launch, real-phone checks and deployment remain
+  unexecuted here; the coordinating agent owns PR / merge and deployment.
+
+### Issue #208 integration correction before PR
+
+The first implementation's provider-level refresh test called `LookAgain`
+directly. Independent review of the broker found that `settingsInfo` skipped
+ready providers, so a phone settings read still missed new installations
+until the 30 s timer. A ready-state wake regression and an actual gateway
+settings regression both failed before the correction (the latter timed out
+after 10 s). The broker now refreshes ready providers under the existing
+2 s throttle, without blocking the response or executing an agent.
+
+`go test -race -count=5 -run
+'^TestSettingsRead(LooksForHerdrAgain|RefreshesInstalledHerdrKindsWhileReady)$'
+./internal/broker` passed (16.531 s). Existing public guide and design refresh
+claims are now exercised through the broker. Full prior checks above remain
+evidence for the first commit; focused settings checks and broker vet cover
+this correction. No additional production or owner gate was executed.
+
+Additional correction checks passed: `go vet ./internal/broker` and
+`go test -race -run '^Test(Settings|ProviderGet|ProviderUpdate)'
+./internal/broker` (7.960 s).
+
+## Issue #209 — create admission accounting (2026-10-08)
+
+Branch `fix/issue-209`, baseline `08f0332`. Reproduced all four cases:
+three stale-group, unavailable-kind, non-Git-group or stale-agent-tab local
+refusals made the next valid create fail with `limit_exceeded` (exit 1,
+1.763 s). A marked preflight refusal now returns its create reservation;
+an attempted mutating RPC keeps the charge regardless of its error code.
+Reservations finish once and affect only their original window. Both
+**New worktree** and agent **New tab** share this accounting. The separate
+30-manage-action budget is unchanged. No auto retry, real agent, provider
+credit, new protocol payload or host configuration change.
+
+- `go test -run '^TestProvider(PreflightRefusalsLeaveCreateQuota|AgentTabRefusalsLeaveCreateQuota)$' ./internal/broker` — PASS after fix, 1.720 s.
+- `go test -race -count=5 -run '^TestProvider(PreflightRefusalsLeaveCreateQuota|AgentTabRefusalsLeaveCreateQuota|UnavailableRefusalsLeaveCreateQuota|AttemptedFailuresKeepCreateQuota|Reservation|ConcurrentReservations)' ./internal/broker` — PASS, 9.432 s; synthetic end-to-end cases plus one-shot/concurrent/clock-reset/window tests.
+- `go test -race ./internal/herdr ./internal/broker` — PASS, 34.679 / 102.118 s.
+- `go vet ./internal/herdr ./internal/broker` and `git diff --check` — PASS.
+- `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` — PASS with Node 24.11.0, pnpm 10.33.0; 29 pages, all internal links valid.
+
+Evidence: [create admission](evidence/issue-209/create-admission.md).
+Architecture, provider and manage designs, HTTP route semantics, roadmap,
+README, Unreleased changelog and the public guide/release notes/troubleshooting
+were updated. The existing herdr sidebar entry already reaches the guide;
+there is no new page. No access/data or command change, so security and CLI
+reference pages need no change. Root owns full integration checks, private
+PR/review/merge and site deployment. Owner real-phone gates stay pending.
+
+## 2026-10-08: uninstall GitHub revocation design (#213)
+
+Code inspection confirms `UninstallPlan` deletes the data folder and the CLI
+makes no GitHub revoke request, while Disconnect already has a bounded
+restricted-client revoke. Prepared ADR0011/design for exclusive offline
+cleanup after consent and broker stop, without starting a service. No runtime
+implementation, test or remote action is claimed complete. Independent
+security/feasibility reviews and explicit owner review before merge remain
+required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
+
+## 2026-10-08: uninstall GitHub revocation implementation (#213)
+
+- Baseline synthetic stored-pair test with an inert injected callback failed:
+  zero revoke calls before deletion; outage hint/local-failure preservation
+  regressions failed. Consent-only cases passed.
+- Added bounded package-only offline cleanup after consent/stopped-broker
+  checks and exclusive canonical data ownership. Reuses Disconnect's
+  restricted client/endpoint; no full service constructor/background Git scan.
+- Independent feasibility found RemoveAll unlinked the held lock namespace.
+  Keep the private data directory/marker and remove all other contents;
+  live replacement-lock and symlink-target regressions pass. Existing teardown
+  assertions now verify empty ownership state. This is necessary for #213.
+- Disclose remote revocation/up-to10s/residual empty folder before consent.
+  Parent cancellation keeps local login/data; request-only outage follows
+  confirmed deletion with honest manual hint. Local failure prints partial
+  registration removal/data-retained guidance without peer/token detail.
+- Focused tests pass; full `go test -race ./cmd/pterm ./internal/github
+  ./internal/lifecycle ./internal/ipc -count=1 -timeout=180s` passes all4
+  packages (30.641s/17.183s/3.229s/2.899s). Evidence includes corrected fixture
+  defects without claiming those initial failures passed.
+- Full internal/public docs prepared; existing Uninstall/CLI/sidebar entries
+  retained. Vet/fullgate/frozen Astro link validation, final independent
+  security+feasibility reviews, explicit owner approval and hosted checks
+  remain pending. No owner token/network/startup action; native Windows/Linux
+  and real-phone evidence remain pending. Draft PR250 must not merge yet.
+
+- Final independent security and feasibility reviews found no new code blocker
+  after two ownership corrections. The second canonicalizes every deletion
+  root before token work and skips/refuses aliases/ancestors that can remove
+  the retained namespace; root and independent alias/live-lock race tests pass.
+  CLI success now reports revocation request acceptance, not proof of remote
+  completion. Inherited token-file defects #255/#256 were filed separately.
+- Full scripts/check passed Go/third-party tests, vet, protocol generation,
+  typecheck, 1048 web tests and build before final alias/wording changes; frozen
+  Astro29-page link validation passed. Final changed-code/docs checks follow.
+  Owner explicitly chose to keep CI disabled; required hosted checks remain
+  blocked. Owner review of this critical draft remains required.
+
+- Final changed-code four-package race after alias/acceptance/portability fixes
+  passed29.965s/16.376s/2.070s/3.115s; vet and frozen Astro29-page/link build
+  passed. No owner account or remote API action was used. Implementation is
+  ready for owner review; hosted checks and #255/#256 fixes remain separate.
 
 ## 2026-10-08: issue #217, complete byte-limited History
 

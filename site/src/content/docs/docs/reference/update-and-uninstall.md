@@ -1,7 +1,7 @@
 ---
 title: Update and uninstall
 description: Update or uninstall pterm, the Termivoa host program, by hand, undo its Tailscale Serve setting, and find the folders that hold its data.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa has no automatic updater: you stop `pterm`, replace the program file, and start it again. Nothing downloads code on its own.
@@ -67,6 +67,8 @@ Uninstall refuses while a session is active, so end sessions or run `pterm shutd
    ```sh
    pterm uninstall --delete-data
    ```
+
+   **Next beta, macOS and Linux:** after you confirm, Termivoa tries to revoke the saved GitHub login (up to 10 seconds), then removes it locally. If revocation is unconfirmed, use the GitHub applications link printed by the command. Canceling while revocation is running stops before local deletion. The empty private data folder and ownership marker remain; paired phones, projects, settings and logs are removed. No database or login remains in that folder.
 
 3. Delete the program file:
    - macOS and Linux: `rm ~/.local/bin/pterm`
