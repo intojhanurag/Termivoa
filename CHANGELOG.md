@@ -271,6 +271,12 @@ All notable changes are documented here. The format follows
   guidance follows the available close action. Host: existing create/manage
   validation and mutation behavior remain in place; no host change.
 
+- **Readable old timestamps (#215).** Phone: GitHub repository pushes,
+  session ages and last-seen labels now use weeks (`wk`), months (`mo`) and
+  years (`yr`) instead of long day counts, such as `3 yr ago` for a
+  three-year-old push. Months and years are approximate elapsed units.
+  Host: timestamps and data are unchanged; no host behavior change.
+
 - **GitHub repository rows survive an unusable push date (#254).** Phone:
   an optional last-push timestamp that cannot be displayed omits only its
   age; repository names, metadata and available actions still render.

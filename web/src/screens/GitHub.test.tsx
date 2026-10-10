@@ -223,6 +223,15 @@ describe('the repository list', () => {
   );
   const ok = (repos: HTTPGitHubRepo[], truncated?: boolean): ReposStatus => ({ kind: 'ok', at: NOW, body: { repos, ...(truncated === undefined ? {} : { truncated }) } });
 
+  it('shows an old repository push in years instead of hundreds of days', () => {
+    const old = repo('archive-demo', { pushedAt: NOW - 1095 * 86_400_000 });
+    expect(pushedText(old.pushedAt, NOW)).toBe('3 yr ago');
+    const page = list(ok([old]));
+    expect(page).toContain('octo-demo · private · 3 yr ago');
+    expect(page).not.toContain('1095 d ago');
+    expect(pushedText(NOW + 86_400_000, NOW)).toBe('just now');
+  });
+
   it('renders schema-parsed repositories despite one out-of-Date-range push timestamp', () => {
     const body = parseHttpBody('githubReposResponse', { repos: [
       repo('archive-demo', { pushedAt: 8_640_000_000_000_001, fork: true, archived: true }),
