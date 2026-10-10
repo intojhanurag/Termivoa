@@ -7,7 +7,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 ## Done
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
-  live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
+  live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
 - Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
   (#37), Scheduled Task launcher kept on `conhost --headless` with logs, normal
@@ -200,6 +200,20 @@ designed in Paper first and shown to the owner before any code.
    Needs a real iPhone check (a call during Scan QR).
 6. ~~**Release `v0.1.0-beta.3`**~~ Done: docs prepared for the tag
    (`docs/beta-3`); a new user gets today's features from `gh release download`.
+7. ~~**Side drawer, Settings by computer, Geist (Paper first)**~~ Done
+   (2026-10-10, `feat/ui-revamp`, [ui-revamp.md](ui-revamp.md); approved
+   by the owner): with two or more computers a side drawer replaces the
+   computer chips; Settings has a main page and one page for each computer
+   (Integrations is gone); Geist and Geist Mono are bundled. Docs and
+   screenshots follow. Follow-ups:
+   - **Swipe between computers** is not built (it can fight with scrolling
+     and with the terminal); only the drawer and the amber pill switch.
+   - **The terminal** (xterm) still uses its own mono font list, not Geist
+     Mono, on purpose: xterm measures its cells once, and a late font would
+     break the grid ([ui-revamp.md](ui-revamp.md), section 3). Revisit only
+     with a load-then-measure step.
+   - **The service worker's offline page** (`web/src/sw.js`) still uses
+     the system font.
 
 ## Later
 

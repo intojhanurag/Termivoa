@@ -89,7 +89,7 @@ All under `admitAPI` (exact own or bound `Origin`, CORS only for bound origins, 
 | `GET /api/v1/settings` | – | `HTTPSettingsResponse` with `providers?: HTTPProviderInfo[]` | Absent or empty: no provider here, no tab |
 | `GET /api/v1/providers/{provider}` | – | `200 HTTPProviderSnapshotResponse` | From the cache; body at most 256 KiB |
 | `POST /api/v1/providers/{provider}/open` | `HTTPProviderOpenRequest {targetId, columns, rows}` | `200 HTTPProviderOpenResponse {session, reused}` | Opens or reuses the provider session |
-| `PATCH /api/v1/providers/{provider}` | `HTTPProviderUpdateRequest {enabled?, notify?}` | `200 HTTPProviderInfo` | Settings → Integrations; this computer, all devices |
+| `PATCH /api/v1/providers/{provider}` | `HTTPProviderUpdateRequest {enabled?, notify?}` | `200 HTTPProviderInfo` | Settings → (the computer) → herdr; this computer, all devices |
 | `POST /api/v1/providers/{provider}/create` (M2) | `HTTPProviderCreateRequest {groupId, name, agent?, prompt?}` | `200 HTTPProviderCreateResponse {itemId, targetId, agentStarted, problem?}` | The phone waits up to 45 s |
 
 `{provider}` must match `^[a-z][a-z0-9-]{0,31}$` and name an installed provider. Gateway RPC messages (host-internal, `gateway-rpc.schema.json`): `gateway.providers.get`, `.open`, `.update`, `.create`, each with the credential payload and forwarded origin, like `gateway.sessions.list`. The provider session is attached over `/api/v1/ws` with today's `session.attach` (by session ID and generation).
@@ -229,7 +229,9 @@ Per agent target, from each 2 s poll (previous → new state), keyed by pane ID 
 - **Own budget**: provider pushes have their own per-minute limit (6) and coalesce key (`provider:<target>:<kind>`, 1 minute), separate from session pushes, so herdr can never use up the budget of a normal session's push.
 - Each computer pushes its own herdr changes through its own subscriptions (peer push as today).
 
-## 8. Settings → Integrations
+## 8. Settings → (the computer) → herdr
+
+(Since the UI revamp, 2026-10-10: there is no Integrations section. Each computer's page, opened from a card in **Settings**, has the herdr block; the texts below are the same.)
 
 - One section, one row per computer that lists a provider: "herdr on mac", the version on its own line, a switch (**On**), and two switches **Buzz when blocked** and **Buzz when finished**. State words: "Running", "Not running", "Update" (`unsupported`), "Off".
 - Stored on that computer in the existing key/value `settings` table (`key`, `value`, `updated_at_ms`; `Store.GetSetting`, `Store.PutSetting`): `provider.herdr.enabled` (`1`/`0`), `provider.herdr.notify` (`blocked,done`). Absent means on, both. No schema change.
@@ -314,7 +316,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | H1, H3: the task title ("Predicate-based sampling") | The terminal title is set by programs and often holds the task text a person typed; it is not sent | The row shows the agent kind and the tab ("claude · tab 4") |
 | H3: "<project> · 2 worktrees" (two workspaces outside git with one name) | Workspaces outside git are not linked in herdr | Two rows, each with that name, and its place among the repeats ("notes · 2") |
 | H2: every tab as a chip | A tab with several panes shows one | One terminal per agent, else the tab's focused pane. Tabs without an agent open with `terminal attach`, which 0.8.2 has too (section 21); only a herdr whose `terminal attach --help` fails gets them as disabled chips ("Update herdr to open this tab") |
-| H2: opens fitted to the phone, in **CONTROL** | Fitted: yes (the attach starts at the phone's size). Control: opening never takes control | Opens read-only at the phone's size with **Take control**; one line under the chips: "mac shows this terminal at phone size while it is open here." |
+| H2: opens fitted to the phone, in **● Control** | Fitted: yes (the attach starts at the phone's size). Control: opening never takes control | Opens read-only at the phone's size with **Take control**; one line under the chips: "mac shows this terminal at phone size while it is open here." |
 | H4: "<project> · silver-meadow needs you" | Fixed push format | "herdr · shop · silver-meadow" / "claude needs you. Tap to answer." |
 | H3, H1: DONE | `done` clears only when seen in the herdr UI; the phone must not move the laptop's focus | DONE stays; the phone dims a DONE row it has opened since (memory only) |
 | H6: "from main" | herdr branches from the checkout's current `HEAD` | "herdr makes the folder and a new branch from where shop is now." |
