@@ -392,3 +392,31 @@ repair can change another object. Valid owned token files are tightened to
 The guard does not bind a later `os.ReadFile` reopen to its handle and is not
 a sandbox against a hostile process in the same account. No token format,
 network, OAuth scope or pairing change. **DO NOT MERGE without owner review.**
+
+## How are old push timestamps formatted? (#215)
+
+Repository metadata uses the same elapsed-age helper as session metadata
+and computer last seen (`Sessions.age`). `pushedText` adds `ago`, except
+for `now` (**just now**) and **yesterday**. Repository rows calculate their
+metadata once per list read (`repos.at`), so typing in Search adds no time
+formatting work. Host timestamps and the list's caching/authorization are
+unchanged.
+
+| Elapsed age | Label |
+| --- | --- |
+| Under one minute | `just now` |
+| One minute to under one hour | Whole `min` |
+| One hour to under 24 hours | Whole `h` |
+| 24 hours to under 48 hours | `yesterday` |
+| Two days to under seven days | Whole `d` |
+| Seven days to under 30 days | Whole `wk` (seven-day units) |
+| 30 days to under 365 days | Whole `mo` (30-day units) |
+| 365 days or more | Whole `yr` (365-day units) |
+
+This is approximate elapsed-time display, not calendar arithmetic.
+Future times retain **just now**; an absent timestamp omits the date.
+Tests cover each threshold and the preceding millisecond, old/leap-year
+spans, future/unknown/invalid ISO inputs, timezone equivalence and
+non-finite clocks. SSR tests prove the actual GitHub repository row and
+SessionRow display the new units. See
+[verification](evidence/issue-215/verification.md).

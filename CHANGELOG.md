@@ -271,6 +271,12 @@ All notable changes are documented here. The format follows
   guidance follows the available close action. Host: existing create/manage
   validation and mutation behavior remain in place; no host change.
 
+- **Readable old timestamps (#215).** Phone: GitHub repository pushes,
+  session ages and last-seen labels now use weeks (`wk`), months (`mo`) and
+  years (`yr`) instead of long day counts, such as `3 yr ago` for a
+  three-year-old push. Months and years are approximate elapsed units.
+  Host: timestamps and data are unchanged; no host behavior change.
+
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

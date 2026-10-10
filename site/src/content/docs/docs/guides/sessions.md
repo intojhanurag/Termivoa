@@ -1,7 +1,7 @@
 ---
 title: Sessions
 description: Use the Termivoa Sessions list on your phone to start, read, rename and end the shells and coding agents that run on your computer.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
@@ -61,3 +61,17 @@ No. It runs on the computer until the program exits, you end it, or it is lost.
 ### Why does it say "This session is gone"?
 
 The session ended and cannot come back or open. It stays on the list as **Exited** or **Lost**. Start a new session. Termivoa never runs old commands again.
+
+## How do I read an older session's age?
+
+**Next beta:** Termivoa uses compact elapsed ages for sessions and last-seen computer labels.
+
+| Label | Meaning |
+| --- | --- |
+| **wk** | Whole seven-day weeks, from seven to under 30 days. |
+| **mo** | Whole 30-day months, from 30 to under 365 days. |
+| **yr** | Whole 365-day years. |
+| **now** | Under one minute; also a future timestamp if clocks differ. |
+| No age label | The date is missing or unreadable. |
+
+Months and years are approximate elapsed units.

@@ -3498,3 +3498,24 @@ Hosted CI remains disabled by owner; frozen docs validation follows.
 Frozen site install and Astro29-page/link build passed. Independent review
 found no blocker and reran8parent browser scenarios; final parent typecheck
 and browser run after explicit nonempty guard also pass. No runtime edits.
+
+## 2026-10-08 — Issue #215: compact old time labels
+
+- Reproduced the three-year GitHub push as `1095 d ago`, plus missing unit
+  boundaries, with a failing focused Vitest run (10 failed/79 passed).
+- Extended the shared `Sessions.age` formatter with seven-day weeks,
+  approximate 30-day months/365-day years; retained future-date clamping and
+  small units, omitted invalid dates/non-finite clocks. Added real SSR
+  GitHub repository-row and SessionRow regressions.
+- Actual commands: frozen root install; focused Sessions/GitHub Vitest
+  (89 passed before the added SessionRow case); `pnpm typecheck`;
+  `pnpm test:web` (57 files/1068 tests passed); `pnpm build:web`; frozen site
+  install and `npx astro build` (29 pages, all internal links valid).
+- Evidence: [issue-215 verification](evidence/issue-215/verification.md).
+  Public guides/releases, README, changelog, architecture, GitHub design and
+  roadmap updated. Existing sidebar entries cover the guides; no new
+  command/access/data/failure mode requires CLI/security/troubleshooting
+  changes. No real provider, credential or agent credit used.
+- Isolated local `fix/issue-215`; private PR, independent review, required
+  CI access, merge, production docs deployment and real-phone checks remain
+  pending with the coordinator.

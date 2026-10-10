@@ -170,6 +170,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
     every peer error), not the GitHub line.
   - **"Update Termivoa on pi to use GitHub."** A computer below revision 7
     shows no GitHub row and no line that says why.
+- **Done locally, pending private PR gates (#215):** session ages, computer
+  last-seen labels and GitHub push ages use compact weeks, months and years.
+  Approximate 30-day months/365-day years, explicit threshold/invalid-date
+  tests and rendered-row regressions. See
+  [evidence](evidence/issue-215/verification.md).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
