@@ -62,6 +62,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `GET /api/v1/github` | cookie | – | `200 HTTPGitHubResponse`; revision 7; see GitHub |
 | `POST /api/v1/github` | cookie | `HTTPGitHubRequest` | `200 HTTPGitHubResponse`; revision 7; may take 15 s |
 | `GET /api/v1/github/repos` | cookie | – | `200 HTTPGitHubReposResponse`; revision 7; at most 1000 |
+| `PATCH /api/v1/chat` | cookie | `HTTPChatUpdateRequest` (`enabled: false` only) | `200 HTTPChatInfo`; revision 8; turns Chat view off and closes every open chat; see Chat view |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -174,6 +175,7 @@ every build ID the packaging scripts produce already matches.
 | 5 | Manage a provider (see Providers; `docs/herdr-manage.md`): `POST /api/v1/providers/{provider}/manage` (`HTTPProviderManageRequest`, `HTTPProviderManageResponse`); `gateway.providers.manage` (`authentication-rpc.md`); the `HTTPProviderState` value `notInstalled`; `HTTPProviderInfo.canInstall` and `canStart`; `HTTPProviderItem.linked`; `HTTPSettingsResponse.providers` now lists herdr as `notInstalled` on macOS and Linux when it is not installed (before: absent). `revision.json` names the feature `providerManage: 5`. No new error code. `minRevision` stays 1: an older app drops a provider entry whose state it does not know and ignores unknown fields. The app calls `manage`, and shows what needs it, only on a computer whose `protocolRevision` is 5 or higher. |
 | 6 | An agent in a new tab, and closed worktrees (see Providers; `docs/herdr-manage.md`, section 14). No new route or RPC message: `HTTPProviderManageRequest` gets `agent` and `prompt` (for `newTab`), `groupId` and `worktree` (for the new action `openItem`); `HTTPProviderManageResponse` gets `agentStarted` and `agentProblem`; `HTTPProviderGroup` gets `closed`. `revision.json` names the feature `providerAgentTab: 6`. No new error code. `minRevision` stays 1: an older app ignores the new fields and never sends the new action or fields. The app sends them, and shows what needs them, only to a computer whose `protocolRevision` is 6 or higher; an older computer refuses the new fields as unknown (`400`). |
 | 7 | GitHub (`docs/github-integration.md`): `GET` and `POST /api/v1/github` (`HTTPGitHubRequest`, `HTTPGitHubResponse`) and `GET /api/v1/github/repos` (`HTTPGitHubReposResponse`); `HTTPSettingsResponse.github` (`HTTPGitHubInfo`, absent when the build has no GitHub app or on Windows); the `HTTPGitHub*` bodies; `gateway.github.get`, `.action`, `.repos` and `admin.github.status`, `.disconnect`, `.credential` (`authentication-rpc.md`). `revision.json` names the feature `github: 7`. No new error code. `minRevision` stays 1. The app calls the routes only on a computer whose `protocolRevision` is 7 or higher and whose settings carry `github`. |
+| 8 | Chat view (`docs/chat-view.md`, see Chat view): session messages `chat.open`, `chat.read`, `chat.close` (client) and `chat.state`, `chat.changed`, `chat.page` (host) with `ChatBlock`; `PATCH /api/v1/chat` (`HTTPChatUpdateRequest`, `HTTPChatInfo`); `HTTPSettingsResponse.chat` (absent on Windows); `gateway.chat.update` and `admin.chat.status`, `admin.chat.set` (`authentication-rpc.md`). `revision.json` names the feature `chat: 8`. No new error code. `minRevision` stays 1: the host sends chat messages only after a `chat.open`, which an older app never sends. The app sends `chat.open` only to a computer whose `protocolRevision` is 8 or higher and whose settings carry `chat` with `enabled`. |
 
 ## Computers
 
@@ -565,3 +567,32 @@ The app document's CSP lists the own preview origin in `frame-src` and
 `connect-src`, and `https://<host>:8443` of each confirmed computer of the
 cookie's device (never a pending one) in both; never a `wss://` preview
 origin.
+
+## Chat view
+
+Revision 8 ([chat-view.md](../../docs/chat-view.md), ADR 0014). The host
+reads a coding agent's own transcript, read-only, only while a viewer of the
+session has Chat open, and sends a small normalized block model on the
+session's live stream. Pull model: the host never pushes chat content.
+
+| Client → host | Host → client |
+| --- | --- |
+| `chat.open {limit}` (1..60 turns) | `chat.state`, then (when linked) `chat.page` with the latest blocks |
+| `chat.read {before \| after, limit}` | `chat.page` |
+| `chat.close {}` | nothing |
+| – | `chat.changed {historyId}` when new blocks exist (coalesced, at most 4 a second, carries no content) |
+
+- Any non-thumbnail viewer may open Chat; a thumbnail gets `not_controller`.
+  Chat carries no input.
+- One chat request runs per viewer and per session at a time, and a viewer
+  may open or close at most 10 times a minute; else `limit_exceeded`.
+- Cursors are opaque and valid only for the `historyId` they came with and
+  only when this host issued them; else `history_changed` (open again).
+- A new `historyId` (the transcript was replaced, rewound or truncated)
+  means the client drops every block and pages again.
+- `chat.page` is at most 256 KiB and 200 blocks; a block whose `id` the client
+  already holds replaces it (a tool result updates its call).
+- `PATCH /api/v1/chat` accepts only `{"enabled": false}`. Turning Chat view
+  on happens only at the computer (`pterm chat on`, admin channel).
+- When Chat is turned off, every open chat ends: viewers get `chat.state off`.
+

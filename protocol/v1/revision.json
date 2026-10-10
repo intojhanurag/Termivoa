@@ -1,12 +1,13 @@
 {
   "$comment": "Single source of the additive protocol v1 revision. scripts/generate-protocol.mjs emits it into internal/protocol/generated.go and web/src/generated/protocol.ts. Bump rules: http-api.md, Protocol revision.",
-  "revision": 7,
+  "revision": 8,
   "minRevision": 1,
   "features": {
     "peerPreview": 2,
     "providers": 4,
     "providerManage": 5,
     "providerAgentTab": 6,
-    "github": 7
+    "github": 7,
+    "chat": 8
   }
 }

@@ -50,6 +50,7 @@
     { "$ref": "#/$defs/githubGetMessage" },
     { "$ref": "#/$defs/githubActionMessage" },
     { "$ref": "#/$defs/githubReposMessage" },
+    { "$ref": "#/$defs/chatUpdateMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -83,6 +84,7 @@
     { "$ref": "#/$defs/githubGetResultMessage" },
     { "$ref": "#/$defs/githubActionResultMessage" },
     { "$ref": "#/$defs/githubReposResultMessage" },
+    { "$ref": "#/$defs/chatUpdateResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -98,7 +100,7 @@
         "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
         "gateway.computers.offer", "gateway.computers.found",
         "gateway.providers.get", "gateway.providers.update", "gateway.providers.open", "gateway.providers.create", "gateway.providers.manage",
-        "gateway.github.get", "gateway.github.action", "gateway.github.repos",
+        "gateway.github.get", "gateway.github.action", "gateway.github.repos", "gateway.chat.update",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -110,7 +112,7 @@
         "gateway.computers.offer.result", "gateway.computers.found.result",
         "gateway.providers.get.result", "gateway.providers.update.result", "gateway.providers.open.result",
         "gateway.providers.create.result", "gateway.providers.manage.result",
-        "gateway.github.get.result", "gateway.github.action.result", "gateway.github.repos.result",
+        "gateway.github.get.result", "gateway.github.action.result", "gateway.github.repos.result", "gateway.chat.update.result",
         "gateway.error"
       ]
     },
@@ -314,6 +316,17 @@
         "provider": { "$ref": "http-api.schema.json#/$defs/providerId" }
       }
     },
+    "chatUpdatePayload": {
+      "title": "GatewayRPCChatUpdatePayload",
+      "description": "PATCH /api/v1/chat (revision 8): turns Chat view off on this computer, for all devices.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/chatUpdateRequest" }
+      }
+    },
     "providerUpdatePayload": {
       "title": "GatewayRPCProviderUpdatePayload",
       "description": "Changes this computer's Integrations settings of one provider, for all devices.",
@@ -429,6 +442,8 @@
     "providersOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open" }, "payload": { "$ref": "#/$defs/providerOpenPayload" } } },
     "providersCreateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.create" }, "payload": { "$ref": "#/$defs/providerCreatePayload" } } },
     "providersManageMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.manage" }, "payload": { "$ref": "#/$defs/providerManagePayload" } } },
+    "chatUpdateMessage": { "type": "object", "properties": { "type": { "const": "gateway.chat.update" }, "payload": { "$ref": "#/$defs/chatUpdatePayload" } } },
+    "chatUpdateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.chat.update.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/chatInfo" } } },
     "githubGetMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.get" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "githubActionMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.action" }, "payload": { "$ref": "#/$defs/githubActionPayload" } } },
     "githubReposMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.repos" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },

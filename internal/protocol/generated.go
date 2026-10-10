@@ -5,6 +5,8 @@ package protocol
 // Generation index for named types in the canonical v1 protocol schemas.
 type ProtocolTypes struct {
 	AccessRevoked                    AccessRevokedPayload                    `json:"accessRevoked"`
+	AdminRPCChatSet                  *AdminRPCChatSetPayload                 `json:"adminRPCChatSet,omitempty"`
+	AdminRPCChatStatus               *AdminRPCChatStatusPayload              `json:"adminRPCChatStatus,omitempty"`
 	AdminRPCComputer                 AdminRPCComputer                        `json:"adminRPCComputer"`
 	AdminRPCComputerListResult       AdminRPCComputerListResultPayload       `json:"adminRPCComputerListResult"`
 	AdminRPCComputerRemove           AdminRPCComputerRemovePayload           `json:"adminRPCComputerRemove"`
@@ -58,6 +60,11 @@ type ProtocolTypes struct {
 	ChangesPush                      ChangesPushPayload                      `json:"changesPush"`
 	ChangesPushed                    ChangesPushedPayload                    `json:"changesPushed"`
 	ChangesSummary                   ChangesSummaryPayload                   `json:"changesSummary"`
+	ChatChanged                      *ChatChangedPayload                     `json:"chatChanged,omitempty"`
+	ChatOpen                         *ChatOpenPayload                        `json:"chatOpen,omitempty"`
+	ChatPage                         *ChatPagePayload                        `json:"chatPage,omitempty"`
+	ChatRead                         *ChatReadPayload                        `json:"chatRead,omitempty"`
+	ChatState                        *ChatStatePayload                       `json:"chatState,omitempty"`
 	ControlChanged                   ControlChangedPayload                   `json:"controlChanged"`
 	Empty                            EmptyPayload                            `json:"empty"`
 	Error                            ErrorPayload                            `json:"error"`
@@ -69,6 +76,7 @@ type ProtocolTypes struct {
 	FilesListed                      FilesListedPayload                      `json:"filesListed"`
 	FilesRead                        FilesReadPayload                        `json:"filesRead"`
 	FilesSearch                      FilesSearchPayload                      `json:"filesSearch"`
+	GatewayRPCChatUpdate             *GatewayRPCChatUpdatePayload            `json:"gatewayRPCChatUpdate,omitempty"`
 	GatewayRPCComputerAdd            GatewayRPCComputerAddPayload            `json:"gatewayRPCComputerAdd"`
 	GatewayRPCComputerListResult     GatewayRPCComputerListResultPayload     `json:"gatewayRPCComputerListResult"`
 	GatewayRPCComputerRemove         GatewayRPCComputerRemovePayload         `json:"gatewayRPCComputerRemove"`
@@ -98,6 +106,8 @@ type ProtocolTypes struct {
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
 	HistoryPage                      HistoryPagePayload                      `json:"historyPage"`
 	HistoryRead                      HistoryReadPayload                      `json:"historyRead"`
+	HTTPChatInfo                     *HTTPChatInfo                           `json:"httpChatInfo,omitempty"`
+	HTTPChatUpdateRequest            *HTTPChatUpdateRequest                  `json:"httpChatUpdateRequest,omitempty"`
 	HTTPComputer                     HTTPComputer                            `json:"httpComputer"`
 	HTTPComputerAddRequest           HTTPComputerAddRequest                  `json:"httpComputerAddRequest"`
 	HTTPComputerAddResponse          HTTPComputerAddResponse                 `json:"httpComputerAddResponse"`
@@ -176,6 +186,24 @@ type ProtocolTypes struct {
 
 type AccessRevokedPayload struct {
 	Message string `json:"message"`
+}
+
+// pterm chat on|off (revision 8, docs/chat-view.md). Only the local administration channel
+// can turn Chat view on; pterm asks y/N first. Off closes every open chat at once.
+type AdminRPCChatSetPayload struct {
+	Enabled bool `json:"enabled"`
+}
+
+// Chat view on this computer, for pterm chat and pterm doctor. supported is false on
+// Windows. tails: transcripts followed now (at most 8). versions: the agent versions seen
+// in the last transcripts read (memory only, at most 8). unknownPercent: the share of
+// transcript lines the parser did not know in the last transcript read, 0 to 100.
+type AdminRPCChatStatusPayload struct {
+	Enabled        bool     `json:"enabled"`
+	Supported      bool     `json:"supported"`
+	Tails          int64    `json:"tails"`
+	UnknownPercent int64    `json:"unknownPercent"`
+	Versions       []string `json:"versions"`
 }
 
 // One confirmed computer in one device's list on this (home) computer.
@@ -631,6 +659,105 @@ type ChangedFile struct {
 	Status    ChangeStatus `json:"status"`
 }
 
+// New or changed blocks exist after the last page: ask with chat.read after. Coalesced: at
+// most one is waiting per viewer, at most 4 a second. Carries no chat content.
+type ChatChangedPayload struct {
+	HistoryID string `json:"historyId"`
+}
+
+// Revision 8 (docs/chat-view.md). Starts or joins the chat of the attached session: the
+// host answers chat.state and, when linked, a chat.page with the latest blocks, at most
+// limit turns. Read-only: any non-thumbnail viewer may ask (a thumbnail gets
+// not_controller). Refused with limit_exceeded when a chat request of this viewer or
+// session is running or when opens come too fast. With Chat off the host answers chat.state
+// off and opens no file.
+type ChatOpenPayload struct {
+	Limit int64 `json:"limit"`
+}
+
+// Blocks of one historyId in file order, at most 200, the whole message at most 262144
+// bytes. before: cursor for older blocks; absent when the page starts at the beginning of
+// the history. after: cursor for newer blocks. complete: the page reaches the current end
+// of the history; when false, ask again with after at once.
+type ChatPagePayload struct {
+	After     string      `json:"after"`
+	Before    *string     `json:"before,omitempty"`
+	Blocks    []ChatBlock `json:"blocks"`
+	Complete  bool        `json:"complete"`
+	HistoryID string      `json:"historyId"`
+}
+
+// One normalized chat block. id is stable for this historyId; a block whose id the client
+// already holds replaces it (a tool result updates its call). turn is the id of the
+// user_text that opened the turn. text: user_text and assistant_text (assistant text is
+// markdown: render it sanitized, no raw HTML, no images), status (for example Thought for
+// 14s), compaction and omitted. At most 16384 bytes, masked, without control characters
+// other than tab and line feed; truncatedBytes counts the bytes cut. tool: tool_call and
+// edit. edit: edit only. Thinking text, images, system prompts and sub-agent transcripts
+// are never sent.
+type ChatBlock struct {
+	At             *string       `json:"at,omitempty"`
+	Edit           *ChatEdit     `json:"edit,omitempty"`
+	ID             string        `json:"id"`
+	Kind           ChatBlockKind `json:"kind"`
+	Text           *string       `json:"text,omitempty"`
+	Tool           *ChatTool     `json:"tool,omitempty"`
+	TruncatedBytes *int64        `json:"truncatedBytes,omitempty"`
+	Turn           *string       `json:"turn,omitempty"`
+}
+
+// A file edit by the agent. path is relative to the session's folder, or the base name when
+// outside it. added and removed count lines. hunk is at most 40 lines (each starting with
+// -, + or a space), masked.
+type ChatEdit struct {
+	Added   int64   `json:"added"`
+	Hunk    *string `json:"hunk,omitempty"`
+	Path    string  `json:"path"`
+	Removed int64   `json:"removed"`
+}
+
+// One tool call. name is the agent's tool name (for example Bash, Read, Edit, Task).
+// summary is one line the host derives (the command, the path, the pattern), masked.
+// status: running until a result is seen; unknown when the result could not be read.
+type ChatTool struct {
+	Name   string          `json:"name"`
+	Result *ChatToolResult `json:"result,omitempty"`
+	// One of running, ok, error, unknown (a pattern, not an enum, so generated Go names stay
+	// stable).
+	Status  string  `json:"status"`
+	Summary *string `json:"summary,omitempty"`
+}
+
+// A preview of a tool's output: at most 2048 bytes and 40 lines, masked. bytes is the size
+// of the whole output; truncated when the preview is shorter.
+type ChatToolResult struct {
+	Bytes     int64  `json:"bytes"`
+	Preview   string `json:"preview"`
+	Truncated bool   `json:"truncated"`
+}
+
+// Asks for one chat.page after chat.open. before: older blocks than that cursor (at most
+// limit turns). after: newer blocks than that cursor (send it after chat.changed). Exactly
+// one of before and after. A cursor of another historyId, or one the host did not issue,
+// gets history_changed: open again. One chat request runs per viewer and per session at a
+// time; another gets limit_exceeded.
+type ChatReadPayload struct {
+	After  *string `json:"after,omitempty"`
+	Before *string `json:"before,omitempty"`
+	Limit  int64   `json:"limit"`
+}
+
+// The chat link of the session. Sent after chat.open and when the link changes. reason only
+// with none. agent and historyId only with linked or ended. stale: true when chat.changed
+// notices were dropped for this viewer; page again with after.
+type ChatStatePayload struct {
+	Agent     *ChatAgent `json:"agent,omitempty"`
+	HistoryID *string    `json:"historyId,omitempty"`
+	Link      string     `json:"link"`
+	Reason    *string    `json:"reason,omitempty"`
+	Stale     *bool      `json:"stale,omitempty"`
+}
+
 type ControlChangedPayload struct {
 	ControllerConnectionID *string `json:"controllerConnectionId"`
 	ControllerLabel        *string `json:"controllerLabel,omitempty"`
@@ -721,6 +848,19 @@ type FilesReadPayload struct {
 // and node_modules.
 type FilesSearchPayload struct {
 	Query string `json:"query"`
+}
+
+// PATCH /api/v1/chat (revision 8): turns Chat view off on this computer, for all devices.
+type GatewayRPCChatUpdatePayload struct {
+	Credential string                `json:"credential"`
+	Request    HTTPChatUpdateRequest `json:"request"`
+}
+
+// PATCH /api/v1/chat (revision 8): turns Chat view off on this computer and closes every
+// open chat at once. Turning it on is refused here (the schema allows only false): it
+// happens only at the computer with pterm chat on.
+type HTTPChatUpdateRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 // Adds, confirms or renames a computer in the list of the device that owns the credential.
@@ -1016,6 +1156,15 @@ type GatewayRPCUploadChunkPayload struct {
 	Data string `json:"data"`
 }
 
+// Revision 8. enabled: Chat view is on for this computer (all devices). Only pterm chat on,
+// at the computer, turns it on; any paired device can turn it off with PATCH /api/v1/chat.
+//
+// Revision 8 (docs/chat-view.md). The Chat view switch of this computer. Absent on Windows
+// (Chat is not supported there).
+type HTTPChatInfo struct {
+	Enabled bool `json:"enabled"`
+}
+
 // The saved entry and the peer's node as seen in this computer's own tailscale status, for
 // the app's confirm sheet.
 type HTTPComputerAddResponse struct {
@@ -1270,8 +1419,11 @@ type HTTPSessionMutationResponse struct {
 }
 
 type HTTPSettingsResponse struct {
-	BrokerGeneration string            `json:"brokerGeneration"`
-	Device           HTTPDeviceSummary `json:"device"`
+	BrokerGeneration string `json:"brokerGeneration"`
+	// Revision 8 (docs/chat-view.md). The Chat view switch of this computer. Absent on Windows
+	// (Chat is not supported there).
+	Chat   *HTTPChatInfo     `json:"chat,omitempty"`
+	Device HTTPDeviceSummary `json:"device"`
 	// Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
 	// client ID) or on Windows: the app shows no GitHub row for this computer.
 	Github *HTTPGitHubInfo `json:"github,omitempty"`
@@ -1660,6 +1812,10 @@ const (
 type AdminRPCMessageType string
 
 const (
+	AdminChatSet                AdminRPCMessageType = "admin.chat.set"
+	AdminChatSetResult          AdminRPCMessageType = "admin.chat.set.result"
+	AdminChatStatus             AdminRPCMessageType = "admin.chat.status"
+	AdminChatStatusResult       AdminRPCMessageType = "admin.chat.status.result"
 	AdminComputersList          AdminRPCMessageType = "admin.computers.list"
 	AdminComputersListResult    AdminRPCMessageType = "admin.computers.list.result"
 	AdminComputersRemove        AdminRPCMessageType = "admin.computers.remove"
@@ -1834,6 +1990,24 @@ const (
 	Untracked  ChangeStatus = "untracked"
 )
 
+type ChatBlockKind string
+
+const (
+	AssistantText ChatBlockKind = "assistant_text"
+	Compaction    ChatBlockKind = "compaction"
+	Edit          ChatBlockKind = "edit"
+	Omitted       ChatBlockKind = "omitted"
+	Status        ChatBlockKind = "status"
+	ToolCall      ChatBlockKind = "tool_call"
+	UserText      ChatBlockKind = "user_text"
+)
+
+type ChatAgent string
+
+const (
+	Claude ChatAgent = "claude"
+)
+
 type FileKind string
 
 const (
@@ -1900,6 +2074,8 @@ const (
 	GatewayAuthCheckResult        GatewayRPCMessageType = "gateway.auth.check.result"
 	GatewayAuthLogout             GatewayRPCMessageType = "gateway.auth.logout"
 	GatewayAuthLogoutResult       GatewayRPCMessageType = "gateway.auth.logout.result"
+	GatewayChatUpdate             GatewayRPCMessageType = "gateway.chat.update"
+	GatewayChatUpdateResult       GatewayRPCMessageType = "gateway.chat.update.result"
 	GatewayComputersAdd           GatewayRPCMessageType = "gateway.computers.add"
 	GatewayComputersAddResult     GatewayRPCMessageType = "gateway.computers.add.result"
 	GatewayComputersFound         GatewayRPCMessageType = "gateway.computers.found"
@@ -2209,6 +2385,12 @@ const (
 	ChangesPush               MessageType = "changes.push"
 	ChangesPushed             MessageType = "changes.pushed"
 	ChangesSummary            MessageType = "changes.summary"
+	ChatChanged               MessageType = "chat.changed"
+	ChatClose                 MessageType = "chat.close"
+	ChatOpen                  MessageType = "chat.open"
+	ChatPage                  MessageType = "chat.page"
+	ChatRead                  MessageType = "chat.read"
+	ChatState                 MessageType = "chat.state"
 	ControlAcquire            MessageType = "control.acquire"
 	ControlChanged            MessageType = "control.changed"
 	ControlRelease            MessageType = "control.release"
@@ -2317,6 +2499,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 7
+	ProtocolRevision    = 8
 	MinProtocolRevision = 1
 )

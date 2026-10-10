@@ -202,6 +202,16 @@
     "httpGitHubReposResponse": { "$ref": "http-api.schema.json#/$defs/githubReposResponse" },
     "gatewayRPCGitHubAction": { "$ref": "gateway-rpc.schema.json#/$defs/githubActionPayload" },
     "adminRPCGitHubStatus": { "$ref": "admin-rpc.schema.json#/$defs/githubStatusPayload" },
-    "adminRPCGitHubCredential": { "$ref": "admin-rpc.schema.json#/$defs/githubCredentialPayload" }
+    "adminRPCGitHubCredential": { "$ref": "admin-rpc.schema.json#/$defs/githubCredentialPayload" },
+    "chatOpen": { "$ref": "envelope.schema.json#/$defs/chatOpenPayload" },
+    "chatRead": { "$ref": "envelope.schema.json#/$defs/chatReadPayload" },
+    "chatState": { "$ref": "envelope.schema.json#/$defs/chatStatePayload" },
+    "chatChanged": { "$ref": "envelope.schema.json#/$defs/chatChangedPayload" },
+    "chatPage": { "$ref": "envelope.schema.json#/$defs/chatPagePayload" },
+    "httpChatInfo": { "$ref": "http-api.schema.json#/$defs/chatInfo" },
+    "httpChatUpdateRequest": { "$ref": "http-api.schema.json#/$defs/chatUpdateRequest" },
+    "gatewayRPCChatUpdate": { "$ref": "gateway-rpc.schema.json#/$defs/chatUpdatePayload" },
+    "adminRPCChatSet": { "$ref": "admin-rpc.schema.json#/$defs/chatSetPayload" },
+    "adminRPCChatStatus": { "$ref": "admin-rpc.schema.json#/$defs/chatStatusPayload" }
   }
 }
