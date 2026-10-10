@@ -1,5 +1,10 @@
 # P3 bounded viewer delivery checkpoint
 
+Update 2026-10-08 (#221): the historical coverage below predates demand-driven
+publication. A stalled sink can now have zero pending screen notifications
+while publication pauses. The one-slot bound, byte budget, canonical progress
+and slow-viewer deadline remain. See [current evidence](../issue-221/README.md).
+
 Date: 2026-09-20
 
 Branch under review: `feat/p3-viewer-delivery` (private checkpoint)

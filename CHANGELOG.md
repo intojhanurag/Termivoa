@@ -175,6 +175,10 @@ All notable changes are documented here. The format follows
   safely and requests a fresh screen instead of allowing integer overflow
   in its row assembler (#247). Valid screens and protocol are unchanged.
 
+- Wall performance (#221). Host: screen publication waits for the next frame
+  a viewer can receive, avoiding Live-rate screen copies for a thumbnail-only
+  session or a blocked viewer. Phone: Wall tiles still update up to 5 times
+  per second and reach the final screen; an open Live terminal keeps its rate.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

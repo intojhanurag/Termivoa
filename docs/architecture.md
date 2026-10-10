@@ -189,6 +189,20 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 
 ## 4. Protocols
 
+Viewer publication is demand-driven (#221): `Session.captureAfter` retains
+the first dirty output's coalescing deadline. The actor's reusable timer runs
+at the earliest ready viewer's slot, bounded by `framePublishInterval` and
+that viewer's `nextFrameAt`. Viewers sending a frame or notice, awaiting a
+snapshot acknowledgement, or with queued notices do not request another
+scheduled capture. Dirty output stays pending until a delivery/acknowledgement
+allows capture; an unthrottled viewer keeps the normal cadence. Attach,
+resize and child exit still capture directly. A valid in-flight snapshot's
+catch-up check captures dirty output once on demand. Independent agent-state
+and explicit presence-preview captures retain their own schedules. No wire
+schema, controller/input path, byte budget or history ownership changes.
+See [multi-computer.md](multi-computer.md#performance-budget-the-phone-is-the-bottleneck)
+and [issue-221 evidence](evidence/issue-221/README.md).
+
 All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 
 | File | Defines |

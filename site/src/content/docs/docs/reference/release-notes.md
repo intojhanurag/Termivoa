@@ -12,6 +12,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Less work for the Wall.** Computers prepare Wall-only updates at the rate the tiles can display them. Tiles still reach the newest screen after output stops, and an open Live terminal keeps its normal update rate. See [Wall](/docs/guides/wall/#does-watching-the-wall-use-less-work-on-the-computer).
 - **Terminal screen bounds.** The computer rejects malformed row positions
   in terminal screen updates; the phone already applies that limit. See
   [What limits apply to the terminal screen?](/docs/guides/live-terminal/#what-limits-apply-to-the-terminal-screen).
