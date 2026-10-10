@@ -1,11 +1,11 @@
 # Architecture
 
-Status (2026-10-04): latest release tag `v0.1.0-beta.3` (2026-10-04). It
-adds multi-computer (ADR 0005), preview for sessions on peers (ADR 0006),
-Found on your network (ADR 0007), Files, worktrees, project buttons, line
-comments, the Bone & ink look and fixes to beta.2. Gate 0 on a real iPhone
-and Android, and the real-phone checks of peer preview and Found, are still
-pending. See [CHANGELOG.md](../CHANGELOG.md).
+Status (2026-10-10): latest release tag `v0.1.0-beta.4` (2026-10-10), the
+first free and open-source beta. It adds GitHub set-up from the phone (ADR
+0010), herdr on the phone (ADRs 0008, 0009), Needs you, the side menu and
+Settings by computer, and the fixes of the issue sweep. Gate 0 on a real
+iPhone and Android, and the real-phone checks of peer preview and Found, are
+still pending. See [CHANGELOG.md](../CHANGELOG.md).
 
 This file is the internal map of the system. The code on `main` is the source
 of truth. The specification is [implementation-plan.md](implementation-plan.md).
