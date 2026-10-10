@@ -1,0 +1,3 @@
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	5.113s
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	93.744s
+ok  	github.com/intojhanurag/phone-terminal/internal/gatewayclient	2.386s

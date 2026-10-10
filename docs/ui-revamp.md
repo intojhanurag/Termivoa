@@ -61,4 +61,4 @@ The phone's Back (history) goes from a computer page to the main page.
 ## 6. Follow-ups
 
 - The e2e harness and the docs screenshots follow the new screens in the same pull request.
-- Docs: every "Settings → Integrations" and "Settings → Computers" path in the guides becomes "Settings → (computer)".
+- Done (2026-10-10): every "Settings → Integrations" path in docs/ and the docs site now says "Settings → (the computer)". "Settings → Computers" stays where it quotes the `pterm pair --via` output, which still prints it.

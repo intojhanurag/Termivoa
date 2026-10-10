@@ -139,9 +139,11 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 
 ### How do I remove Termivoa's access on GitHub?
 
-**Disconnect** on a computer's page in **Settings** (or `pterm github disconnect`) removes the login at GitHub and deletes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
+**Disconnect** on a computer's page in **Settings** (or `pterm github disconnect`) asks GitHub to revoke the login and removes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
 
-`pterm uninstall --delete-data` deletes the login from the computer but does not remove it at GitHub. Disconnect first.
+**Next beta:** confirmed `pterm uninstall --delete-data` on macOS and Linux tries to revoke this computer's saved GitHub login before deleting it locally. If GitHub does not confirm revocation, Termivoa prints the [Authorized GitHub Apps](https://github.com/settings/applications) link so you can revoke manually. Canceling while revocation is running stops before local deletion. A copied login can remain usable when revocation is unconfirmed; check GitHub rather than assuming it ended.
+
+**Next beta:** when Termivoa removes its saved GitHub login, it preserves another file linked to the same stored contents. Local deletion is not secure erasure: copies and backups can retain the login. Use GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) to end access for a copied login.
 
 ## Who can see changes, commit and push?
 
@@ -149,7 +151,7 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 - [Files](/docs/guides/files/) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
-- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks.
+- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks. **Next beta:** timed-out writes stop git's ordinary hook children before returning; this is cleanup, not a sandbox. Hooks remain trusted programs and can deliberately launch detached programs on macOS or Linux.
 - Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone. **Next beta:** in a folder that Termivoa cloned from GitHub, git uses Termivoa's GitHub login for that repository. See [What does GitHub change?](#what-does-github-change)
 
 ## What does Termivoa store?
@@ -211,3 +213,20 @@ Email **aojharaj2004@gmail.com**. Start the subject with `[Termivoa security]`.
 Include only the minimum safe details. Never send real secrets, pairing links or terminal content.
 
 This is a one-person project. You get a reply within 7 days, and a first assessment within 30 days.
+
+## How are private saved files checked?
+
+**Next beta:** Termivoa checks a private file before repairing its permissions.
+Linked files, shared hard links, unsafe types and disallowed owners are refused.
+Normal owned files keep their identity while their permissions are tightened.
+
+| Boundary | Meaning |
+| --- | --- |
+| macOS and Linux | A valid private file belongs to your account and is readable and writable only by you |
+| Windows | A valid private file has protected permissions for your account; the existing recovery for files created by an elevated Termivoa run remains |
+| Linked private file | It is refused before repair can change the linked target |
+| Another program in your account | This is not a sandbox against that program; it can already access your private files |
+
+A refusal does not automatically delete the file or create a new login.
+Inspect unexpected local-file changes before reconnecting. See [Why is a
+private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).

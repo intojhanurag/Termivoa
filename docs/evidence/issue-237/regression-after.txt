@@ -1,0 +1,34 @@
+=== RUN   TestSnapshotRowsCoordinateBounds
+=== RUN   TestSnapshotRowsCoordinateBounds/first_row
+=== RUN   TestSnapshotRowsCoordinateBounds/whole_maximum_screen
+=== RUN   TestSnapshotRowsCoordinateBounds/last_row
+=== RUN   TestSnapshotRowsCoordinateBounds/last_two_rows
+=== RUN   TestSnapshotRowsCoordinateBounds/past_final_row
+=== RUN   TestSnapshotRowsCoordinateBounds/chunk_exceeds_screen
+=== RUN   TestSnapshotRowsCoordinateBounds/too_many_rows
+=== RUN   TestSnapshotRowsCoordinateBounds/empty_chunk
+=== RUN   TestSnapshotRowsCoordinateBounds/empty_chunk_past_final_row
+=== RUN   TestSnapshotRowsCoordinateBounds/negative_offset
+=== RUN   TestSnapshotRowsCoordinateBounds/minimum_int64
+=== RUN   TestSnapshotRowsCoordinateBounds/maximum_int64
+=== RUN   TestSnapshotRowsCoordinateBounds/two_rows_overflow
+=== RUN   TestSnapshotRowsCoordinateBounds/maximum_chunk_overflows
+--- PASS: TestSnapshotRowsCoordinateBounds (0.08s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/first_row (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/whole_maximum_screen (0.04s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/last_row (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/last_two_rows (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/past_final_row (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/chunk_exceeds_screen (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/too_many_rows (0.02s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/empty_chunk (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/empty_chunk_past_final_row (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/negative_offset (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/minimum_int64 (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/maximum_int64 (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/two_rows_overflow (0.00s)
+    --- PASS: TestSnapshotRowsCoordinateBounds/maximum_chunk_overflows (0.02s)
+=== RUN   TestAdjacentTerminalRowCoordinateBounds
+--- PASS: TestAdjacentTerminalRowCoordinateBounds (0.00s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	0.560s

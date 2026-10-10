@@ -75,7 +75,7 @@ export function createProblem(failure: unknown, name: string): string {
   switch (failure.code) {
     case 'worktree_exists': return `“${name}” already exists in this repository. Pick another name, or tap 🎲 for a new one.`;
     case 'not_a_repository': return NOT_GIT;
-    case 'limit_exceeded': return 'This repository has too many Termivoa worktrees. Remove one first.';
+    case 'limit_exceeded': return 'Termivoa reached a limit on this computer. Wait for other actions to finish, or remove a worktree or session you no longer need, then try again.';
     // The host cleaned up, so the same name works again.
     case 'worktree_failed': return `${failure.message}. Nothing was left behind, so you can try again.`;
     default: return failure.message;

@@ -26,6 +26,42 @@ Options: `REVIEW_SHOTS=<dir>` makes the `H-*` steps of section 14 also save thei
 
 `--no-web-build` reuses `internal/webassets/dist`; after a change in `web/`, run once without it (or run `pnpm build:web` and `sh scripts/embed-web.sh`: `pnpm build:web` alone only writes `web/dist`). Every run builds `pterm` again, with `-tags webdist,e2e`; Phase A also builds it without `e2e` (check A8).
 
+## How does owned browser teardown finish?
+
+`Browser.close()` is shared by concurrent callers and succeeds only after the
+spawned Chromium child has exited and its CDP WebSocket has closed. A CDP
+acknowledgement or a successful `kill()` call alone is not completion. Only the
+helper's own `ChildProcess` receives signals; no process lookup or user browser
+termination is used.
+
+| Phase | Maximum scheduled wait | Completion |
+| --- | --- | --- |
+| CDP `Browser.close` | 3 seconds | Observed child exit |
+| `SIGTERM` after the first wait | 1 second | Observed child exit |
+| `SIGKILL` after the second wait | 1 second | Observed child exit, otherwise teardown rejects |
+| Owned WebSocket close | 1 second | Close event, otherwise teardown rejects |
+
+The phase waits total at most 6 seconds, plus event-loop scheduling delay.
+Teardown rejects outstanding CDP calls, clears their timers and event listeners,
+and refuses new calls. Unexpected socket close/error and synchronous send failure
+also release pending request timers. A failed close is reported as an error;
+callers must not claim successful profile cleanup from that failure.
+
+Run the focused regression with Node 24 and an already installed Chromium:
+
+```sh
+CHROME='<existing Chromium executable>' node --test scripts/e2e-multicomputer/browser.test.mjs
+```
+
+It uses Node built-ins only. A real synthetic child acknowledges close before its
+last profile write and delayed exit; other cases cover delayed termination,
+ignored termination, concurrent close, pending calls, and failed child/socket
+teardown. The installed-Chromium case queries its version, closes it, then removes
+its isolated profile immediately without retries. That case explicitly skips if
+`CHROME` does not exist; a skipped run does not prove actual Chromium cleanup.
+No app UI, dev stack, installed `pterm`, Tailscale, startup configuration or real
+user profile is accessed. Evidence: [issue #260](../../docs/evidence/issue-260/verification.md).
+
 ## How it works
 
 | Part | File | What it does |
@@ -118,11 +154,11 @@ So every check of a **peer** preview (the bound `Referer`, the forwarded origin,
 | `H-plus-git` | `blog`, a git repository that the fake reports with no worktree record, has **+**; `notes` (outside git) has none; **+** makes the worktree `try-idea` (`worktree.create` on that workspace), opens it and lists it under `blog`. |
 | `H-menu` | **⋯** opens the item menu: **New tab** and **Close workspace**; **Remove worktree** only for a linked worktree; for `shop` (a main checkout with open worktrees) **Close workspace** is off with "Close its worktrees first.". |
 | `H-manage-fit` | The item menu with its Tabs list, the Close workspace, Remove worktree and Close tab confirmations, the **New workspace** sheet, the Settings main page with its chips, and the herdr cards on **Settings → vps** ("Not installed") and **Settings → mac** at 390 and 375 px: nothing wider. |
-| `H-closetab` | The menu of `shop` (two tabs) lists both under Tabs with **Close tab**; it asks "Close tab logs? Its terminals end."; confirming makes one `tab.close` of that tab and `shop` shows one tab within 10 s. An item with one terminal shows "Close the workspace to end its last tab." and no **Close tab**; the API refuses the last tab with 409 `operation_conflict` and a terminal of another item with 404. |
+| `H-closetab` | The menu of `shop` (two tabs) lists "1 · claude" and "logs" under Tabs, each with **Close tab**; **Close tab** on `logs` asks "Close tab logs? Its terminals end."; confirming makes one `tab.close` of that tab and `shop` shows one tab within 10 s. An item with one terminal shows "Close the workspace to end its last tab." and no **Close tab**; `shop`, with linked worktrees, then shows "Close its worktrees first, then close this workspace to end its last tab." and no **Close tab**; the API refuses the last tab with 409 `operation_conflict` and a terminal of another item with 404. |
 | `H-newtab`, `H-newtab-quiet` | **New tab** on `notes` shows the chooser; a tap on **Shell** as it shows (the first 400 ms) is ignored; **Shell** then makes one `tab.create` and no agent; Live opens the new terminal. `notes` is outside git: 3 s after the terminal opens, Live shows no notice (issue 194; before: "this herdr terminal's folder cannot be read"). |
 | `H-close` | **Close workspace** asks "Close notes? Its terminals end. Files stay." with **Cancel** first; a tap on the danger button as the confirmation shows (the first 400 ms) is ignored; **Cancel** changes nothing; confirming 600 ms later makes one `workspace.close`, the row leaves within 10 s, the terminal that was open ends (before the 10 s rule could end it) and its target answers 404. |
 | `H-remove` | **Remove worktree** on `lucky-valley` (dirty): the confirmation, then "lucky-valley has changes that are not committed. Commit or discard them first.", nothing removed; on `silver-meadow` (clean): `worktree.remove … force=false`, gone within 10 s. |
-| `H-stale`, `H-manage-auth` | `closeItem` and `removeItem` with a name that is not the item's: 409 `operation_conflict`; in the app, a confirmed close of `acme-web` after a worktree opened in it shows "The list changed. Look again, then try again." and the list is read again; the fake closed nothing. `POST …/manage`: no cookie 401, `Origin` evil 403, no `X-Pterm-Request` refused, a field of another action 400, `startServer` while running 400, `removeItem` on a main checkout 400, unknown item 404, unknown project 404. |
+| `H-stale`, `H-manage-auth` | `closeItem` and `removeItem` with a name that is not the item's: 409 `operation_conflict`; in the app, a confirmed close of `acme-web` after a worktree opened in it shows only "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer." (no buttons, no confirmation) and the list is read again with `late-tree` under `acme-web`; the fake closed and removed nothing. `POST …/manage`: no cookie 401, `Origin` evil 403, no `X-Pterm-Request` refused, a field of another action 400, `startServer` while running 400, `removeItem` on a main checkout 400, unknown item 404, unknown project 404. |
 | `H-agent-tab`, `H-agent-tab-notice`, `H-agent-tab-errors` | **New tab** on `shop` shows **Shell** and mac's five agent kinds, with no prompt field and no **Start**; codex picked: **First prompt (optional)** and **Start**; an ESC in the prompt turns **Start** off and sends no request; **Start** with a prompt (two taps) sends one request and the fake logs one `tab.create`, `agent.start codex` in the new pane and `agent.prompt` with the text; Live opens that terminal with no notice. amp on `lab` (herdr refuses the agent): the tab opens with "The tab is ready, but the agent did not start." once. The host answers 400 for an ESC prompt, a prompt without an agent, an agent on `closeItem` or `closeTab`, a bad kind and a kind mac does not offer, and calls herdr for none. The step first waits 61 s (an agent tab takes one of the device's 3 creates a minute). |
 | `H-closed`, `H-closed-open`, `H-closed-errors` | `shop` shows the scenario's closed worktree `old-idea`; **Close workspace** on `fix-login` (a linked worktree): within 15 s it is a CLOSED row with **Open** under `shop`; closed rows are no items and are not in the status line, the tab count or the folded project's worktree count. **Open** (two taps) sends one request and one `worktree.open` for that branch, Live opens its terminal and the row is a normal item again. `openItem` for a worktree that is open, that never was, or in an unknown project is 404; a bad name, a path, no name or a field of another action is 400. **Remove worktree** on `try-idea`: 13 s later it is not a closed row. |
 | `H-live-menu`, `H-live-close-tab`, `H-live-leave` | Live for `shop` (opened from the **Sessions** tab) has **⋯** at the end of its chip row; it opens the sheet the herdr tab opens; **New tab → Shell** there moves Live to the new tab. **Close tab** of the tab on screen, and **Close workspace** of the worktree on screen, go to the herdr tab with no "That terminal is gone.", also 3 s later. **‹ Sessions** in a herdr terminal that the **Sessions** tab opened selects the herdr tab, not Sessions. |

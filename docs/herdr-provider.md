@@ -2,7 +2,7 @@
 
 Status: **accepted for build, version 2 (2026-10-04).** ADR [0008](decisions/0008-herdr-provider.md). The owner approved the product in Paper (file `termivoa`, artboards H1–H6) and delegated the approval of this feature in writing to the coordinating agent ("approve if all looks good, then ship"). Under AGENTS.md rule 24 the coordinator approves after the independent security and feasibility reviews; section 20 records every finding and its resolution. Built on branch `feat/herdr` (M1a, M1b, M2; protocol revision 4). Where the build differs from the text below, section 21 is right.
 
-What it does: a **herdr** tab in Sessions shows each computer's herdr projects (fold and unfold), their worktrees, and agent state words with a roll-up; a tap opens that one real terminal full screen in the existing Live screen; the workspace's tabs are chips on top; the phone buzzes when an agent is blocked or finished; **Settings → Integrations** turns it on or off per computer. M2 adds **+** on a project row: a new worktree and an agent in it.
+What it does: a **herdr** tab in Sessions shows each computer's herdr projects (fold and unfold), their worktrees, and agent state words with a roll-up; a tap opens that one real terminal full screen in the existing Live screen; the workspace's tabs are chips on top; the phone buzzes when an agent is blocked or finished; **Settings → (the computer) → herdr** turns it on or off per computer. M2 adds **+** on a project row: a new worktree and an agent in it.
 
 Names below: a **provider** is a terminal workspace tool on a computer (herdr now; maybe tmux or zellij later). A **group** is a project row, an **item** is a row under it (a herdr workspace: the main checkout or a linked worktree), a **target** is one terminal the phone can open (a herdr pane). A **provider session** is the in-memory broker session that shows a target. Demo names (`shop`, `silver-meadow`) stand for real ones.
 
@@ -33,7 +33,7 @@ Every row was run on 2026-10-04 against an **isolated** herdr: `HOME=<tmp> herdr
 
 ## 2. Goals and non-goals
 
-Goals: herdr tab with groups, items, state words, roll-up and a count; the All tab section of H1; open one target in Live with tab chips; push on blocked and finished; Settings → Integrations; nothing changes for a computer without herdr; no re-pairing. M2: create a worktree and start an agent with an optional first prompt.
+Goals: herdr tab with groups, items, state words, roll-up and a count; the All tab section of H1; open one target in Live with tab chips; push on blocked and finished; Settings → (the computer) → herdr; nothing changes for a computer without herdr; no re-pairing. M2: create a worktree and start an agent with an optional first prompt.
 
 Non-goals: split panes, the mouse, prefix keys (never); herdr layout changes, renames, closing anything (closing a workspace, removing a worktree, a new tab, a new workspace and starting herdr came later: [herdr-manage.md](herdr-manage.md), ADR 0009); named herdr sessions (default session only); Windows; events; terminal titles or screen text in the list or in pushes; other providers (the wire is generic; none is built).
 
@@ -96,7 +96,7 @@ All under `admitAPI` (exact own or bound `Origin`, CORS only for bound origins, 
 
 ### 4.2 Bodies
 
-`HTTPProviderInfo`: `id`, `name` (display, ≤32), `state` (`ready` | `notRunning` | `unsupported` | `off`), `version?`, `enabled`, `notify` (subset of `blocked`, `done`), `canCreate`, `agentKinds` (≤16; kinds herdr can start that already run in this herdr, most used first).
+`HTTPProviderInfo`: `id`, `name` (display, ≤32), `state` (`ready` | `notRunning` | `unsupported` | `off`), `version?`, `enabled`, `notify` (subset of `blocked`, `done`), `canCreate`, `agentKinds` (≤16; kinds herdr can start whose canonical command is installed on the configured PATH or that already run in this herdr, most used first).
 
 `HTTPProviderSnapshotResponse`: `provider`, `state`, `groups` (≤64), `truncated?` (item limits or the 256 KiB body budget hit: the host drops whole groups from the end, least urgent first, until it fits).
 
@@ -282,7 +282,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | S7 | Too many processes | 4 provider sessions; 10 s end rule; one create at a time per computer |
 | S8 | Kicking the owner's own attach | Never `--takeover` |
 | S9 | Path or private text disclosure | No paths and no terminal titles in the list, in any HTTP body or in a push; group IDs are hashes. Live shows the open terminal's own folder to its viewer, as for every session |
-| S10 | Abuse of routes | A limiter in the broker keyed by device ID: `open` 20 per minute, `create` 3 per minute, `PATCH` 10 per minute (`limit_exceeded`) |
+| S10 | Abuse of routes | A limiter in the broker keyed by device ID: `open` 20 per minute, `create` 3 pending/attempted changes per minute (preflight refusals refund once in their original window, #209), `PATCH` 10 per minute (`limit_exceeded`) |
 | S11 | Environment leak to herdr children | Fixed env: `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the broker's lookup path), `TERM=xterm-256color`, `COLORTERM=truecolor`, `HERDR_SOCKET_PATH` |
 | S12 | A peer computer lies in its herdr data | Same as any peer response: lenient per-item validation, generic peer errors, text only |
 | S13 | Prefix commands from the phone | `0x02` doubled in provider-session input (section 6, rule 7) |
@@ -320,7 +320,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | H4: "<project> · silver-meadow needs you" | Fixed push format | "herdr · shop · silver-meadow" / "claude needs you. Tap to answer." |
 | H3, H1: DONE | `done` clears only when seen in the herdr UI; the phone must not move the laptop's focus | DONE stays; the phone dims a DONE row it has opened since (memory only) |
 | H6: "from main" | herdr branches from the checkout's current `HEAD` | "herdr makes the folder and a new branch from where shop is now." |
-| H6: agent chips | Kinds come from herdr's start kinds that already run there | The same chips for the owner (claude, codex, mastracode); a new user may see only **No agent** |
+| H6: agent chips | Kinds come from herdr's start kinds and command availability, with running kinds retained (issue #208) | A fresh herdr can start its first installed agent; at most 16 choices |
 
 ## 15. Tests
 
@@ -362,7 +362,7 @@ The table is the plan; the built set is 25 `H-*` checks, listed in `scripts/e2e-
 | H-auth | No cookie: 401; bad `targetId`: 400; unknown target: 404 |
 | H-down | Fake stopped: "herdr is not running on mac"; the Sessions tab loads as fast as without herdr |
 | H-hang | Fake socket accepts and never answers: Sessions unaffected; herdr shows not running |
-| H-settings | Integrations off hides mac's herdr; notify switches survive a reload |
+| H-settings | herdr off on mac's page in Settings hides mac's herdr; notify switches survive a reload |
 | H-doctor | `pterm doctor` reports the fake's version (proof the real herdr is not used) |
 | H-create (M2) | **+**, a name, the fake agent: a new worktree row, Live opens it; a bad name and a prompt with ESC are refused by the app and the host |
 | H-fit | Nothing wider than 390 px on the herdr screens |
@@ -423,7 +423,7 @@ Until H2 lands, the web side tests against a stubbed `client`.
 | # | Question | Default |
 | --- | --- | --- |
 | Q1 | A custom herdr prefix (not `ctrl+b`)? | Double `0x02` only (default prefix). A custom prefix is not read from herdr's config in M1; `pterm doctor` warns when herdr's config sets `prefix` |
-| Q2 | Which agent kinds does M2 offer? | herdr's start kinds that already run in this herdr, most used first, plus **No agent** |
+| Q2 | Which agent kinds does M2 offer? | herdr's start kinds with an installed canonical command or an agent already running here, most used first, plus **No agent** (issue #208) |
 | Q3 | Named herdr sessions? | Default session only |
 | Q4 | Windows (named pipe)? | Not detected in M1 |
 | Q5 | Clear DONE when opened on the phone? | No (it would move the laptop's focus); the phone dims it locally |
@@ -544,7 +544,7 @@ Each difference and why. Everything else is built as written above.
 | Push (section 7) | Names are cleaned twice (herdr, then the push builder); a cut name is 39 characters and "…" | Reuses the push builder's cleaning |
 | `pterm doctor` | A herdr line only when herdr is installed; never counts as a problem | Nothing changes on a computer without herdr |
 | Create answer (integration) | Create answers once a poll turn that **started after its last step** has the new terminal (at most 3 s), not as soon as any cached snapshot has it | A poll between `worktree.create` and `agent.start` cached the shell pane without its agent; on a herdr without `terminal attach` that target could not open yet (`TestCreateAnswersAfterAReadThatSawTheAgent`) |
-| Integrations on (integration) | Turning herdr on wakes the poll loop at once; the `PATCH` never waits for herdr (it shares the gateway's broker connection with the Sessions list). The app's Integrations card shows the state of its latest provider read (F10), which it reads while Settings is open and again right after a save | The `PATCH` answer still says `off` for the moment before that poll |
+| Integrations on (integration) | Turning herdr on wakes the poll loop at once; the `PATCH` never waits for herdr (it shares the gateway's broker connection with the Sessions list). The herdr block on the computer's page in Settings shows the state of its latest provider read (F10), which it reads while Settings is open and again right after a save | The `PATCH` answer still says `off` for the moment before that poll |
 | `/p/…` addresses (integration) | The gateway serves the app for `/p/<provider>/<target>` and `/c/<host>/p/…` although the target ID has a dot | Its "a path with an extension is a file" rule answered 404, so a reload, a link or a notification tap with the app closed showed "404 page not found" (`TestStaticSite`) |
 | Revision gates (integration) | `protocol/v1/revision.json` names the revision that added each gated feature (`features`: `peerPreview` 2, `providers` 4); generation emits `FEATURE_REVISION` and the app gates on it | One source for the gates; `PROTOCOL_REVISION` grows with every bump and must not be a gate |
 | One-row git project (integration) | A git project with only its main checkout shows as one row (like a workspace outside git) and keeps its **+** | It had no **+**, so such a project could not get a worktree from the phone |
@@ -563,3 +563,61 @@ Each difference and why. Everything else is built as written above.
 | S16 guard | A path counts as inside a temp folder only after every symlink is resolved (for a path that does not exist yet, its longest existing part) | A link in `/tmp` to the real home or a real herdr passed |
 
 How to run the fake herdr: `go build -o /tmp/fh/bin/herdr ./scripts/fakeherdr`, write `scenario.json` (`{"version","protocol","attachAny","noTerminal","kinds","snapshot"}`, see the package comment) into `$HOME/.config/herdr`, then `HOME=<that home> /tmp/fh/bin/herdr server`. A broker finds it with that `HOME` and the fake's folder on `PATH` (or in `BinaryPaths`). `control.sock` in the same folder changes states (`{"op":"status","pane":"w1:p1","status":"blocked"}`), closes panes, hangs or stops the server; `fake.log` records attach sizes, input and exits.
+
+## Agent choices before the first launch (issue #208, 2026-10-08)
+
+The poll loop combines the binary's `agent start --help` allowlist with two
+read-only observations: running counts in the latest snapshot, and presence
+of the canonical executable on the broker's configured PATH. A kind need not
+be running before the phone can start it. Installed kinds remain eligible
+when the last agent of that kind stops, within the 16-choice output bound. Running kinds preserve shell aliases or
+custom launchers that cannot be inferred from PATH. Nothing persists.
+
+| Bound or condition | Behavior |
+| --- | --- |
+| Help-derived kinds | At most 64 unique valid names; only those names are eligible |
+| Canonical commands | Fixed 24-kind map from herdr v0.9.3 `src/detect/mod.rs` (`interactive_agent_executable`); `cursor` means `cursor-agent`, `kiro` means `kiro-cli`; unknown future kinds require running evidence |
+| PATH scan | First 64 entries, absolute directories only, each at most 4096 bytes; stat regular files with an execute bit; no executable is launched |
+| Scan interval | Every 30 s while ready; broker settings reads request `RefreshAgents` while ready (agent scan only; retry timers kept) and `LookAgain` while missing or stopped, at most once per 2 s; it and a capability probe invalidate the cache; HTTP reads never scan |
+| Published choices | At most 16; running count descending, then name; unchanged `HTTPProviderInfo.agentKinds` shape |
+| Launch validation | Create and manage still require a kind in the published choices before making anything; herdr remains the authority for the actual start |
+
+Executable presence does not establish login, provider credentials, a working
+agent installation, or the PATH of herdr's own pane shell. A shell-only alias
+is discovered once it runs in herdr; a command found on the broker's PATH may
+still fail in a pane with different startup settings. Existing partial-success
+responses remain accurate. No new socket methods, network surface, trust,
+authorization, stored settings, or protocol revision are introduced.
+
+Primary mapping source: [herdr v0.9.3 canonical launch commands](https://github.com/herdrdev/herdr/blob/v0.9.3/src/detect/mod.rs#L153-L185).
+Evidence: [issue #208](evidence/issue-208/README.md).
+
+## Create admission accounting (issue #209, 2026-10-08)
+
+The broker reserves a create unit under the limiter mutex before invoking
+`Create` or an agent-bearing `newTab`. The unit belongs to the exact
+per-device create window object. A one-shot finish commits an attempted
+change or refunds a refusal before any mutating operation was attempted.
+Refused calls can be retried manually without spending the create allowance;
+the app does not retry an operation automatically.
+
+`herdr.RefusedBeforeStart` identifies a private error wrapper applied only
+to preflight paths. It preserves `errors.Is` and the fixed public error
+classification. An error code by itself is insufficient: `ErrNotGit` and
+manage's `ErrTargetMissing` also occur after a mutating RPC. Those unmarked
+errors keep their create charge, as do timeouts, ambiguous outcomes and
+partial success. The wrapper adds no protocol field.
+
+| Condition | Accounting |
+| --- | --- |
+| Busy, unavailable state, unknown group/kind, local not-git or agent-tab size refusal before a mutation | Reserved create unit returned |
+| Worktree or tab mutation attempted, including an error or unknown result | Unit consumed |
+| Concurrent requests | Pending units count toward the same limit of 3; provider's existing create lock remains |
+| Duplicate finish | `sync.Once` prevents a second refund or refund after commit |
+| Expiry or clock reset | Old window pointer cannot refund a replacement window, even at the same timestamp |
+| Manage route | Its separate 30/min attempt budget remains charged; only its agent-tab create reservation can be refunded |
+
+No automatic retransmission, new credentials, pairing, data storage or
+network surface is introduced. The limiter helper's ordinary `take` callers
+(open, update, manage and GitHub) retain their existing fixed-window rules.
+See [evidence](evidence/issue-209/create-admission.md).
