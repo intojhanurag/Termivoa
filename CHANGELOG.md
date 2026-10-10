@@ -18,6 +18,14 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- **The Live terminal no longer draws one row too low after a resize.**
+  Phone: after a text-size change (or any resize that makes lines narrower)
+  the top row could show an old line and the newest line was hidden until
+  the next full redraw; the cursor and tap-to-place were one row off too.
+  The terminal now starts each resized picture from its top row
+  ([#287](https://github.com/intojhanurag/Termivoa/issues/287)). Host: no
+  change.
+
 - **A swipe in a full-screen app scrolls the pane under your finger.**
   Phone: a swipe or a trackpad scroll in a full-screen app now sends the
   wheel step at the cell under the finger or pointer, not at the cursor, so

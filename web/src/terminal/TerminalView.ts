@@ -62,10 +62,8 @@ export class TerminalView {
 
   /**
    * The cell under a viewport point as a 0-based frame row and column (the
-   * frame cursor's terms), or undefined outside the grid. xterm can show its
-   * buffer from a line other than its base (viewportY ≠ baseY), so the row
-   * on screen is mapped through both. With `clamp`, a point outside the grid
-   * gives the nearest cell.
+   * frame cursor's terms), or undefined outside the grid. With `clamp`, a
+   * point outside the grid gives the nearest cell.
    */
   cellAt(clientX: number, clientY: number, clamp = false): { row: number; column: number } | undefined {
     const screen = this.screen();
@@ -74,10 +72,9 @@ export class TerminalView {
     const box = screen.getBoundingClientRect();
     const fit = (value: number, size: number) => (clamp ? Math.min(Math.max(value, 0), size - 1) : value);
     const column = fit(Math.floor((clientX - box.left) / cell.width), this.terminal.cols);
-    const shown = fit(Math.floor((clientY - box.top) / cell.height), this.terminal.rows);
-    if (column < 0 || column >= this.terminal.cols || shown < 0 || shown >= this.terminal.rows) return undefined;
-    const { viewportY, baseY } = this.terminal.buffer.active;
-    return { row: viewportY + shown - baseY, column };
+    const row = fit(Math.floor((clientY - box.top) / cell.height), this.terminal.rows);
+    if (column < 0 || column >= this.terminal.cols || row < 0 || row >= this.terminal.rows) return undefined;
+    return { row, column };
   }
 
   /** The cells of frame row `row` (as cellAt counts rows). */

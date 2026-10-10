@@ -12,6 +12,8 @@ New features on `main` show here until the next beta ships.
 
 - **Touch gestures on the terminal.** Hold and slide for arrow keys, tap to move the cursor, swipe on the line under the tabs to switch session, pinch for text size, and tap with two fingers for Esc. Turn them off in **Settings → This phone → Terminal gestures**. See [Which touch gestures does the terminal take?](/docs/guides/live-terminal/#which-touch-gestures-does-the-terminal-take)
 
+- **Fixed: the terminal could draw one row too low after you changed the text size.** The top row showed an old line and the newest line was hidden until the next full redraw. Now the whole picture moves to the new size. See [Change the text size](/docs/guides/live-terminal/#change-the-text-size).
+
 - **Fixed: a swipe in a full-screen app scrolls the pane under your finger.** In `tmux` with split panes and mouse mode, or in `vim` with splits, a swipe or a trackpad scroll no longer scrolls the pane that holds the cursor. See [Scroll the terminal](/docs/guides/live-terminal/#scroll-the-terminal).
 
 ## v0.1.0-beta.4 (2026-10-10) — open-source beta
