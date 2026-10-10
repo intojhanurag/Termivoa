@@ -6,7 +6,7 @@ transcript was read. Machine: Apple M5, darwin/arm64, Go 1.27.1.
 | Measure | Budget (design section 7) | Result | Command |
 | --- | --- | --- | --- |
 | Parse throughput | ≥ 50 MB/s per core | 281 MB/s (8.6 MB file of typical turns) | `go test ./internal/transcript -run XXX -bench BenchmarkClaudeParse` |
-| First page, 200 MB file | ≤ 300 ms, ≤ 8 MiB read | 6.7 ms, 1.7 MiB read | `go test ./internal/transcript -run XXX -bench BenchmarkBackfill` |
+| First page, 200 MB file | ≤ 300 ms, ≤ 8 MiB read | 6.7 ms, 1.7 MiB read (warm file cache: the file was just written; no cold-cache number, as dropping the OS cache needs `purge`/root, which was not used) | `go test ./internal/transcript -run XXX -bench BenchmarkBackfill` |
 | Page read budget | ≤ 8 MiB | `TestBackfillReadsAtMostTheBudget` (18 MiB file) | `go test ./internal/transcript` |
 | Tails per computer | ≤ 8 | `TestChatTailsAreSharedCappedAndLinger` | `go test ./internal/broker -run Chat` |
 
