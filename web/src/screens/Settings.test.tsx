@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import type { HTTPSessionCreateRequest, HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry, HostedSession } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { BUZZ_LINKS, buzzGap, InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, installAndOpen } from './Settings';
+import { BUZZ_LINKS, buzzGap, ComputerPage, DeviceNameForm, InstallCard, IntegrationRow, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, installAndOpen } from './Settings';
 import { startInstall } from './providers';
 
 const settings: HTTPSettingsResponse = {
@@ -54,23 +54,11 @@ describe('saveDeviceName', () => {
 
 describe('Settings device name field', () => {
   it('shows the current label in a labelled field with a Save button', () => {
-    const html = renderToStaticMarkup(
-      <Settings
-        settings={settings}
-        fontSize={14}
-        onFontSize={() => undefined}
-        onBack={() => undefined}
-        onRenamed={() => undefined}
-        onFailure={() => ''}
-        onLogout={async () => undefined}
-        entries={[]}
-        onCheck={() => Promise.resolve()}
-        onComputersChanged={() => undefined}
-      />,
-    );
+    const html = renderToStaticMarkup(<DeviceNameForm current="iPhone" onRenamed={() => undefined} onFailure={() => ''} />);
     expect(html).toContain('<label for="device-name">Device name</label>');
     expect(html).toMatch(/<input id="device-name" [^>]*value="iPhone"/u);
     expect(html).toContain('aria-describedby="device-name-help device-name-status"');
+    expect(html).toContain('Your computer shows this name in <code>pterm devices</code>.');
     // Unchanged name: nothing to save yet.
     expect(html).toMatch(/<button type="submit" class="secondary" disabled="">Save name<\/button>/u);
   });
@@ -151,18 +139,22 @@ describe('LogoutSection', () => {
   });
 });
 
-describe('Settings → Integrations', () => {
+describe('Settings → (computer)', () => {
   const { info, mac, okEntry, vps } = fixtures;
   const row = (state: 'ready' | 'notRunning' | 'unsupported' | 'off', extra = {}) => renderToStaticMarkup(
     <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }), manage: true, agentTab: true }} onFailure={() => ''} /></ul>,
   );
 
-  it('shows only where a computer lists a provider at revision 4', () => {
-    expect(renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [] }), okEntry(vps, { protocolRevision: 3 })]} onFailure={() => ''} />)).toBe('');
-    const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps, { providers: [] })]} onFailure={() => ''} />);
-    expect(page).toContain('Integrations');
+  const computerPage = (entry: ComputerEntry, extra: Partial<Parameters<typeof ComputerPage>[0]> = {}) => renderToStaticMarkup(
+    <ComputerPage entry={entry} onBack={() => undefined} onFailure={() => ''} onCheck={() => Promise.resolve()} onComputersChanged={() => undefined} onRemoved={() => undefined} {...extra} />,
+  );
+
+  it('shows on a computer page only where that computer lists a provider at revision 4', () => {
+    expect(computerPage(okEntry(mac, { providers: [] }))).not.toContain('<bdi>herdr</bdi>');
+    expect(computerPage(okEntry(vps, { protocolRevision: 3 }))).not.toContain('<bdi>herdr</bdi>');
+    const page = computerPage(okEntry(mac));
+    expect(page).toContain('<h2 class="caps">herdr</h2>');
     expect(page).toContain('<bdi>herdr</bdi> on mac');
-    expect(page).not.toContain('on vps');
   });
 
   it('has On and the two buzz switches, and one short line for each state but Running', () => {
@@ -193,8 +185,8 @@ describe('Settings → Integrations', () => {
       <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true, agentTab: true }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
     );
     expect(unread).toContain('Not running');
-    const section = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [info({ state: 'notRunning' })] })]} providers={[fixtures.ready(mac, [])]} onFailure={() => ''} />);
-    expect(section).toContain('Running');
+    const section = computerPage(okEntry(mac, { providers: [info({ state: 'notRunning' })] }), { providers: [fixtures.ready(mac, [])] });
+    expect(section).toContain('<span class="computer-state green">Running</span>');
   });
 
   describe('not installed, and Start (docs/herdr-manage.md)', () => {
@@ -321,8 +313,10 @@ describe('Settings → Integrations', () => {
       expect(card({ ...on, enabled: false }, { state: 'notInstalled' })).not.toContain('no buzz');
     });
 
-    it('reaches each card of the section', () => {
-      const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps)]} push={{ ...on, missing: [vps.host] }} onFailure={() => ''} />);
+    it('reaches the card on each computer page', () => {
+      const push = { ...on, missing: [vps.host] };
+      expect(computerPage(okEntry(mac), { push })).not.toContain('no buzz');
+      const page = computerPage(okEntry(vps), { push });
       expect(page.match(/This phone gets no buzz yet\./gu)).toHaveLength(1);
       expect(page).toMatch(/herdr<\/bdi> on vps.*This phone gets no buzz yet\./u);
     });

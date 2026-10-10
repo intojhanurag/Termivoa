@@ -12,8 +12,8 @@ What it does. From the phone, for a computer's herdr:
 | A3b | **Close tab** (added on the owner's request during the build) | item menu, after a confirmation |
 | A4 | **Remove worktree** (a linked worktree; never with force) | item menu, after a confirmation |
 | A5 | **New workspace** in a Termivoa project folder, opened at once | herdr tab |
-| A6 | **Start herdr** when it is installed and not running | Settings → Integrations, and the herdr tab's "not running" notice |
-| A7 | **Install herdr** when it is not installed (macOS, Linux): opens a Termivoa session on that computer with herdr's official install command typed, not run | Settings → Integrations |
+| A6 | **Start herdr** when it is installed and not running | Settings → (the computer) → herdr, and the herdr tab's "not running" notice |
+| A7 | **Install herdr** when it is not installed (macOS, Linux): opens a Termivoa session on that computer with herdr's official install command typed, not run | Settings → (the computer) → herdr |
 
 **Upgrade:** no SQLite schema change. Protocol revision 5. Pairing, devices and settings stay.
 
@@ -140,7 +140,7 @@ Trust statement (unchanged): a paired phone can already run any command in a ses
 - **Close tab**: the item menu lists the item's terminals by tab label; each has **Close tab**, with the confirmation "Close tab 2? Its terminals end." An item with one terminal has the line "Close the workspace to end its last tab." In every confirmation **Cancel** comes first, and a tap in the first 400 ms does nothing, so a double tap on the menu row cannot confirm.
 - **Remove** confirmation: "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." `problem: uncommitted`: "silver-meadow has changes that are not committed. Commit or discard them first."
 - **New workspace**: a button on the herdr tab (also when the list is empty) opens a sheet with that computer's Termivoa projects; a tap makes the workspace and opens its terminal. With no projects the sheet says how to add one, as New session does.
-- **Integrations**: `notInstalled` shows "Not installed"; with `canInstall`, **Install herdr** and the line "Opens a terminal on mac with herdr's install command. Press Enter there to run it."; without it, "Run `pterm doctor` on mac." `notRunning` with `canStart` shows **Start herdr** (also on the herdr tab's "herdr is not running on mac" notice). A `notInstalled` card has no switches.
+- **Settings → (the computer) → herdr** (the old Integrations card): `notInstalled` shows "Not installed"; with `canInstall`, **Install herdr** and the line "Opens a terminal on mac with herdr's install command. Press Enter there to run it."; without it, "Run `pterm doctor` on mac." `notRunning` with `canStart` shows **Start herdr** (also on the herdr tab's "herdr is not running on mac" notice). A `notInstalled` card has no switches.
 - The app does not poll a `notInstalled` provider and shows no tab for it.
 - Every button shows that it works (busy, result, error), as the rest of the app. For a manage error the app shows the host's fixed message.
 
