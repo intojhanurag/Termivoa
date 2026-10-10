@@ -162,6 +162,9 @@ func TestSoakThreeBusySessions(t *testing.T) {
 			t.Errorf("session %d child identity/liveness: pid %d -> %d", i, pids[i], pid)
 		}
 		rtt, lat := summarize(rtts[i]), summarize(latencies[i])
+		if len(latencies[i]) == 0 {
+			t.Errorf("session %d received no complete status records for output-to-frame measurement", i)
+		}
 		fps := float64(patches[i]) / elapsed.Seconds()
 		bytesPerSec := float64(seq) * 72 / time.Since(sessionsStarted).Seconds() // 72-byte flood lines
 		t.Logf("session %d pid=%d childOutput=%.2f MiB/s patches/s=%.1f viewerWire=%.2f MiB/s", i, pid,
