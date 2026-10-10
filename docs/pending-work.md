@@ -1,10 +1,16 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
+
+- Test tooling #260: owned browser teardown waits for child exit and WebSocket
+  closure within explicit bounds, clears pending CDP timers and rejects failed
+  teardown. Ten focused cases pass, including actual installed Chromium profile
+  removal without retries; [evidence](evidence/issue-260/verification.md).
+  Locally complete on `fix/issue-260`; private PR and coordinating review pending.
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>

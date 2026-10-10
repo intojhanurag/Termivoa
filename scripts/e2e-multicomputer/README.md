@@ -26,6 +26,42 @@ Options: `REVIEW_SHOTS=<dir>` makes the `H-*` steps of section 14 also save thei
 
 `--no-web-build` reuses `internal/webassets/dist`; after a change in `web/`, run once without it (or run `pnpm build:web` and `sh scripts/embed-web.sh`: `pnpm build:web` alone only writes `web/dist`). Every run builds `pterm` again, with `-tags webdist,e2e`; Phase A also builds it without `e2e` (check A8).
 
+## How does owned browser teardown finish?
+
+`Browser.close()` is shared by concurrent callers and succeeds only after the
+spawned Chromium child has exited and its CDP WebSocket has closed. A CDP
+acknowledgement or a successful `kill()` call alone is not completion. Only the
+helper's own `ChildProcess` receives signals; no process lookup or user browser
+termination is used.
+
+| Phase | Maximum scheduled wait | Completion |
+| --- | --- | --- |
+| CDP `Browser.close` | 3 seconds | Observed child exit |
+| `SIGTERM` after the first wait | 1 second | Observed child exit |
+| `SIGKILL` after the second wait | 1 second | Observed child exit, otherwise teardown rejects |
+| Owned WebSocket close | 1 second | Close event, otherwise teardown rejects |
+
+The phase waits total at most 6 seconds, plus event-loop scheduling delay.
+Teardown rejects outstanding CDP calls, clears their timers and event listeners,
+and refuses new calls. Unexpected socket close/error and synchronous send failure
+also release pending request timers. A failed close is reported as an error;
+callers must not claim successful profile cleanup from that failure.
+
+Run the focused regression with Node 24 and an already installed Chromium:
+
+```sh
+CHROME='<existing Chromium executable>' node --test scripts/e2e-multicomputer/browser.test.mjs
+```
+
+It uses Node built-ins only. A real synthetic child acknowledges close before its
+last profile write and delayed exit; other cases cover delayed termination,
+ignored termination, concurrent close, pending calls, and failed child/socket
+teardown. The installed-Chromium case queries its version, closes it, then removes
+its isolated profile immediately without retries. That case explicitly skips if
+`CHROME` does not exist; a skipped run does not prove actual Chromium cleanup.
+No app UI, dev stack, installed `pterm`, Tailscale, startup configuration or real
+user profile is accessed. Evidence: [issue #260](../../docs/evidence/issue-260/verification.md).
+
 ## How it works
 
 | Part | File | What it does |
