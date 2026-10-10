@@ -6,6 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance
+
+- **History uses less host CPU and memory** (#219). Host: page construction
+  measures each normalized row once instead of encoding a growing page
+  repeatedly, while preserving the row and message limits. Phone: no app
+  change; the same **history** action reads the same pages.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,

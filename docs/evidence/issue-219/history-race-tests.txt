@@ -1,0 +1,1 @@
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	14.859s

@@ -65,6 +65,10 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 
 ## Copy from history
 
+| Version | Preparing History |
+| --- | --- |
+| **Next beta** | Uses less CPU and temporary memory on your computer. Tap **history** as usual; the reading and copying steps stay the same. |
+
 1. Tap **history**.
 2. Select text.
 3. Tap **Copy N lines**, for example **Copy 3 lines**.

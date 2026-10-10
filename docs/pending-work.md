@@ -12,6 +12,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   removal without retries; [evidence](evidence/issue-260/verification.md).
   Locally complete on `fix/issue-260`; private PR and coordinating review pending.
 
+- History page construction uses exact incremental encoded-size accounting
+  instead of repeatedly serializing a growing page (#219). Page boundaries
+  and validation stay the same; see [history.md](history.md) and
+  [benchmark evidence](evidence/issue-219/README.md).
+
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
