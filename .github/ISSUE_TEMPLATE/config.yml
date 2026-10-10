@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Documentation
+    url: https://termivoa.com/docs/
+    about: Install, pairing, guides, CLI reference and troubleshooting.
+  - name: Questions and ideas
+    url: https://github.com/intojhanurag/Termivoa/discussions
+    about: Ask a question or discuss an idea before you open an issue.
   - name: Security vulnerability
-    url: https://github.com/intojhanurag/Termivoa/blob/main/SECURITY.md
-    about: Do not open a public issue. Follow the private reporting steps in SECURITY.md.
+    url: https://github.com/intojhanurag/Termivoa/security/advisories/new
+    about: Report privately. Do not open a public issue. See SECURITY.md.

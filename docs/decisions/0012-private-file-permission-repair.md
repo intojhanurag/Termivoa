@@ -1,6 +1,6 @@
 # ADR 0012: Repair private-file permissions through the validated open object
 
-- Status: **accepted by the owner on 2026-10-09, subject to required checks; not merged**.
+- Status: **accepted by the owner on 2026-10-09; merged in #264**.
   Architecture-first draft for #255 under AGENTS.md rule 24. Draft PR #264
   opened at `3b0bdff` before local implementation; the owner has approved both
   design and implementation in this conversation.
@@ -68,7 +68,7 @@ passed. Native Windows/Linux evidence remains pending until actually run.
 Local implementation verification and the root independent security source
 review are recorded in the design and evidence. Independent pinned feasibility
 review is source/local-evidence GO; native Windows/Linux execution and required checks
-remain pending. The decision is owner-approved, not merged.
+remain pending. The decision is owner-approved and merged in #264.
 
 ## Owner decision (2026-10-09)
 

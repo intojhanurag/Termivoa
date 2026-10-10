@@ -1,6 +1,6 @@
 # ADR 0007: Found on your network (add a computer with no link)
 
-- Status: **accepted; implemented** (branch `feat/found-on-network`). The owner approved v2 on 2026-10-03, after two reviews of v1 and a security re-check of the push shape ("sound with changes", resolved below). The implementation still needs the owner's review before merge (AGENTS.md rule 24).
+- Status: **accepted; implemented** (merged in #163). The owner approved v2 on 2026-10-03, after two reviews of v1 and a security re-check of the push shape ("sound with changes", resolved below).
 - Date: 2026-10-03
 - Design: [`docs/found-on-network.md`](../found-on-network.md) (version 3: matches the code)
 - Builds on: ADR [0005](0005-multi-computer.md), [`docs/multi-computer.md`](../multi-computer.md)

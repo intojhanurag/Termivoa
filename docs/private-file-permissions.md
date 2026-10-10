@@ -1,11 +1,11 @@
 # Private-file permission repair
 
-Status: **owner-approved on 2026-10-09, subject to required checks; not merged**.
+Status: **owner-approved on 2026-10-09; merged in #264**.
 This is the implementation design for #255 and
 [ADR 0012](decisions/0012-private-file-permission-repair.md). The current main
-guard still performs pathname-based permission repair. Architecture-first
-draft PR #264 was opened at `3b0bdff` before local implementation began;
-the local implementation is owner-approved, subject to required checks, and is not merged. Stored secrets and authentication state make this a critical
+guard still performs pathname-based permission repair. The design was
+opened first as draft PR #264, then implemented and merged in the same pull
+request after the owner approved it. Stored secrets and authentication state make this a critical
 change under AGENTS.md rule 24.
 
 ## What does the guard guarantee?

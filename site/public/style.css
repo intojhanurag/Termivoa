@@ -72,6 +72,11 @@ h2 em { font-style: italic; }
 .nav nav a { transition: color 0.15s ease; }
 .nav nav a:hover { color: var(--signal); }
 .nav-beta { display: none; }
+.nav nav { align-items: center; }
+.nav-star { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1.5px solid var(--line-strong); border-radius: 999px; }
+.nav nav a.nav-star:hover { color: var(--text); border-color: var(--signal); }
+.nav-star .gh-icon { color: var(--signal); }
+.button.star { display: inline-flex; align-items: center; gap: 12px; }
 
 /* Device frame shared by every phone screen */
 .device {
@@ -249,7 +254,7 @@ a.provider-tile:hover, a.provider-tile:focus-visible { border-color: var(--signa
 @media (max-width: 980px) {
   body { font-size: 18px; }
   .nav nav { gap: 24px; }
-  .nav nav a:not(.nav-beta, .nav-docs) { display: none; }
+  .nav nav a:not(.nav-beta, .nav-docs, .nav-star) { display: none; }
   .nav-beta { display: inline; color: var(--signal); }
   .hero { flex-direction: column; align-items: flex-start; padding-bottom: 96px; gap: 64px; }
   .hero-phone { align-self: center; width: min(414px, 86vw); }
@@ -280,6 +285,9 @@ a.provider-tile:hover, a.provider-tile:focus-visible { border-color: var(--signa
   .wrap { width: calc(100% - 40px); }
   .nav { padding-block: 24px; }
   .wordmark { font-size: 22px; }
+  .nav nav { gap: 18px; }
+  .nav-star { padding: 8px; }
+  .nav-star span { display: none; }
   .senses li { font-size: 22px; line-height: 32px; gap: 16px; }
   .phonetic { font-size: 20px; }
   .cta { padding-top: 40px; }

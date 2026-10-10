@@ -279,7 +279,7 @@ Two independent reviews of the code (host: security and correctness; phone app),
 
 ## 14. Second round (proposal, protocol revision 6): an agent in a new tab, closed worktrees, the menu in the terminal
 
-Status: **proposed; not merged.** The owner asked for the herdr features that were still missing, each drawn, built on a branch and opened as a pull request for his review. No new route: the manage route gets two optional fields for `newTab`, one new action and one new list. `features.providerAgentTab` is 6; the app shows these controls only for a computer at revision 6.
+Status: **merged in #191** (fixes in #203). The owner asked for the herdr features that were still missing, each drawn, built on a branch and opened as a pull request for his review. No new route: the manage route gets two optional fields for `newTab`, one new action and one new list. `features.providerAgentTab` is 6; the app shows these controls only for a computer at revision 6.
 
 ### Lab facts (herdr 0.8.2, isolated, 2026-10-05)
 

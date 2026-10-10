@@ -15,6 +15,13 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- **Open-source polish.** Repository: a shorter README with badges, a
+  Quick start and doc links; practical CONTRIBUTING; new SUPPORT.md;
+  SECURITY.md adds GitHub private vulnerability reporting; bug and feature
+  issue forms and a PR checklist. Website: a **Star** link to the GitHub
+  repository in the landing-page header (also at the end of the page and in
+  the footer) and a GitHub icon in the docs header. Static links only, no
+  script. Phone and host: no change.
 - **Smaller phone downloads** (#223). Phone: first-open and update downloads
   use gzip for immutable app assets when the browser accepts it. Host: serves
   build-time compressed files with representation-specific validators,

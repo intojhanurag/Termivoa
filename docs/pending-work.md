@@ -14,7 +14,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 - History page construction uses exact incremental encoded-size accounting
   instead of repeatedly serializing a growing page (#219). Page boundaries
-  and validation stay the same; see [history.md](history.md) and
+  and validation stay the same; see [terminal-history.md](terminal-history.md#how-does-the-host-build-a-history-page) and
   [benchmark evidence](evidence/issue-219/README.md).
 
 - Broker terminal-message construction avoids decoding its own JSON (#220).
@@ -22,7 +22,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   budgets stay enforced; see [terminal-delivery.md](terminal-delivery.md)
   and [measurement evidence](evidence/issue-220/README.md).
 
-- Strict snapshot row coordinates (#237; branch `fix/issue-237`, not merged):
+- Strict snapshot row coordinates (#237; merged in #249):
   Go enforces the existing 0–199 start-row bound before arithmetic and keeps
   legal chunks ending at 200. Boundary and cross-language validation checks
   are recorded in [issue #237 evidence](evidence/issue-237/README.md).
@@ -237,7 +237,7 @@ checks and merge remain blocked.
      actionable stale close/last-tab guidance. See
      [evidence](evidence/issue-210/verification.md). Owner real-phone/herdr
      checks remain pending; this fix does not spend agent/provider credits.
-   - **herdr, second round (pull request open, not merged):** an agent in a
+   - **herdr, second round (merged in #191; fixes in #203):** an agent in a
      new tab, closed worktrees with **Open**, the menu inside a herdr
      terminal (`docs/herdr-manage.md`, section 14). The bugs found while
      building it (#192 to #196, #200) are fixed on `fix/herdr-bugs`

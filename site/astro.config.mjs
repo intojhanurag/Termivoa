@@ -14,6 +14,7 @@ export default defineConfig({
 			description: 'Use your computer’s terminal and coding agents from your phone, privately over Tailscale.',
 			logo: { src: './src/assets/mark.svg' },
 			favicon: '/assets/mark.svg',
+			social: [{ icon: 'github', label: 'Termivoa on GitHub', href: 'https://github.com/intojhanurag/Termivoa' }],
 			customCss: ['./src/styles/docs.css'],
 			// Each docs page also links its plain-Markdown copy (src/pages/docs/[...slug].md.ts) for AI tools.
 			routeMiddleware: './src/routeData.ts',

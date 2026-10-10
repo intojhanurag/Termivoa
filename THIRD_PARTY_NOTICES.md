@@ -1,6 +1,6 @@
 # Third-party notices
 
-This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked. Unsigned development artifacts can be built with the scripts under `packaging/`. Unsigned private-beta binaries (`v0.1.0-beta.1` and `v0.1.0-beta.2`) were shared only with invited collaborators; the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
+This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked. Unsigned development artifacts can be built with the scripts under `packaging/`. Unsigned beta binaries (`v0.1.0-beta.1` to `v0.1.0-beta.3`) were shared only with invited testers; the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
 
 ## Direct dependencies (runtime and build)
 
@@ -27,6 +27,19 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `geist` (Geist and Geist Mono variable fonts, bundled into the web app) | 1.7.2 | SIL Open Font License 1.1 (Copyright 2023 Vercel, in collaboration with basement.studio); text in `third_party/geist/LICENSE`; the two woff2 files are in `web/src/styles/fonts/` (SHA-256 `a369fcf5…` Geist, `fba8f577…` Geist Mono) |
 | `qr` (QR decoder, `qr/decode.js` only) | 0.7.0 | MIT OR Apache-2.0 (Copyright Paul Miller; contains code inspired by ZXing, Apache-2.0, Copyright ZXing authors) |
 | quicktype | 26.0.0 | Apache-2.0 |
+
+## Website fonts (termivoa.com only, not in `pterm`)
+
+| Font | License | License text |
+| --- | --- | --- |
+| Newsreader | SIL Open Font License 1.1 | `site/public/fonts/OFL-newsreader.txt` |
+| Caveat | SIL Open Font License 1.1 | `site/public/fonts/OFL-caveat.txt` |
+| JetBrains Mono | SIL Open Font License 1.1 | `site/public/fonts/OFL-jetbrainsmono.txt` |
+
+The herdr logo on the website (`site/public/assets/herdr.png`) belongs to the
+herdr project and is used only to link to its guide.
+
+## Notes
 
 The patched `ansi`, `xpty`, `vt`, and `ultraviolet` sources and their upstream MIT license texts are
 retained under `third_party/`. Development-only tools, GitHub Actions,

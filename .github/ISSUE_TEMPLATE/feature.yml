@@ -1,43 +1,47 @@
 name: Feature request
-description: Propose a scoped improvement to Termivoa
+description: Suggest an improvement to Termivoa
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Describe the user problem first. Do not include credentials, raw terminal history, personal paths, or confidential code. Future-scope items in the implementation plan are not authorized merely by filing an issue.
+        Describe the problem first, then your idea. For open-ended ideas, [GitHub Discussions](https://github.com/intojhanurag/Termivoa/discussions) may be a better place. Do not include credentials, real terminal history, personal paths or confidential code.
   - type: textarea
     id: problem
     attributes:
-      label: User problem
-      description: Who is affected, and what outcome is currently difficult or unsafe?
+      label: Problem
+      description: Who is affected, and what is hard or unsafe today?
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed behavior
-      description: Describe observable behavior and relevant constraints, not only an implementation choice.
+      description: What should the phone app or `pterm` do? Describe what you would see, not only how to build it.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives considered
+      label: Alternatives you considered
   - type: dropdown
-    id: compatibility
+    id: area
     attributes:
-      label: Compatibility impact
+      label: Area
       options:
-        - No protocol or persistence change expected
-        - Protocol compatibility may change
-        - Persistence or migration behavior may change
-        - Unsure
+        - Phone app
+        - pterm (CLI or host)
+        - Several computers
+        - Providers (herdr and others)
+        - GitHub
+        - Docs or website
+        - Other
     validations:
       required: true
-  - type: textarea
-    id: validation
+  - type: checkboxes
+    id: contribute
     attributes:
-      label: Suggested acceptance evidence
-      description: List fixtures, platforms, devices, or security cases that should establish completion.
+      label: Contributing
+      options:
+        - label: I would like to work on this myself (see CONTRIBUTING.md).
