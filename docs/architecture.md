@@ -216,6 +216,12 @@ It admits rows using that sum, commas and generated empty-row metadata,
 without repeatedly encoding earlier rows. The 1 MiB envelope budget, 1 KiB
 reserve and all semantic validators remain unchanged. See [history.md](history.md).
 
+The broker sends generated terminal payloads through `protocol.EncodeHost`,
+which shares envelope and semantic validators with strict received-message
+validation, then serializes them without decoding its own JSON. Non-terminal
+notices keep the strict wire round trip. All receiving trust boundaries keep
+`DecodeHost`/`DecodeClient`; see [terminal-delivery.md](terminal-delivery.md).
+
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
 `web/src/generated/protocol.ts`, plus the revision constants. It fails on an

@@ -139,6 +139,11 @@ All notable changes are documented here. The format follows
   "Tap the mic", "git missing", "Connected"). Geist and Geist Mono (SIL Open
   Font License 1.1) come with the app; nothing loads from the internet. No
   protocol or stored-data change. Host: no change.
+- **Lower host overhead while watching a busy terminal** (#220). Host: typed
+  terminal messages use the same semantic validators before serialization,
+  without parsing their own JSON again. Incoming messages remain strictly
+  validated. Phone: Live and Wall use the same controls and terminal frames.
+
 - Phone, UI consistency (no feature removed; less text): every
   confirmation of a destructive or multi-line action (Terminate session,
   Send N lines, Paste N lines, Remove worktree, Remove anyway, Remove a

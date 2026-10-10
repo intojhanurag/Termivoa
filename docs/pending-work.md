@@ -17,6 +17,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   and validation stay the same; see [history.md](history.md) and
   [benchmark evidence](evidence/issue-219/README.md).
 
+- Broker terminal-message construction avoids decoding its own JSON (#220).
+  Shared semantic validators, exact generated payload types and message
+  budgets stay enforced; see [terminal-delivery.md](terminal-delivery.md)
+  and [measurement evidence](evidence/issue-220/README.md).
+
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

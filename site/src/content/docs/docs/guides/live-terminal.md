@@ -6,6 +6,12 @@ lastUpdated: 2026-10-10
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
 
+## What changes for busy terminals?
+
+| Version | Watching output |
+| --- | --- |
+| **Next beta** | Live and Wall use less CPU and temporary memory on the computer while output changes. The terminal controls and display stay the same. |
+
 ## Take control to type
 
 Many devices can watch a session; only the one with **control** can type.

@@ -75,41 +75,50 @@ func decode(data []byte, client bool) (Envelope, error) {
 	if err := strictDecode(data, &envelope); err != nil {
 		return Envelope{}, fmt.Errorf("protocol: decode envelope: %w", err)
 	}
-	if envelope.Version != Version {
-		return Envelope{}, fmt.Errorf("protocol: version %d is not supported", envelope.Version)
-	}
-	if !ValidUUID(envelope.RequestID) {
-		return Envelope{}, errors.New("protocol: requestId must be a canonical UUID")
-	}
-	if envelope.SessionID != nil && !ValidUUID(*envelope.SessionID) {
-		return Envelope{}, errors.New("protocol: sessionId must be a canonical UUID")
-	}
-	if envelope.Generation != nil && !ValidUUID(*envelope.Generation) {
-		return Envelope{}, errors.New("protocol: generation must be a canonical UUID")
-	}
-
-	if client {
-		if !clientMessageTypes[envelope.Type] {
-			return Envelope{}, fmt.Errorf("protocol: %q is not a client message", envelope.Type)
-		}
-	} else if !hostMessageTypes[envelope.Type] {
-		return Envelope{}, fmt.Errorf("protocol: %q is not a host message", envelope.Type)
-	}
-
-	if sessionMessageTypes[envelope.Type] {
-		if envelope.SessionID == nil || envelope.Generation == nil {
-			return Envelope{}, fmt.Errorf("protocol: %q requires sessionId and generation", envelope.Type)
-		}
-	} else if envelope.Type != Error && (envelope.SessionID != nil || envelope.Generation != nil) {
-		return Envelope{}, fmt.Errorf("protocol: %q must not carry session identity", envelope.Type)
-	} else if envelope.Type == Error && (envelope.SessionID == nil) != (envelope.Generation == nil) {
-		return Envelope{}, errors.New("protocol: error sessionId and generation must appear together")
+	if err := validateEnvelope(envelope, client); err != nil {
+		return Envelope{}, err
 	}
 
 	if err := validatePayload(envelope); err != nil {
 		return Envelope{}, fmt.Errorf("protocol: %s payload: %w", envelope.Type, err)
 	}
 	return envelope, nil
+}
+
+// validateEnvelope is shared by strict wire decoders and typed host encoding.
+func validateEnvelope(envelope Envelope, client bool) error {
+	if envelope.Version != Version {
+		return fmt.Errorf("protocol: version %d is not supported", envelope.Version)
+	}
+	if !ValidUUID(envelope.RequestID) {
+		return errors.New("protocol: requestId must be a canonical UUID")
+	}
+	if envelope.SessionID != nil && !ValidUUID(*envelope.SessionID) {
+		return errors.New("protocol: sessionId must be a canonical UUID")
+	}
+	if envelope.Generation != nil && !ValidUUID(*envelope.Generation) {
+		return errors.New("protocol: generation must be a canonical UUID")
+	}
+
+	if client {
+		if !clientMessageTypes[envelope.Type] {
+			return fmt.Errorf("protocol: %q is not a client message", envelope.Type)
+		}
+	} else if !hostMessageTypes[envelope.Type] {
+		return fmt.Errorf("protocol: %q is not a host message", envelope.Type)
+	}
+
+	if sessionMessageTypes[envelope.Type] {
+		if envelope.SessionID == nil || envelope.Generation == nil {
+			return fmt.Errorf("protocol: %q requires sessionId and generation", envelope.Type)
+		}
+	} else if envelope.Type != Error && (envelope.SessionID != nil || envelope.Generation != nil) {
+		return fmt.Errorf("protocol: %q must not carry session identity", envelope.Type)
+	} else if envelope.Type == Error && (envelope.SessionID == nil) != (envelope.Generation == nil) {
+		return errors.New("protocol: error sessionId and generation must appear together")
+	}
+
+	return nil
 }
 
 var clientMessageTypes = map[MessageType]bool{
@@ -313,59 +322,25 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
-			return err
-		}
-		return validateScreen(payload.Screen)
+		return validateSnapshotBegin(payload)
 	case SnapshotRows:
 		payload, err := strictPayload[SnapshotRowsPayload](envelope)
 		if err != nil {
 			return err
 		}
-		if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
-			return err
-		}
-		if len(payload.Rows) == 0 || len(payload.Rows) > MaxRows || payload.StartRow < 0 || payload.StartRow+int64(len(payload.Rows)) > MaxRows {
-			return errors.New("snapshot row chunk is outside bounds")
-		}
-		return validateRows(payload.Rows, 0)
+		return validateSnapshotRows(payload)
 	case SnapshotEnd:
 		payload, err := strictPayload[SnapshotEndPayload](envelope)
 		if err != nil {
 			return err
 		}
-		if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
-			return err
-		}
-		if payload.RowCount < MinRows || payload.RowCount > MaxRows {
-			return errors.New("rowCount is outside bounds")
-		}
+		return validateSnapshotEnd(payload)
 	case ScreenPatch:
 		payload, err := strictPayload[ScreenPatchPayload](envelope)
 		if err != nil {
 			return err
 		}
-		base, err := parseCounter(payload.BaseRevision)
-		if err != nil {
-			return fmt.Errorf("baseRevision: %w", err)
-		}
-		revision, err := parseCounter(payload.Revision)
-		if err != nil || revision <= base {
-			return errors.New("revision must be a decimal counter greater than baseRevision")
-		}
-		if err := validateScreen(payload.Screen); err != nil {
-			return err
-		}
-		seen := make(map[int64]bool, len(payload.Rows))
-		for _, changed := range payload.Rows {
-			if changed.Index < 0 || changed.Index >= payload.Screen.Rows || seen[changed.Index] {
-				return errors.New("patch row indexes must be unique and inside the screen")
-			}
-			seen[changed.Index] = true
-			if err := validateRow(changed.Row, payload.Screen.Columns); err != nil {
-				return err
-			}
-		}
+		return validateScreenPatch(payload)
 	case HistoryPage:
 		payload, err := strictPayload[HistoryPagePayload](envelope)
 		if err != nil {
@@ -535,6 +510,61 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		}
 	default:
 		return errors.New("unknown message type")
+	}
+	return nil
+}
+
+func validateSnapshotBegin(payload SnapshotBeginPayload) error {
+	if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
+		return err
+	}
+	return validateScreen(payload.Screen)
+}
+
+func validateSnapshotRows(payload SnapshotRowsPayload) error {
+	if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
+		return err
+	}
+	if len(payload.Rows) == 0 || len(payload.Rows) > MaxRows || payload.StartRow < 0 || payload.StartRow+int64(len(payload.Rows)) > MaxRows {
+		return errors.New("snapshot row chunk is outside bounds")
+	}
+	return validateRows(payload.Rows, 0)
+}
+
+func validateSnapshotEnd(payload SnapshotEndPayload) error {
+	if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
+		return err
+	}
+	if payload.RowCount < MinRows || payload.RowCount > MaxRows {
+		return errors.New("rowCount is outside bounds")
+	}
+	return nil
+}
+
+func validateScreenPatch(payload ScreenPatchPayload) error {
+	if payload.Rows == nil {
+		return errors.New("patch rows must not be null")
+	}
+	base, err := parseCounter(payload.BaseRevision)
+	if err != nil {
+		return fmt.Errorf("baseRevision: %w", err)
+	}
+	revision, err := parseCounter(payload.Revision)
+	if err != nil || revision <= base {
+		return errors.New("revision must be a decimal counter greater than baseRevision")
+	}
+	if err := validateScreen(payload.Screen); err != nil {
+		return err
+	}
+	seen := make(map[int64]bool, len(payload.Rows))
+	for _, changed := range payload.Rows {
+		if changed.Index < 0 || changed.Index >= payload.Screen.Rows || seen[changed.Index] {
+			return errors.New("patch row indexes must be unique and inside the screen")
+		}
+		seen[changed.Index] = true
+		if err := validateRow(changed.Row, payload.Screen.Columns); err != nil {
+			return err
+		}
 	}
 	return nil
 }

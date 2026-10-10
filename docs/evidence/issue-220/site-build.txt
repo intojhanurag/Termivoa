@@ -1,0 +1,141 @@
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +321
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 321, reused 321, downloaded 0, added 319
+Progress: resolved 321, reused 321, downloaded 0, added 321, done
+
+dependencies:
++ @astrojs/starlight 0.42.4
++ astro 7.3.5
++ starlight-links-validator 0.26.0
++ starlight-llms-txt 0.12.0
+
+Done in 1.5s using pnpm v10.33.0
+22:47:36 [content] Syncing content
+22:47:36 [content] Synced content
+22:47:36 [types] Generated 442ms
+22:47:36 [build] output: "static"
+22:47:36 [build] mode: "static"
+22:47:36 [build] directory: <workspace>/site/dist/
+22:47:36 [build] Collecting build info...
+22:47:36 [build] ✓ Completed in 518ms.
+22:47:36 [build] Building static entrypoints...
+22:47:37 [vite] ✓ built in 1.51s
+22:47:37 [vite] ✓ built in 28ms
+22:47:37 [build] Rearranging server assets...
+
+ generating static routes
+22:47:37 [WARN] [content] The collection "i18n" does not exist or is empty. Please check your content config file for errors.
+22:47:37   ├─ /_llms-txt/install.txt (+37ms)
+22:47:37   ├─ /_llms-txt/guides.txt (+76ms)
+22:47:37   ├─ /_llms-txt/reference.txt (+60ms)
+22:47:37   ├─ /404.html22:47:37 [WARN] [content] Entry docs → 404 was not found.
+ (+6ms)
+22:47:37   ├─ /docs/index.md (+0ms)
+22:47:37   ├─ /docs/guides/answer-cards.md (+0ms)
+22:47:37   ├─ /docs/guides/changes.md (+0ms)
+22:47:37   ├─ /docs/guides/computers.md (+0ms)
+22:47:37   ├─ /docs/guides/files.md (+0ms)
+22:47:37   ├─ /docs/guides/github.md (+0ms)
+22:47:37   ├─ /docs/guides/herdr.md (+0ms)
+22:47:37   ├─ /docs/guides/live-terminal.md (+0ms)
+22:47:37   ├─ /docs/guides/needs-you.md (+0ms)
+22:47:37   ├─ /docs/guides/notifications.md (+0ms)
+22:47:37   ├─ /docs/guides/photo-and-voice.md (+0ms)
+22:47:37   ├─ /docs/guides/preview.md (+0ms)
+22:47:37   ├─ /docs/guides/project-buttons.md (+0ms)
+22:47:37   ├─ /docs/guides/recap.md (+0ms)
+22:47:37   ├─ /docs/guides/sessions.md (+0ms)
+22:47:37   ├─ /docs/guides/wall.md (+0ms)
+22:47:37   ├─ /docs/guides/worktrees.md (+0ms)
+22:47:37   ├─ /docs/install/linux.md (+0ms)
+22:47:37   ├─ /docs/install/macos.md (+0ms)
+22:47:37   ├─ /docs/install/windows.md (+0ms)
+22:47:37   ├─ /docs/pair-your-phone.md (+0ms)
+22:47:37   ├─ /docs/providers.md (+0ms)
+22:47:37   ├─ /docs/quick-start.md (+0ms)
+22:47:37   ├─ /docs/reference/cli.md (+0ms)
+22:47:37   ├─ /docs/reference/release-notes.md (+0ms)
+22:47:37   ├─ /docs/reference/security.md (+0ms)
+22:47:37   ├─ /docs/reference/troubleshooting.md (+0ms)
+22:47:37   ├─ /docs/reference/update-and-uninstall.md (+0ms)
+22:47:37   ├─ /llms-full.txt (+132ms)
+22:47:38   ├─ /llms-small.txt (+133ms)
+22:47:38   ├─ /llms.txt (+1ms)
+22:47:38   ├─ /docs/index.html (+3ms)
+22:47:38   ├─ /docs/guides/answer-cards/index.html (+1ms)
+22:47:38   ├─ /docs/guides/changes/index.html (+1ms)
+22:47:38   ├─ /docs/guides/computers/index.html (+1ms)
+22:47:38   ├─ /docs/guides/files/index.html (+1ms)
+22:47:38   ├─ /docs/guides/github/index.html (+1ms)
+22:47:38   ├─ /docs/guides/herdr/index.html (+1ms)
+22:47:38   ├─ /docs/guides/live-terminal/index.html (+2ms)
+22:47:38   ├─ /docs/guides/needs-you/index.html (+1ms)
+22:47:38   ├─ /docs/guides/notifications/index.html (+1ms)
+22:47:38   ├─ /docs/guides/photo-and-voice/index.html (+1ms)
+22:47:38   ├─ /docs/guides/preview/index.html (+1ms)
+22:47:38   ├─ /docs/guides/project-buttons/index.html (+1ms)
+22:47:38   ├─ /docs/guides/recap/index.html (+1ms)
+22:47:38   ├─ /docs/guides/sessions/index.html (+1ms)
+22:47:38   ├─ /docs/guides/wall/index.html (+1ms)
+22:47:38   ├─ /docs/guides/worktrees/index.html (+1ms)
+22:47:38   ├─ /docs/install/linux/index.html (+1ms)
+22:47:38   ├─ /docs/install/macos/index.html (+1ms)
+22:47:38   ├─ /docs/install/windows/index.html (+1ms)
+22:47:38   ├─ /docs/pair-your-phone/index.html (+1ms)
+22:47:38   ├─ /docs/providers/index.html (+1ms)
+22:47:38   ├─ /docs/quick-start/index.html (+1ms)
+22:47:38   ├─ /docs/reference/cli/index.html (+1ms)
+22:47:38   ├─ /docs/reference/release-notes/index.html (+1ms)
+22:47:38   ├─ /docs/reference/security/index.html (+1ms)
+22:47:38   ├─ /docs/reference/troubleshooting/index.html (+1ms)
+22:47:38   ├─ /docs/reference/update-and-uninstall/index.html (+1ms)
+22:47:38 ✓ Completed in 526ms.
+
+ generating optimized images
+22:47:38   ▶ /_astro/illo-computers.CmSLdzem_XFPe0.webp (before: 55kB, after: 55kB) (+1ms) (1/29)
+22:47:38   ▶ /_astro/phone-answer-card.z_GcXXfF_Z2sCJ2P.webp (before: 59kB, after: 59kB) (+2ms) (2/29)
+22:47:38   ▶ /_astro/phone-computers-confirm.BqGAiCqH_14p4wl.webp (before: 18kB, after: 18kB) (+2ms) (3/29)
+22:47:38   ▶ /_astro/phone-computers-code.Bfoi-VJX_Z1TKoQl.webp (before: 11kB, after: 11kB) (+2ms) (4/29)
+22:47:38   ▶ /_astro/illo-add-computer.DrDpUtrM_Z19V3qU.webp (before: 44kB, after: 44kB) (+2ms) (5/29)
+22:47:38   ▶ /_astro/phone-commit.BB-qh8je_1ButPg.webp (before: 27kB, after: 27kB) (+2ms) (6/29)
+22:47:38   ▶ /_astro/phone-changes-list.k4AOo9Vd_nQATV.webp (before: 19kB, after: 19kB) (+2ms) (7/29)
+22:47:38   ▶ /_astro/phone-computers-found.B9X8g1dk_1CV59N.webp (before: 19kB, after: 19kB) (+2ms) (8/29)
+22:47:38   ▶ /_astro/phone-computers-adding.BxJ4z6C6_4pBK3.webp (before: 4kB, after: 4kB) (+2ms) (9/29)
+22:47:38   ▶ /_astro/phone-computers-sessions.DyLkxVxj_ZOzF0W.webp (before: 12kB, after: 12kB) (+2ms) (10/29)
+22:47:38   ▶ /_astro/phone-computers-offline.BxSPbt_B_2sicVx.webp (before: 11kB, after: 11kB) (+1ms) (11/29)
+22:47:38   ▶ /_astro/phone-files-list.C2_O5I4M_2a7GSl.webp (before: 19kB, after: 19kB) (+1ms) (12/29)
+22:47:38   ▶ /_astro/phone-herdr-live.UwGgkHF1_112T4H.webp (before: 19kB, after: 19kB) (+1ms) (13/29)
+22:47:38   ▶ /_astro/phone-herdr-create.CrUslO3__1bipCD.webp (before: 17kB, after: 17kB) (+1ms) (14/29)
+22:47:38   ▶ /_astro/phone-files-viewer.DjxBG0xM_xUGc3.webp (before: 49kB, after: 49kB) (+1ms) (15/29)
+22:47:38   ▶ /_astro/phone-herdr-tab.B-0Xe1Mc_Z1yvF7o.webp (before: 14kB, after: 14kB) (+1ms) (16/29)
+22:47:38   ▶ /_astro/phone-live-terminal.BK9MPg_T_ZUAasq.webp (before: 55kB, after: 55kB) (+1ms) (17/29)
+22:47:38   ▶ /_astro/key-row.eGKDsQDn_ZYPyrh.webp (before: 3kB, after: 3kB) (+1ms) (18/29)
+22:47:38   ▶ /_astro/phone-herdr-integrations.C4pRy3v7_Z1GbamP.webp (before: 17kB, after: 17kB) (+1ms) (19/29)
+22:47:38   ▶ /_astro/phone-project-buttons.ladqnnj4_Z1VrTfW.webp (before: 50kB, after: 50kB) (+1ms) (20/29)
+22:47:38   ▶ /_astro/phone-recap.B4gHTHG2_Z1Ikr8d.webp (before: 48kB, after: 48kB) (+1ms) (21/29)
+22:47:38   ▶ /_astro/illo-worktrees.1rzhBVuA_2cyhed.webp (before: 66kB, after: 66kB) (+1ms) (22/29)
+22:47:38   ▶ /_astro/phone-wall.D1YNKwu6_Z5tnQC.webp (before: 51kB, after: 51kB) (+1ms) (23/29)
+22:47:38   ▶ /_astro/phone-sessions.BxdaU-F3_Z1lpJYV.webp (before: 39kB, after: 39kB) (+1ms) (24/29)
+22:47:38   ▶ /_astro/phone-worktree-sheet.DonH7uZL_2714TX.webp (before: 42kB, after: 42kB) (+1ms) (25/29)
+22:47:38   ▶ /_astro/how-it-works.BU1nveag_s3DBa.webp (before: 80kB, after: 80kB) (+1ms) (26/29)
+22:47:38   ▶ /_astro/illo-youre-set.DIAiyFwb_Z1XQC9O.webp (before: 47kB, after: 47kB) (+1ms) (27/29)
+22:47:38   ▶ /_astro/illo-pairing.C5TM0Wjh_f4RkY.webp (before: 55kB, after: 55kB) (+1ms) (28/29)
+22:47:38   ▶ /_astro/phone-pair-done.BNyvl7A-_InidV.webp (before: 24kB, after: 24kB) (+1ms) (29/29)
+22:47:38 ✓ Completed in 5ms.
+
+22:47:38 [build] ✓ Completed in 2.08s.
+22:47:38 [starlight:pagefind] Building search index with Pagefind...
+22:47:39 [starlight:pagefind] Found 32 HTML files.
+22:47:39 [starlight:pagefind] Finished building search index in 0.87s.
+
+ validating links
+
+╭─                             ─╮
+· All internal links are valid. ·
+╰─                             ─╯
+
+22:47:39 [@astrojs/sitemap] `sitemap-index.xml` created at `dist`
+22:47:39 [build] 29 page(s) built in 3.48s
+22:47:39 [build] Complete!
