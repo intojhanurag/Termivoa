@@ -34,7 +34,7 @@ body{margin:0;min-height:100vh;display:flex;flex-direction:column;box-sizing:bor
 .label{display:flex;align-items:center;gap:8px;margin:0;font:11px ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#8C93A0}
 .label i{width:6px;height:6px;border-radius:3px;background:#F2B544}
 .art{display:flex;justify-content:center;padding:72px 0 40px}
-h1{margin:0;font:400 40px/44px ui-serif,"New York","Iowan Old Style",Georgia,serif;letter-spacing:-.03em}
+h1{margin:0;font:600 34px/40px system-ui,-apple-system,sans-serif;letter-spacing:-.03em}
 p.lead{margin:0;padding:10px 0 28px;color:#8C93A0;font-size:16px;line-height:23px}
 ul{display:flex;flex-direction:column;gap:12px;margin:0;padding:16px;list-style:none;border:1px solid #22272F;border-radius:8px;background:#0F1217;font:14px ui-monospace,Menlo,monospace}
 b{display:inline-block;width:20px;margin-right:12px;color:#F2B544}

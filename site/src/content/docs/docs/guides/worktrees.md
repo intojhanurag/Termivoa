@@ -28,6 +28,14 @@ The new branch does not track a remote. A push from [Changes](/docs/guides/chang
 Start from `main` for a new task. To continue another task, pick its branch in **from**.
 :::
 
+## What happens if creation times out?
+
+**Next beta:** Termivoa stops git's ordinary hook children before cleaning up
+a failed creation. This prevents a stopped hook from continuing to change the
+new worktree while it is removed. Check the sheet's error and your worktrees
+before trying again. Hooks are trusted programs on your computer; deliberately
+detached programs on macOS or Linux are outside this cleanup.
+
 ## See your worktrees
 
 A worktree session shows a **⎇ name** badge on the Sessions list and in the line above the terminal. The folders in `~/termivoa/worktrees` open in your editor like any other folder.
