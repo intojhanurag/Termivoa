@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-10
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -39,13 +39,15 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 The pairing link and QR code are secret. Do not share them.
 
+**Next beta:** Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
+
 ## Use several computers
 
 See [Use several computers](/docs/guides/computers/).
 
 | Command | Where | What it does |
 | --- | --- | --- |
-| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home and, on a terminal wide enough for it, a QR code of that link, then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or, in **Settings → + Add a computer**, to scan the QR code (**Scan QR**) or paste the link. Scan it in the app, not with the phone's Camera app: that opens the browser. In a terminal it also shows this computer in the app at home under **Settings → Computers → Found on your network**, with **Add**, and waits up to 10 minutes (it prints "Sent to mac (https://…)."). Then it shows the QR code and the link only when you press Enter ("No Add button? Press Enter to show a QR code and a link."); when nothing reached home, it prints them at once. The prompt starts `Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.`, and success says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` When the link expires and nothing reached home, it ends as before. With piped input or `--no-wait` it sends nothing to home. `pterm setup` does the same when you answer `2` to **Is Termivoa already on your phone?**; its list shows each computer's full address and system. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer) |
+| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home and, on a terminal wide enough for it, a QR code of that link, then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or, in **Settings → + Add a computer**, to scan the QR code (**Scan QR**) or paste the link. Scan it in the app, not with the phone's Camera app: that opens the browser. In a terminal it also shows this computer in the app at home under **Settings → Found on your network**, with **Add**, and waits up to 10 minutes (it prints "Sent to mac (https://…)."). Then it shows the QR code and the link only when you press Enter ("No Add button? Press Enter to show a QR code and a link."); when nothing reached home, it prints them at once. The prompt starts `Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.`, and success says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` When the link expires and nothing reached home, it ends as before. With piped input or `--no-wait` it sends nothing to home. `pterm setup` does the same when you answer `2` to **Is Termivoa already on your phone?**; its list shows each computer's full address and system. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer) |
 | `pterm pair --via <name\|url> --allow-tagged` | New computer | The same, when home or this computer is a tagged Tailscale node. Check the tags first. **Add** does not work for a tagged computer: use the QR code or the link. |
 | `pterm pair pending` | New computer | Also shows a **VIA** column: the home app a waiting phone comes from. |
 | `pterm computers` | Home | Shows each phone's other computers: device ID, label, address and when added. |
@@ -105,7 +107,7 @@ In `pterm attach`, Ctrl+] leaves without ending the session. With control, Ctrl+
 
 ## GitHub
 
-**Next beta.** See [Set up a GitHub repository](/docs/guides/github/). You connect a computer in the app, in **Settings → Integrations**; there is no command to connect.
+**Next beta.** See [Set up a GitHub repository](/docs/guides/github/). You connect a computer in the app: in **Settings**, tap the computer's card, then **Connect**. There is no command to connect.
 
 | Command | What it does |
 | --- | --- |

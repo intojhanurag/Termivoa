@@ -630,7 +630,7 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait ph
 			}
 			text := fmt.Sprintf("Done. %s is in your Termivoa app on %s. Open the app and tap it.\n", wait.self, machineName(wait.appOrigin))
 			if len(wait.self) > 12 {
-				text += "Tip: give it a short name in the app: Settings → Computers → Rename.\n"
+				text += "Tip: give it a short name in the app: Settings, tap the computer, then Rename.\n"
 			}
 			return writeString(output, text)
 		}

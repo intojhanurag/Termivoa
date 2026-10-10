@@ -6,18 +6,18 @@ What it does. One list of everything that waits for the user, over every compute
 
 | Part | What the user sees |
 | --- | --- |
-| The tab | **Needs you** with an amber count (`Needs you 3`) in the Sessions tab row, right after **All** |
+| The tab | **Needs you** with an amber count (`Needs you 3`) in the Sessions tab row, right after **herdr** (tabs: **Sessions · herdr · Needs you**; since the UI revamp, 2026-10-10, the old **All** tab is **Sessions**) |
 | The list | What waits for an answer, the longest wait first; then **Finished** |
 | The queue | In Live and in a herdr terminal: a row `NEEDS YOU` with one button, `Next · 2 left ›`, or `Inbox ›` on the last one |
 | A notification tap | Opens the item as before, and now also starts the queue |
 
 ## 1. Placement
 
-**Chosen:** a tab (chip) in the Sessions tab row, right after **All**: `All · Needs you 3 · herdr 2 · mac · vps`.
+**Chosen:** a tab (chip) in the Sessions tab row, after the other tabs. Today (since the UI revamp, 2026-10-10): `Sessions · herdr 2 · Needs you 3`; the computer is chosen in the side drawer, not by chips. At the time of this design it was `All · Needs you 3 · herdr 2 · mac · vps`.
 
 - It shows only while at least one item waits for an answer, or while it is the open tab (so "Nothing needs you." has a place to show).
-- With one computer and no herdr there was no tab row. Now the row appears with **All** and **Needs you**, only while something waits.
-- No existing control was removed, and nothing moved in front of **All**.
+- With one computer and no herdr there was no tab row. Now the row appears with **Sessions** and **Needs you**, only while something waits.
+- No existing control was removed, and nothing moved in front of **Sessions**.
 - The count is the same on every tab and for every chosen computer: it is computed from all computers.
 
 **Rejected:** make the Sessions status line ("2 computers · 1 waiting · 1 working") a button.
@@ -55,7 +55,7 @@ One change in polling scope: the provider read ran only while Sessions, a herdr 
 - The **Finished** label (caps) shows only when that part has rows.
 - The count on the tab, the status line and the queue use only the first part (`waitingCount`).
 - On the tab the Sessions status line says `3 need you` or `1 needs you` (`needsYouText`) with an amber dot while something waits. While nothing waits, the status line is the usual one and the list has one line: `Nothing needs you.` (`NOTHING`); what finished still shows under it.
-- While a computer did not answer (can't reach, pair again, out of date: `reachable` in `Sessions.tsx` is false), the list never says `Nothing needs you.`. It has one muted line, `Some computers did not answer. See All.` (`NO_ANSWER`), under what waits. The notices with the reason stay on the **All** tab.
+- While a computer did not answer (can't reach, pair again, out of date: `reachable` in `Sessions.tsx` is false), the list never says `Nothing needs you.`. It has one muted line, `Some computers did not answer. See Sessions.` (`NO_ANSWER`), under what waits. The notices with the reason stay on the **Sessions** tab.
 - A session that exited or was lost is never an item. A session that is `working` is never an item.
 - A herdr item without an `openTarget` is never an item (nothing to open).
 - A row is one button. A tap opens the item (section 4).
@@ -81,7 +81,7 @@ A "queue run" is the state `visited` in `App.tsx`: the set of item keys this run
 | History | A Next move replaces the history entry (`queueMove`), so Back from any item of a run goes to the **Needs you** tab |
 | No answer yet | The tab says `Nothing needs you.` only when every computer and every provider answered (`loading`); a provider that cannot be reached counts as `partial` |
 | A double tap | Next takes no tap for 400 ms after the queue moved (`nextReady`, `NEXT_AFTER_MS`): the button is at the same place on the next screen, so a double tap would skip an item |
-| **‹ Sessions**, **Sessions** and Back | From a terminal in a run they go to the **Needs you** tab, not to **All** or the herdr tab (`sessionsView`) |
+| **‹ Sessions**, **Sessions** and Back | From a terminal in a run they go to the **Needs you** tab, not to **Sessions** or the herdr tab (`sessionsView`) |
 | The item is gone | A session that ended: "This session is gone" shows with the Next row above it. A herdr terminal that is gone (`onGone`): Sessions on the **Needs you** tab with "That terminal is gone." |
 | Always fresh | `queueStep` is computed from the newest lists on every render. An item that was answered, or that is gone, is never a step |
 | No repeats | An item shown in this run is not offered again in the same run. An item the user skipped stays in the inbox |
@@ -112,7 +112,7 @@ A page that an older service worker still controls gets no record for a session 
 - Names from a peer or from herdr are text only (`<bdi>`). They are never part of an address.
 - It shows nothing from a computer that cannot be reached.
 - It shows no herdr item from a herdr that is off, not installed, not running or unsupported, or from a computer below the provider revision (`FEATURE_REVISION.providers` = 4). Sessions of such a computer still show.
-- It adds no notice of its own for these cases, but one line while a computer did not answer (section 3). The existing notices stay where they are (the **All** tab and the **herdr** tab).
+- It adds no notice of its own for these cases, but one line while a computer did not answer (section 3). The existing notices stay where they are (the **Sessions** tab and the **herdr** tab).
 - It sends no input, takes no control, and makes no new kind of request.
 
 ## 8. Known limits

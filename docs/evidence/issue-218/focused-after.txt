@@ -1,0 +1,41 @@
+=== RUN   TestMethodsRoundTripPayloads
+=== RUN   TestMethodsRoundTripPayloads/redeem
+=== RUN   TestMethodsRoundTripPayloads/poll_pending
+=== RUN   TestMethodsRoundTripPayloads/poll_approved
+=== RUN   TestMethodsRoundTripPayloads/authenticate
+=== RUN   TestMethodsRoundTripPayloads/logout
+=== RUN   TestMethodsRoundTripPayloads/settings
+=== RUN   TestMethodsRoundTripPayloads/list
+=== RUN   TestMethodsRoundTripPayloads/create
+=== RUN   TestMethodsRoundTripPayloads/rename
+=== RUN   TestMethodsRoundTripPayloads/terminate
+=== RUN   TestMethodsRoundTripPayloads/rename_device
+=== RUN   TestMethodsRoundTripPayloads/origin
+--- PASS: TestMethodsRoundTripPayloads (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/redeem (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/poll_pending (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/poll_approved (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/authenticate (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/logout (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/settings (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/list (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/create (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/rename (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/terminate (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/rename_device (0.00s)
+    --- PASS: TestMethodsRoundTripPayloads/origin (0.00s)
+=== RUN   TestMutationOperationMismatchIsUncertain
+--- PASS: TestMutationOperationMismatchIsUncertain (0.00s)
+=== RUN   TestCancellationInterruptsBlockedCall
+--- PASS: TestCancellationInterruptsBlockedCall (0.00s)
+=== RUN   TestDeadIdleConnectionRedialsOnceBeforeDelivery
+--- PASS: TestDeadIdleConnectionRedialsOnceBeforeDelivery (0.00s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/gatewayclient	0.469s
+=== RUN   TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen
+    gateway_worktree_availability_test.go:113: list completed in 800.333µs while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: authenticate completed in 126.583µs while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: live-open completed in 281.75µs while the git hook remained blocked
+--- PASS: TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen (0.52s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	1.067s
