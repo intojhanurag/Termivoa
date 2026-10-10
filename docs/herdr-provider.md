@@ -576,7 +576,7 @@ custom launchers that cannot be inferred from PATH. Nothing persists.
 | Help-derived kinds | At most 64 unique valid names; only those names are eligible |
 | Canonical commands | Fixed 24-kind map from herdr v0.9.3 `src/detect/mod.rs` (`interactive_agent_executable`); `cursor` means `cursor-agent`, `kiro` means `kiro-cli`; unknown future kinds require running evidence |
 | PATH scan | First 64 entries, absolute directories only, each at most 4096 bytes; stat regular files with an execute bit; no executable is launched |
-| Scan interval | Every 30 s while ready; broker settings reads request `LookAgain` while ready, missing or stopped, at most once per 2 s; it and a capability probe invalidate the cache; HTTP reads never scan |
+| Scan interval | Every 30 s while ready; broker settings reads request `RefreshAgents` while ready (agent scan only; retry timers kept) and `LookAgain` while missing or stopped, at most once per 2 s; it and a capability probe invalidate the cache; HTTP reads never scan |
 | Published choices | At most 16; running count descending, then name; unchanged `HTTPProviderInfo.agentKinds` shape |
 | Launch validation | Create and manage still require a kind in the published choices before making anything; herdr remains the authority for the actual start |
 

@@ -226,3 +226,26 @@ func TestInstalledKindsRefreshOnTimerAndSettingsRead(t *testing.T) {
 		t.Fatalf("settings refresh kept removed command: %v", info.AgentKinds)
 	}
 }
+
+// A settings read of a ready herdr rescans agent commands only: it must not
+// reset the binary lookup or retry timers (review of #246).
+func TestRefreshAgentsKeepsRetryTimers(t *testing.T) {
+	provider, server, _ := newTestProvider(t, true)
+	bin := filepath.Join(provider.config.Home, "agents")
+	provider.config.PathEnv = bin
+	now := fixedNow
+	provider.now = func() time.Time { return now }
+	server.Snapshot(withoutAgents(t, readFixture(t, "snapshot-0.8.2.json")))
+	provider.step(context.Background())
+	installedCommand(t, bin, "claude")
+	lookupAt, retryAt := now.Add(time.Hour), now.Add(2*time.Hour)
+	provider.lookupAt, provider.retryAt = lookupAt, retryAt
+	provider.RefreshAgents()
+	provider.step(context.Background())
+	if info, _ := provider.Info(); !reflect.DeepEqual(info.AgentKinds, []string{"claude"}) {
+		t.Fatalf("refresh did not rescan agents: %v", info.AgentKinds)
+	}
+	if !provider.lookupAt.Equal(lookupAt) || !provider.retryAt.Equal(retryAt) || provider.lookNow.Load() {
+		t.Fatalf("refresh reset timers: lookup %v retry %v lookNow %v", provider.lookupAt, provider.retryAt, provider.lookNow.Load())
+	}
+}

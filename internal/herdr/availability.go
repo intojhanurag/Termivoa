@@ -28,7 +28,7 @@ var agentExecutables = map[string]string{
 }
 
 // refreshAvailability belongs to the poll loop. Settings reads only the
-// published kinds and asks LookAgain for a refresh; it never walks PATH.
+// published kinds and asks RefreshAgents for a refresh; it never walks PATH.
 func (provider *Provider) refreshAvailability(now time.Time) {
 	if now.Before(provider.availabilityAt) {
 		return

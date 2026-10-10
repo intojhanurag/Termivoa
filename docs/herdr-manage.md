@@ -419,4 +419,5 @@ unavailable says, for example, "codex is not available in herdr now." and
 falls back to no agent. Create and newTab still check the exact offered kind
 before making anything, and launch only through herdr's existing methods.
 The broker requests a ready-state availability refresh on settings reads,
-under the existing 2 s throttle; the response stays a nonblocking cache read.
+under the existing 2 s throttle; it rescans agent commands only and keeps
+the lookup and retry timers; the response stays a nonblocking cache read.

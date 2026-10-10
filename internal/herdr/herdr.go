@@ -108,6 +108,9 @@ type Provider struct {
 	// lookNow asks the poll loop to forget its retry and lookup timers: after
 	// a start, and when the app reads the settings ("Check again").
 	lookNow atomic.Bool
+	// agentsNow asks the poll loop for a fresh agent-command scan only, when
+	// the app reads the settings of a ready herdr. It keeps the retry timers.
+	agentsNow atomic.Bool
 	// wake asks the poll loop for a snapshot now (after a create).
 	wake chan struct{}
 	// turns counts the poll loop's turns as they start; view.turn is the
@@ -338,6 +341,9 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 		provider.lookupAt, provider.retryAt = time.Time{}, time.Time{}
 		provider.availabilityAt = time.Time{}
 	}
+	if provider.agentsNow.Swap(false) {
+		provider.availabilityAt = time.Time{}
+	}
 	if provider.binary == "" && !now.Before(provider.lookupAt) {
 		provider.binary = provider.findBinary()
 		provider.lookupAt = now.Add(lookupEvery)
@@ -399,6 +405,13 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 // not at its next retry. It never blocks.
 func (provider *Provider) LookAgain() {
 	provider.lookNow.Store(true)
+	provider.Poll()
+}
+
+// RefreshAgents asks the poll loop to scan for agent commands now. Unlike
+// LookAgain it keeps the binary lookup and retry timers. It never blocks.
+func (provider *Provider) RefreshAgents() {
+	provider.agentsNow.Store(true)
 	provider.Poll()
 }
 
