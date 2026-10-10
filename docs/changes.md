@@ -143,21 +143,23 @@ git/ssh settings and null stdin are preserved; no new protocol or retry.
 
 | Platform | Ownership and completion |
 | --- | --- |
-| Unix | `Setsid` creates an isolated session/group. Context cancellation sends SIGKILL to its whole group. `Wait` reaps git; a final group kill also ends helpers left after leader exit, including ones whose output pipes were closed. Orphan reaping belongs to the OS. |
-| Windows | Create a KILL_ON_JOB_CLOSE Job, start suspended, assign before resuming the primary thread using the existing PTY startup sequence. Cancellation terminates the Job and also kills a still-unassigned suspended child. After git's Wait, terminate leftovers, poll the Job's active count for at most one second and close its handle. |
+| Unix | `Setsid` creates an isolated session/group. Context cancellation sends SIGKILL to its whole group while git still runs (before `Wait` reaps it). If git fails by itself, one group kill after `Wait` ends helpers left behind (a group ID is not reused while a member lives; ESRCH means none is left). A successful git sends no signal. Orphan reaping belongs to the OS. |
+| Windows | Create a KILL_ON_JOB_CLOSE Job, start suspended, assign before resuming the primary thread using the existing PTY startup sequence. Cancellation terminates the Job and also kills a still-unassigned suspended child. After a failed or canceled git, terminate leftovers, poll the Job's active count for at most one second and close its handle. After a successful git, clear KILL_ON_JOB_CLOSE and close the handle; hook work keeps running. |
 | Failed start/assignment | Close all allocated handles; a started suspended child is killed and waited before returning an error. No unowned fallback. |
 
 A failed worktree add reaches rollback only after the write runner's cleanup.
 A failure after an already-completed git change does not undo that change:
 inspect the branch/files before manually retrying, as with a lost reply.
 Normal synchronous hooks keep running on successful writes and their output
-is still reported. Helpers deliberately launched to remain in the owned
-boundary are cleaned up when the operation ends. Unix hooks that deliberately
+is still reported. Background work a hook starts (for example `npm install &` in
+`post-checkout`) keeps running after a successful write; it is cleaned up
+only when the write is canceled, times out or fails. Unix hooks that deliberately
 start another session (for example `setsid`) escape that group; hooks are
 trusted user code, not a sandbox. No unrelated process group is signaled.
 
 Tests run real `pre-commit` and `post-checkout` hooks and assert hook/child/sleep
-PIDs are gone after cancellation; a closed-output case cannot pass merely
+PIDs are gone after cancellation, and that a successful `post-commit` hook's
+background sleep survives; a closed-output case cannot pass merely
 because WaitDelay closed pipes. A separate controlled parent/child/grandchild
 fixture covers cancellation, deadline, failed/canceled start and preservation
 of an unrelated process on each native supported OS. Native Windows/Linux

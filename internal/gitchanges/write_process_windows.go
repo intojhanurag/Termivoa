@@ -81,6 +81,18 @@ func (tree writeProcessTree) close() error {
 	return errors.Join(err, windows.CloseHandle(tree.job))
 }
 
+// release closes the Job after a successful git without ending the processes
+// a hook left running: it first drops KILL_ON_JOB_CLOSE.
+func (tree writeProcessTree) release() error {
+	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	_, err := windows.SetInformationJobObject(tree.job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
+	if err != nil {
+		// Keep the Job open rather than kill the hook's work on close.
+		return err
+	}
+	return windows.CloseHandle(tree.job)
+}
+
 // Go's exec process has no retained primary-thread handle. This is the same
 // bounded Toolhelp thread snapshot/resume sequence used by PTY startup.
 func resumeWriteProcess(processID uint32) error {

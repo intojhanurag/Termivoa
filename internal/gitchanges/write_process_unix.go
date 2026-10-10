@@ -31,4 +31,5 @@ func (writeProcessTree) kill(command *exec.Cmd) error {
 	}
 	return err
 }
-func (writeProcessTree) close() error { return nil }
+func (writeProcessTree) close() error   { return nil }
+func (writeProcessTree) release() error { return nil }

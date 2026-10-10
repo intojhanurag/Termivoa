@@ -15,3 +15,4 @@ func prepareWriteProcess(*exec.Cmd) (writeProcessTree, error) {
 func (writeProcessTree) attach(*exec.Cmd) error { return nil }
 func (writeProcessTree) kill(*exec.Cmd) error   { return nil }
 func (writeProcessTree) close() error           { return nil }
+func (writeProcessTree) release() error         { return nil }

@@ -158,3 +158,22 @@ func TestWriteSuccessfulHookKeepsEnvironmentAndCommit(t *testing.T) {
 		t.Fatalf("commit did not finish: %s", got)
 	}
 }
+
+// A successful git keeps the background work its hook started; a canceled
+// one is covered by TestWriteCancellationEndsHookDescendants.
+func TestWriteSuccessfulHookKeepsBackgroundWork(t *testing.T) {
+	dir := writableRepo(t)
+	script := "#!/bin/sh\nsleep 30 >/dev/null 2>&1 &\nprintf '%s\\n' \"$!\" > sleeper.pid\n"
+	if err := os.WriteFile(filepath.Join(dir, ".git", "hooks", "post-commit"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runWrite(context.Background(), dir, "commit", "--allow-empty", "-m", "background fixture"); err != nil {
+		t.Fatalf("commit: %v %s", err, out)
+	}
+	pid := waitWritePID(t, dir, "sleeper.pid")
+	defer func() { _ = syscall.Kill(pid, syscall.SIGKILL) }()
+	time.Sleep(100 * time.Millisecond)
+	if writeProcessGone(pid) {
+		t.Fatal("successful git killed the hook's background process")
+	}
+}
