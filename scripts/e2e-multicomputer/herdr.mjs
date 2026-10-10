@@ -4,7 +4,7 @@
 // Nothing here reaches the real herdr.
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { api, click, run, setInput, sleep, terminalText, typeLine, until } from './lib.mjs';
+import { COMPUTER_OF, api, chooseComputer, click, drawerBar, run, setInput, settingsComputer, sleep, terminalText, typeLine, until } from './lib.mjs';
 
 // REVIEW_SHOTS=<folder>: the pictures a reviewer of docs/herdr-manage.md, section 14, looks at (demo data only).
 const REVIEW_SHOTS = process.env.REVIEW_SHOTS;
@@ -109,12 +109,13 @@ export async function herdrSteps(ctx) {
   // ---- page helpers ----
   const herdrChip = () => app.eval(`(() => { const c = [...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim().startsWith('herdr'));
     return c ? { text: c.innerText.replace(/\\s+/g, ' ').trim(), count: Number(c.querySelector('.chip-count')?.innerText ?? 0), pressed: c.getAttribute('aria-pressed') } : null; })()`);
-  const groups = () => app.eval(`[...document.querySelectorAll('.provider-group')].map((g) => ({
+  // where: "on <computer>" from the All computers header over the project (or the computer chosen in the drawer), then its small labels ("2 worktrees").
+  const groups = () => app.eval(`(() => { ${COMPUTER_OF} return [...document.querySelectorAll('.provider-group')].map((g) => ({
     name: g.querySelector('.group-name')?.innerText.trim(),
-    where: [...g.querySelectorAll('.group-where')].map((e) => e.innerText.trim().toLowerCase()),
+    where: [...(computerOf(g) ? ['on ' + computerOf(g)] : []), ...[...g.querySelectorAll('.group-where')].map((e) => e.innerText.trim().toLowerCase())],
     state: g.querySelector('.group-state')?.innerText.trim().toLowerCase() ?? '',
     open: g.querySelector('.group-toggle')?.getAttribute('aria-expanded'),
-    items: [...g.querySelectorAll('.provider-item')].map((i) => ({ name: i.querySelector('.row-title')?.innerText.trim(), state: i.querySelector('.state-word')?.innerText.trim().toLowerCase() ?? '', meta: i.querySelector('.row-meta')?.innerText.trim() })) }))`);
+    items: [...g.querySelectorAll('.provider-item')].map((i) => ({ name: i.querySelector('.row-title')?.innerText.trim(), state: i.querySelector('.state-word')?.innerText.trim().toLowerCase() ?? '', meta: i.querySelector('.row-meta')?.innerText.trim() })) })); })()`);
   const problemsText = () => app.eval(`[...document.querySelectorAll('.provider-tree .notice')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim())`);
   const statusLine = () => app.eval(`document.querySelector('.host-line')?.innerText.trim() ?? ''`);
   const sessionRows = () => app.eval(`[...document.querySelectorAll('.session-row:not(.provider-item)')].map((b) => b.querySelector('.row-title')?.firstChild?.textContent.trim())`);
@@ -198,7 +199,7 @@ export async function herdrSteps(ctx) {
     const chip = await herdrChip();
     await shot('h-tab');
     // acme-web's claude is done: one terminal needs you.
-    check('H-tab', 'The herdr tab shows with mac\'s count (1 done); every project is "on mac", none from vps',
+    check('H-tab', 'The herdr tab shows with mac\'s count (1 done); every project is under the mac header, none from vps',
       chip.count === 1 && list.every((g) => g.where.includes('on mac')) && !list.some((g) => g.where.includes('on vps')),
       `tab "${chip.text}"; groups ${JSON.stringify(list.map((g) => `${g.name} ${g.where.join(' ')} ${g.state}`))}`);
   });
@@ -228,8 +229,8 @@ export async function herdrSteps(ctx) {
     return [document.documentElement.scrollWidth > iw ? 'document ' + document.documentElement.scrollWidth : '',
       ...all.filter((e) => e.getBoundingClientRect().right > iw + 0.5).map((e) => name(e) + ' right ' + Math.round(e.getBoundingClientRect().right))].filter(Boolean).slice(0, 8);
   })()`);
-  const nameFits = (name) => app.eval(`(() => { const e = [...document.querySelectorAll('.group-name')].find((x) => x.textContent.trim() === ${JSON.stringify(name)});
-    return e ? { cut: e.scrollWidth > e.clientWidth + 1, width: Math.round(e.getBoundingClientRect().width), labels: [...e.closest('.group-toggle').querySelectorAll('.group-where')].map((w) => w.innerText.trim() + (w.getBoundingClientRect().width > 0 ? '' : ' (hidden)')) } : null; })()`);
+  const nameFits = (name) => app.eval(`(() => { ${COMPUTER_OF} const e = [...document.querySelectorAll('.group-name')].find((x) => x.textContent.trim() === ${JSON.stringify(name)});
+    return e ? { cut: e.scrollWidth > e.clientWidth + 1, width: Math.round(e.getBoundingClientRect().width), computer: computerOf(e), labels: [...e.closest('.group-toggle').querySelectorAll('.group-where')].map((w) => w.innerText.trim() + (w.getBoundingClientRect().width > 0 ? '' : ' (hidden)')) } : null; })()`);
   await step('H-fit', 'The herdr tab and the + sheet fit 375 and 390 px; a long project name is not cut while it fits', async () => {
     const seen = {};
     for (const width of [390, 375]) {
@@ -247,8 +248,8 @@ export async function herdrSteps(ctx) {
     }
     await app.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
     const names = [seen.name390, seen.name375];
-    check('H-fit', 'Nothing wider than 375 or 390 px on the herdr tab and the + sheet; "storefront-redesign" shows whole with ON MAC and 2 WORKTREES beside or under it',
-      ['tab390', 'tab375', 'sheet390', 'sheet375'].every((k) => seen[k].length === 0) && names.every((n) => n && !n.cut && n.labels.length === 2 && n.labels.every((l) => !l.endsWith('(hidden)'))),
+    check('H-fit', 'Nothing wider than 375 or 390 px on the herdr tab and the + sheet; "storefront-redesign" shows whole under the mac header, with "2 worktrees" beside or under it',
+      ['tab390', 'tab375', 'sheet390', 'sheet375'].every((k) => seen[k].length === 0) && names.every((n) => n && !n.cut && n.computer === 'mac' && JSON.stringify(n.labels) === '["2 worktrees"]'),
       JSON.stringify(seen));
   });
 
@@ -488,7 +489,7 @@ export async function herdrSteps(ctx) {
     const ms = Date.now() - started;
     time('herdr stopped → "herdr is not running on mac"', ms);
     latencies.down = await latency(tool, `${mac.origin}/api/v1/sessions`);
-    await click(app, 'All');
+    await click(app, 'Sessions');
     const line = await statusLine();
     const sessions = await sessionRows();
     await shot('h-down');
@@ -509,7 +510,7 @@ export async function herdrSteps(ctx) {
     const ms = Date.now() - started;
     latencies.hung = await latency(tool, `${mac.origin}/api/v1/sessions`);
     const providerHung = await latency(tool, `${mac.origin}/api/v1/providers/herdr`, 10);
-    await click(app, 'All');
+    await click(app, 'Sessions');
     const line = await statusLine();
     const sessions = await sessionRows();
     await shot('h-hang');
@@ -524,9 +525,13 @@ export async function herdrSteps(ctx) {
   });
 
   // ---- H-settings ----
-  await step('H-settings', 'Settings → Integrations: off hides mac\'s herdr, on brings it back; the buzz switches survive a reload', async () => {
+  await step('H-settings', 'Settings → mac → herdr: off hides mac\'s herdr, on brings it back; the buzz switches survive a reload', async () => {
+    // The herdr chip of mac's card on the Settings main page: its tone (green running, muted off).
+    const chipTone = () => app.eval(`(() => { const c = [...document.querySelectorAll('.sc-card')].find((e) => e.querySelector('.computer-name')?.innerText.trim() === 'mac');
+      const chip = c && [...c.querySelectorAll('.sc-chip')].find((x) => x.innerText.trim() === 'herdr'); return chip ? chip.className.replace('sc-chip', '').trim() : null; })()`);
     await inApp('/settings');
-    // innerText follows text-transform: the caps headings and state words read in capitals.
+    const chipOn = await until(() => chipTone(), { what: 'the herdr chip on mac\'s card', timeout: 20000 });
+    await settingsComputer(app, 'mac');
     const card = () => app.eval(`(() => { const li = [...document.querySelectorAll('.computer-card')].find((e) => e.innerText.includes('herdr on mac'));
       return li ? { text: li.innerText.replace(/\\s+/g, ' ').trim().toLowerCase(), switches: [...li.querySelectorAll('[role=switch]')].map((s) => s.getAttribute('aria-checked')) } : null; })()`);
     const flip = (label) => app.eval(`(() => { const li = [...document.querySelectorAll('.computer-card')].find((e) => e.innerText.includes('herdr on mac'));
@@ -537,23 +542,26 @@ export async function herdrSteps(ctx) {
     await until(async () => (await card()).text.includes('saved.'), { what: 'saved' });
     await flip('On');
     await until(async () => (await card()).text.includes('off for every phone: mac does not show herdr or buzz for it.'), { what: 'Off' });
+    await app.eval('history.back()');
+    const chipOff = await until(async () => { const tone = await chipTone(); return tone === 'muted' && tone; }, { what: 'the herdr chip muted', timeout: 10000 }).catch(() => chipTone());
     await inApp('/');
     await sleep(6000);
     const hidden = await herdrChip();
-    await inApp('/settings');
+    await settingsComputer(app, 'mac');
     await until(() => card(), { what: 'card' });
     await flip('On');
     const on = Date.now();
     await until(async () => (await card()).text.includes('running') && !(await card()).text.includes('not running'), { what: 'Running', timeout: 15000, every: 100 });
     const runningAfter = Date.now() - on;
     await app.go(`${mac.origin}/settings`);
+    await settingsComputer(app, 'mac');
     const reloaded = await until(() => card(), { what: 'card after reload' });
     await openSessions();
     const back = await until(() => herdrChip(), { what: 'herdr tab back', timeout: 20000 });
     await mac.herdrControl({ op: 'status', pane: paneOf(t['shop/1']), status: 'idle' }); // nothing changed in herdr meanwhile
-    check('H-settings', 'Off: the herdr tab leaves (only mac had herdr); On: it returns; "Buzz when finished" off survives a reload; Integrations reads "Running" from the snapshot',
-      first.text.includes('running') && runningAfter < 7000 && hidden === null && back !== null && JSON.stringify(reloaded.switches) === '["true","true","false"]',
-      `before ${JSON.stringify(first)}; while off: tab ${JSON.stringify(hidden)}; on → Running after ${runningAfter} ms; after reload ${JSON.stringify(reloaded)}; tab back "${back?.text}"`);
+    check('H-settings', 'Off: the herdr tab leaves (only mac had herdr) and mac\'s card shows its herdr chip grey; On: it returns; "Buzz when finished" off survives a reload; the herdr block on mac\'s page reads "Running" from the snapshot and the chip is green',
+      first.text.includes('running') && runningAfter < 7000 && hidden === null && back !== null && JSON.stringify(reloaded.switches) === '["true","true","false"]' && chipOn === 'green' && chipOff === 'muted',
+      `before ${JSON.stringify(first)}; chip ${chipOn}, while off ${chipOff}; while off: tab ${JSON.stringify(hidden)}; on → Running after ${runningAfter} ms; after reload ${JSON.stringify(reloaded)}; tab back "${back?.text}"`);
     // Buzz when finished on again, as the other checks expect.
     await api(tool, `${mac.origin}/api/v1/providers/herdr`, 'PATCH', { notify: ['blocked', 'done'] });
   });
@@ -617,7 +625,8 @@ export async function herdrSteps(ctx) {
   // ---- manage herdr from the phone (docs/herdr-manage.md, sections 3, 6 and 7) ----
   const ITEM = 'item-menu-title';
   const WORKSPACE = 'workspace-title';
-  const CHANGED = 'The list changed. Look again, then try again.';
+  // Close workspace names its own conflict causes (issue 210).
+  const CLOSE_CHANGED = 'The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer.';
   const INSTALL = 'curl -fsSL https://herdr.dev/install.sh | sh';
   const manageUrl = `${mac.origin}/api/v1/providers/herdr/manage`;
   const manageApi = (body) => api(tool, manageUrl, 'POST', body);
@@ -668,7 +677,7 @@ export async function herdrSteps(ctx) {
   const labels = (sheet) => sheet.buttons.map((b) => `${b.text}${b.disabled ? ' (off)' : ''}`);
   /** Back to the herdr tab from anywhere in the app. */
   const backToTab = async () => { await inApp('/'); await herdrTab({ load: false }); };
-  /** The Integrations card "herdr on <computer>". innerText follows text-transform: lower case here. */
+  /** The card "herdr on <computer>" on that computer's Settings page (settingsComputer). */
   const integrationCard = (name) => app.eval(`(() => { ${LABEL}
     const li = [...document.querySelectorAll('.computer-card')].find((e) => text(e.querySelector('.row-title')) === ${JSON.stringify(`herdr on ${name}`)});
     if (!li) return null; const s = li.querySelector('.computer-state');
@@ -714,9 +723,9 @@ export async function herdrSteps(ctx) {
   };
   const banner = () => app.eval(`document.querySelector('.banner[role="status"] .banner-text')?.innerText.trim() ?? null`);
   /** Where the app is after it left Live: the address, which tab is pressed, and the "gone" message. */
-  const landed = async () => ({ path: await livePath(), herdr: (await herdrChip())?.pressed, all: await app.eval(`[...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim() === 'All')?.getAttribute('aria-pressed') ?? null`),
+  const landed = async () => ({ path: await livePath(), herdr: (await herdrChip())?.pressed, sessions: await app.eval(`[...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim() === 'Sessions')?.getAttribute('aria-pressed') ?? null`),
     tree: await app.eval(`document.querySelector('.provider-tree') !== null`), gone: (await app.text()).includes('That terminal is gone.') });
-  const onHerdrTab = (now) => now.path === '/' && now.herdr === 'true' && now.all === 'false' && now.tree && !now.gone;
+  const onHerdrTab = (now) => now.path === '/' && now.herdr === 'true' && now.sessions === 'false' && now.tree && !now.gone;
   const manageRequests = (mark) => env.logSince(mark).filter((e) => e.host === mac.host && e.method === 'POST' && e.path === '/api/v1/providers/herdr/manage');
   /** A picture for the reviewer: 390×844 at 2×, so the file stays small. */
   const review = async (name) => {
@@ -776,7 +785,7 @@ export async function herdrSteps(ctx) {
       `silver-meadow ${JSON.stringify(labels(linked))}; notes ${JSON.stringify(labels(plain))}; shop ${JSON.stringify(labels(main))} "${main.first}"`);
   });
 
-  await step('H-manage-fit', 'The item menu, its confirmations, New workspace and the Integrations cards fit 375 and 390 px', async () => {
+  await step('H-manage-fit', 'The item menu, its confirmations, New workspace, the Settings main page and the herdr cards on mac\'s and vps\'s pages fit 375 and 390 px', async () => {
     const seen = {};
     for (const width of [390, 375]) {
       await app.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 3, mobile: true });
@@ -804,15 +813,22 @@ export async function herdrSteps(ctx) {
       await shot(`h-manage-fit-workspace-${width}`);
       await closeSheet(WORKSPACE);
       await inApp('/settings');
-      await until(async () => (await integrationCard('vps'))?.buttons.includes('Install herdr') && await integrationCard('mac'), { what: 'the Integrations cards', timeout: 20000 });
-      await app.eval(`document.querySelector('#integrations-heading').scrollIntoView()`);
-      seen[`cards${width}`] = await overflow();
-      await shot(`h-manage-fit-cards-${width}`);
+      await until(() => app.eval(`document.querySelectorAll('.sc-card .sc-chip').length > 0`), { what: 'the computer cards with their chips', timeout: 20000 });
+      seen[`main${width}`] = await overflow();
+      await shot(`h-manage-fit-main-${width}`);
+      await settingsComputer(app, 'vps');
+      await until(async () => (await integrationCard('vps'))?.buttons.includes('Install herdr'), { what: 'the herdr on vps card', timeout: 20000 });
+      seen[`cardVps${width}`] = await overflow();
+      await shot(`h-manage-fit-card-vps-${width}`);
+      await settingsComputer(app, 'mac');
+      await until(() => integrationCard('mac'), { what: 'the herdr on mac card', timeout: 20000 });
+      seen[`cardMac${width}`] = await overflow();
+      await shot(`h-manage-fit-card-mac-${width}`);
     }
     await app.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
     await inApp('/');
-    check('H-manage-fit', 'Nothing wider than 375 or 390 px: the item menu with its Tabs list, the Close workspace, Remove worktree and Close tab confirmations, the New workspace sheet, and Integrations with the "Not installed" card and Install herdr',
-      Object.keys(seen).length === 14 && Object.values(seen).every((list) => list.length === 0), JSON.stringify(seen));
+    check('H-manage-fit', 'Nothing wider than 375 or 390 px: the item menu with its Tabs list, the Close workspace, Remove worktree and Close tab confirmations, the New workspace sheet, the Settings main page with its chips, and the herdr cards on vps\'s page ("Not installed", Install herdr) and mac\'s page',
+      Object.keys(seen).length === 18 && Object.values(seen).every((list) => list.length === 0), JSON.stringify(seen));
   });
 
   await step('H-closetab', 'Close tab: the Tabs list, the confirmation, tab.close for that tab; never the last tab', async () => {
@@ -840,14 +856,14 @@ export async function herdrSteps(ctx) {
     const last = await manageApi({ action: 'closeTab', itemId: lucky.id, targetId: lucky.targets[0].id });
     const foreign = await manageApi({ action: 'closeTab', itemId: lucky.id, targetId: shop.targets[0].id });
     const code = (r) => `${r.status} ${r.json?.error?.code ?? ''}`.trim();
-    check('H-closetab', 'shop has two tabs: the Tabs list shows "1 · claude" and "logs", each with Close tab; Close tab on logs asks "Close tab logs? Its terminals end."; confirming makes one tab.close of that tab, and shop shows one tab within 10 s; an item with one terminal shows "Close the workspace to end its last tab." and no Close tab; the API refuses the last tab (409) and a terminal of another item (404)',
+    check('H-closetab', 'shop has two tabs: the Tabs list shows "1 · claude" and "logs", each with Close tab; Close tab on logs asks "Close tab logs? Its terminals end."; confirming makes one tab.close of that tab, and shop shows one tab within 10 s; an item with one terminal shows "Close the workspace to end its last tab." (shop, with linked worktrees: "Close its worktrees first, then close this workspace to end its last tab.") and no Close tab; the API refuses the last tab (409) and a terminal of another item (404)',
       JSON.stringify(two.tabs) === '[{"name":"1 · claude","close":"Close tab"},{"name":"logs","close":"Close tab"}]' && two.tabHint === null
         && asked.confirm === 'Close tab logs? Its terminals end.' && JSON.stringify(asked.confirmButtons) === '["Cancel","Close tab"]'
         && logged(mark, 'tab.close').join() === `tab.close ${tabId}` && gone <= 10000 && !shop.targets.some((x) => x.id === target) && shop.targets.length === 1
         && JSON.stringify(one.tabs) === '[{"name":"1 · claude","close":""}]' && one.tabHint === 'Close the workspace to end its last tab.'
-        && JSON.stringify(after.tabs) === '[{"name":"1 · claude","close":""}]' && after.tabHint === 'Close the workspace to end its last tab.'
+        && JSON.stringify(after.tabs) === '[{"name":"1 · claude","close":""}]' && after.tabHint === 'Close its worktrees first, then close this workspace to end its last tab.'
         && code(last) === '409 operation_conflict' && code(foreign) === '404 session_missing' && workspaceIn('lucky-valley') !== undefined && workspaceIn('shop') !== undefined,
-      `shop tabs ${JSON.stringify(two.tabs)}; confirmation "${asked.confirm}" ${JSON.stringify(asked.confirmButtons)}; fake: ${logged(mark, 'tab.close').join(' | ')}; gone after ${gone} ms; lucky-valley tabs ${JSON.stringify(one.tabs)} "${one.tabHint}"; last tab ${code(last)} "${last.json?.error?.message}"; another item's terminal ${code(foreign)}`);
+      `shop tabs ${JSON.stringify(two.tabs)}; confirmation "${asked.confirm}" ${JSON.stringify(asked.confirmButtons)}; fake: ${logged(mark, 'tab.close').join(' | ')}; gone after ${gone} ms; lucky-valley tabs ${JSON.stringify(one.tabs)} "${one.tabHint}"; shop after ${JSON.stringify(after.tabs)} "${after.tabHint}"; last tab ${code(last)} "${last.json?.error?.message}"; another item's terminal ${code(foreign)}`);
   });
 
   let newTab;
@@ -979,9 +995,9 @@ export async function herdrSteps(ctx) {
     await closeSheet(ITEM);
     const listed = await until(async () => (await unfold(), await groups()).find((g) => g.name === 'acme-web' && g.items.some((i) => i.name === 'late-tree')), { what: 'the list read again: late-tree under acme-web', timeout: 10000 });
     const kept = logged(mark, 'workspace.close').length === 0 && logged(mark, 'worktree.remove').length === 0 && workspaceIn('acme-web') !== undefined && workspaceIn('fix-login') !== undefined;
-    check('H-stale', 'closeItem and removeItem with a name that is not the item\'s: 409 operation_conflict; in the app, Close workspace on acme-web after a worktree opened in it: "The list changed. Look again, then try again." and the list is read again; the fake closed and removed nothing',
+    check('H-stale', 'closeItem and removeItem with a name that is not the item\'s: 409 operation_conflict; in the app, Close workspace on acme-web after a worktree opened in it: "The list changed. Look again before closing. …" and the list is read again; the fake closed and removed nothing',
       wrong.status === 409 && wrong.json?.error?.code === 'operation_conflict' && wrongRemove.status === 409 && wrongRemove.json?.error?.code === 'operation_conflict'
-        && late.status === 200 && JSON.stringify(said.notes) === JSON.stringify([CHANGED]) && said.buttons.length === 0 && said.confirm === null && kept,
+        && late.status === 200 && JSON.stringify(said.notes) === JSON.stringify([CLOSE_CHANGED]) && said.buttons.length === 0 && said.confirm === null && kept,
       `wrong name: close ${wrong.status} ${wrong.json?.error?.code} "${wrong.json?.error?.message}", remove ${wrongRemove.status} ${wrongRemove.json?.error?.code}; late worktree ${late.status}; app ${JSON.stringify(said.notes)}; rows ${JSON.stringify(listed.items.map((i) => i.name))}; nothing closed or removed ${kept}`);
 
     const body = JSON.stringify({ action: 'newTab', itemId: acme.id });
@@ -1185,9 +1201,9 @@ export async function herdrSteps(ctx) {
     const pick = (sheet) => JSON.stringify({ title: sheet.title, buttons: sheet.buttons, first: sheet.first, tabs: sheet.tabs, tabHint: sheet.tabHint });
     const fromTab = await openMenu('shop');
     await closeSheet(ITEM);
-    // From the All tab, so the way back shows which tab the app picks.
-    await click(app, 'All');
-    await until(async () => (await herdrChip()).pressed === 'false', { what: 'the All tab' });
+    // From the Sessions tab, so the way back shows which tab the app picks.
+    await click(app, 'Sessions');
+    await until(async () => (await herdrChip()).pressed === 'false', { what: 'the Sessions tab' });
     await tapItem('shop');
     const first = await liveAt();
     const button = await until(() => liveMenuButton(), { what: 'the menu button in Live' });
@@ -1204,7 +1220,7 @@ export async function herdrSteps(ctx) {
     const pane = paneOf(target);
     await attachedSince(mac, pane, mark);
     const tabId = mac.herdrState().panes.find((p) => p.pane_id === pane).tab_id;
-    check('H-live-menu', 'Live for shop (opened from All) has ⋯ "Menu for shop" at the right of the chip row, inside the screen, 44 px; it opens the sheet the herdr tab opens (the same title, actions and Tabs list); New tab → Shell there makes one tab.create and Live shows the new tab\'s terminal',
+    check('H-live-menu', 'Live for shop (opened from the Sessions tab) has ⋯ "Menu for shop" at the right of the chip row, inside the screen, 44 px; it opens the sheet the herdr tab opens (the same title, actions and Tabs list); New tab → Shell there makes one tab.create and Live shows the new tab\'s terminal',
       button.label === 'Menu for shop' && button.text === '⋯' && button.right <= 390 && button.width >= 44 && button.height >= 44 && pick(sheet) === pick(fromTab) && sheet.title === 'shop'
         && logged(mark, 'tab.create ').join() === `tab.create ${paneOf(first).split(':')[0]}` && logged(mark, 'agent.').length === 0 && target !== first && pane.startsWith(`${paneOf(first).split(':')[0]}:`),
       `button ${JSON.stringify(button)}; sheet in Live ${pick(sheet)}; on the tab ${pick(fromTab)}; fake: ${logged(mark, 'tab.create ').join(' | ')}; Live ${first} → ${target}`);
@@ -1225,7 +1241,7 @@ export async function herdrSteps(ctx) {
     await sleep(3000);
     const later = await landed();
     await shot('h-live-menu-closed-tab');
-    check('H-live-close-tab', 'Close tab of the tab on screen (from its ⋯): one tab.close of that tab; the app goes to the herdr tab (herdr pressed, not All) with no "That terminal is gone.", also 3 s later',
+    check('H-live-close-tab', 'Close tab of the tab on screen (from its ⋯): one tab.close of that tab; the app goes to the herdr tab (herdr pressed, not Sessions) with no "That terminal is gone.", also 3 s later',
       menu.tabs.length >= 3 && /^Close tab .+\? Its terminals end\.$/.test(asked.confirm ?? '') && logged(closeMark, 'tab.close ').join() === `tab.close ${tabId}`
         && onHerdrTab(atOnce) && onHerdrTab(later) && (await sheetOf(ITEM)) === null,
       `tabs ${JSON.stringify(menu.tabs.map((x) => x.name))}; asked "${asked.confirm}"; fake: ${logged(closeMark, 'tab.close ').join(' | ')}; after ${ms} ms ${JSON.stringify(atOnce)}; 3 s later ${JSON.stringify(later)}`);
@@ -1233,7 +1249,7 @@ export async function herdrSteps(ctx) {
     // Close workspace of the terminal on screen: late-tree, a linked worktree of acme-web.
     const wsMark = mac.herdrLog().length;
     const lateId = workspaceIn('late-tree').workspace_id;
-    await click(app, 'All');
+    await click(app, 'Sessions');
     await herdrTab({ load: false });
     await tapItem('late-tree');
     await liveAt();
@@ -1244,16 +1260,16 @@ export async function herdrSteps(ctx) {
     const closedNow = await landed();
     await sleep(3000);
     const closedLater = await landed();
-    // ‹ Sessions, from a terminal that All opened.
-    await click(app, 'All');
-    await until(async () => (await herdrChip()).pressed === 'false', { what: 'the All tab' });
+    // ‹ Sessions, from a terminal that the Sessions tab opened.
+    await click(app, 'Sessions');
+    await until(async () => (await herdrChip()).pressed === 'false', { what: 'the Sessions tab' });
     await tapItem('shop');
     await liveAt();
     await click(app, '‹ Sessions');
     await until(async () => (await livePath()) === '/', { what: 'Sessions' });
     const sessions = await landed();
     await shot('h-live-menu-sessions');
-    check('H-live-leave', 'Close workspace from the ⋯ of late-tree\'s terminal: one workspace.close; the herdr tab with no "gone" message, also 3 s later. ‹ Sessions in a herdr terminal that the All tab opened: the herdr tab is selected, not All',
+    check('H-live-leave', 'Close workspace from the ⋯ of late-tree\'s terminal: one workspace.close; the herdr tab with no "gone" message, also 3 s later. ‹ Sessions in a herdr terminal that the Sessions tab opened: the herdr tab is selected, not Sessions',
       logged(wsMark, 'workspace.close ').join() === `workspace.close ${lateId}` && onHerdrTab(closedNow) && onHerdrTab(closedLater) && onHerdrTab(sessions),
       `fake: ${logged(wsMark, 'workspace.close ').join(' | ')}; after Close workspace ${JSON.stringify(closedNow)}, 3 s later ${JSON.stringify(closedLater)}; after ‹ Sessions ${JSON.stringify(sessions)}`);
   });
@@ -1380,15 +1396,14 @@ export async function herdrSteps(ctx) {
     await inApp('/');
   });
 
-  await step('H-install-herdr', 'Settings → Integrations on a computer without herdr: Not installed, Install herdr opens a session with the command typed, not run', async () => {
+  await step('H-install-herdr', 'Settings → vps (a computer without herdr): Not installed, Install herdr opens a session with the command typed, not run', async () => {
     await backToTab();
     const tabGroups = await groups();
     const polled = env.logSince(0).filter((e) => e.host === vps.host && e.path?.startsWith('/api/v1/providers'));
     const info = (await api(tool, `${vps.origin}/api/v1/settings`)).json.providers;
     const before = (await api(tool, `${vps.origin}/api/v1/sessions`)).json.sessions.map((s) => s.id);
-    await inApp('/settings');
+    await settingsComputer(app, 'vps');
     const card = await until(async () => { const c = await integrationCard('vps'); return c?.buttons.includes('Install herdr') && c; }, { what: 'the herdr on vps card', timeout: 20000 });
-    await app.eval(`document.querySelector('#integrations-heading').scrollIntoView()`);
     await shot('h-install-card');
     const frontMark = env.logMark();
     const started = Date.now();
@@ -1420,7 +1435,7 @@ export async function herdrSteps(ctx) {
   });
 
   // ---- Start: herdr installed and not running ----
-  await step('H-start', 'herdr installed and not running: Start herdr on the herdr tab and in Integrations; a tap starts the server', async () => {
+  await step('H-start', 'herdr installed and not running: Start herdr on the herdr tab and on mac\'s Settings page; a tap starts the server', async () => {
     await settle();
     await backToTab();
     await mac.stopHerdrServer();
@@ -1430,9 +1445,8 @@ export async function herdrSteps(ctx) {
     const stopped = await until(async () => { const n = await notice(); return n?.buttons.includes('Start herdr') && n; }, { what: 'the not running notice with Start herdr', timeout: 25000 });
     await shot('h-start-notice');
     const info = (await api(tool, `${mac.origin}/api/v1/settings`)).json.providers[0];
-    await inApp('/settings');
-    const card = await until(async () => { const c = await integrationCard('mac'); return c?.buttons.includes('Start herdr') && c; }, { what: 'Start herdr on the Integrations card', timeout: 20000 });
-    await app.eval(`document.querySelector('#integrations-heading').scrollIntoView()`);
+    await settingsComputer(app, 'mac');
+    const card = await until(async () => { const c = await integrationCard('mac'); return c?.buttons.includes('Start herdr') && c; }, { what: 'Start herdr on the herdr on mac card', timeout: 20000 });
     await shot('h-start-card');
     await backToTab();
     await until(async () => (await notice())?.buttons.includes('Start herdr'), { what: 'the notice again', timeout: 20000 });
@@ -1446,7 +1460,7 @@ export async function herdrSteps(ctx) {
     const after = (await api(tool, `${mac.origin}/api/v1/settings`)).json.providers[0];
     const line = logged(mark, 'server start ')[0] ?? '';
     const again = await manageApi({ action: 'startServer' });
-    check('H-start', 'The fake server ended, its binary stays: "herdr is not running on mac" with Start herdr on the herdr tab, "Not running" with Start herdr in Integrations (canStart); a tap starts `herdr server` once with this stack\'s PATH and TERM, the state is ready and the projects are back; a second start is refused',
+    check('H-start', 'The fake server ended, its binary stays: "herdr is not running on mac" with Start herdr on the herdr tab, "Not running" with Start herdr on mac\'s Settings page (canStart); a tap starts `herdr server` once with this stack\'s PATH and TERM, the state is ready and the projects are back; a second start is refused',
       info.state === 'notRunning' && info.canStart === true && card.state === 'not running' && card.switches === 3
         && logged(mark, 'server start ').length === 1 && line.includes(`PATH=${mac.bin}:`) && line.includes('TERM=xterm-256color') && after.state === 'ready' && after.canStart === undefined
         && list.some((g) => g.name === 'shop') && again.status === 400,
@@ -1472,8 +1486,23 @@ export async function herdrSteps(ctx) {
     const pane = paneOf(target);
     const mark = vps.herdrLog().length;
     const macMark = mac.herdrLog().length;
+    // U2, the herdr part: the computer chosen in the drawer filters the herdr tab too.
+    const allNames = (where) => list.filter((g) => g.where.includes(where)).map((g) => g.name).sort();
+    const chosen = {};
+    for (const label of ['vps', 'mac']) {
+      await chooseComputer(app, label);
+      await until(async () => JSON.stringify((await groups()).map((g) => g.name).sort()) === JSON.stringify(allNames(`on ${label}`)), { what: `only ${label}'s projects`, timeout: 10000 }).catch(() => undefined);
+      chosen[label] = { names: (await groups()).map((g) => g.name).sort(), headers: (await drawerBar(app)).headers, herdr: (await herdrChip())?.pressed };
+    }
+    await shot('u2-herdr-mac');
+    await chooseComputer(app, 'All computers');
+    await herdrTab({ load: false });
+    check('U2-herdr', 'On the herdr tab, vps chosen in the drawer shows only the projects under the vps header (acme-web), mac chosen only those under the mac header; no headers then, the herdr tab stays selected',
+      ['vps', 'mac'].every((label) => JSON.stringify(chosen[label].names) === JSON.stringify(allNames(`on ${label}`)) && chosen[label].headers.length === 0 && chosen[label].herdr === 'true')
+        && JSON.stringify(chosen.vps.names) === '["acme-web"]' && chosen.mac.names.length > 1,
+      `vps ${JSON.stringify(chosen.vps)}; mac ${JSON.stringify(chosen.mac)}; All computers ${JSON.stringify(list.map((g) => `${g.name} ${g.where[0]}`))}`);
     // Two acme-web rows: the one on vps.
-    await app.eval(`[...document.querySelectorAll('.provider-group')].find((e) => e.innerText.toLowerCase().includes('on vps')).querySelector('.group-toggle').click()`);
+    await app.eval(`(() => { ${COMPUTER_OF} [...document.querySelectorAll('.provider-group')].find((e) => computerOf(e) === 'vps').querySelector('.group-toggle').click(); })()`);
     await until(() => app.eval(`location.pathname === ${JSON.stringify(`/c/${vps.host}/p/herdr/${enc(target)}`)}`), { what: 'the vps /p/ address' });
     await liveMarker(pane);
     await attachedSince(vps, pane, mark);
@@ -1481,7 +1510,7 @@ export async function herdrSteps(ctx) {
     await shot('h-peer-live');
     const evil = await env.curl(`${vps.origin}/api/v1/providers/herdr`, { headers: { Cookie: await jarOf(vps), Origin: 'https://evil.tailx.ts.net' } });
     const fromMacApp = env.logSince(0).filter((e) => e.host === vps.host && e.path === '/api/v1/providers/herdr/open').at(-1);
-    check('H-peer', 'vps\'s acme-web is listed "on vps"; tapping it opens vps\'s fake terminal through vps (mac\'s fake sees no attach); its "server" chip is off (no terminal attach there); evil\'s Origin gets 403',
+    check('H-peer', 'vps\'s acme-web is listed under the vps header; tapping it opens vps\'s fake terminal through vps (mac\'s fake sees no attach); its "server" chip is off (no terminal attach there); evil\'s Origin gets 403',
       list.some((g) => g.name === 'acme-web' && g.where.includes('on vps')) && mac.herdrLog().slice(macMark).every((l) => !l.startsWith('attach'))
         && chipsNow.some((c) => c.label.startsWith('server') && c.disabled) && evil.status === 403 && fromMacApp?.origin === mac.origin,
       `groups ${JSON.stringify(list.map((g) => `${g.name} ${g.where.join(' ')}`))}; chips ${JSON.stringify(chipsNow)}; open request origin ${fromMacApp?.origin} → ${fromMacApp?.status}; evil ${evil.status}`);
@@ -1621,8 +1650,8 @@ export async function herdrSteps(ctx) {
       const asked = rows.find((r) => r.title === 'needs-you-vps');
       const shop = rows.find((r) => r.title === 'shop');
       const line = (await statusLine()).toLowerCase();
-      check('N-inbox', 'Sessions has the Needs you tab right after All with the count 2; on it: the vps session (waiting, its question, on vps) and mac\'s shop (blocked, herdr, on mac), nothing finished before them, no terminal preview line, and "2 need you"',
-        expected === 2 && order[0] === 'All' && order[1].replace(/\s/g, '') === 'Needsyou2' && (await needsChip()).pressed === 'true'
+      check('N-inbox', 'Sessions has the tabs Sessions, herdr, Needs you (in that order) with the count 2 on Needs you; on it: the vps session (waiting, its question, on vps) and mac\'s shop (blocked, herdr, on mac), nothing finished before them, no terminal preview line, and "2 need you"',
+        expected === 2 && order[0] === 'Sessions' && order[1].startsWith('herdr') && order[2]?.replace(/\s/g, '') === 'Needsyou2' && order.length === 3 && (await needsChip()).pressed === 'true'
           && asked?.state.startsWith('waiting') && asked.question === ASK && asked.meta === 'vps' && !asked.finished
           && shop?.state.startsWith('blocked') && shop.meta === 'mac · herdr' && !shop.finished && shop.question === ''
           && rows.filter((r) => !r.finished).length === expected && rows.every((r) => !r.preview) && line === `${expected} need you`,
@@ -1639,8 +1668,8 @@ export async function herdrSteps(ctx) {
       await shot('n-live-next');
       const text = await app.text();
       const badge = await app.eval(`document.querySelector('.status-line .badge-text')?.innerText.trim()`);
-      check('N-open', 'Live for the vps session shows its question in the answer card with "Take control to answer" (opening took no control: READ-ONLY) and one "Next · 1 left ›" button, 36 px or more high',
-        button.text === 'Next · 1 left ›' && !button.filled && button.height >= 36 && text.includes(ASK) && badge === 'READ-ONLY',
+      check('N-open', 'Live for the vps session shows its question in the answer card with "Take control to answer" (opening took no control: Read-only) and one "Next · 1 left ›" button, 36 px or more high',
+        button.text === 'Next · 1 left ›' && !button.filled && button.height >= 36 && text.includes(ASK) && badge === 'Read-only',
         `button ${JSON.stringify(button)}; badge ${badge}`);
     });
 
@@ -1734,10 +1763,10 @@ export async function herdrSteps(ctx) {
       const left = (await inboxRows()).filter((r) => !r.finished);
       const empty = await needsChip();
       await shot('n-empty');
-      await click(app, 'All');
+      await click(app, 'Sessions');
       await until(async () => (await needsChip()) === null, { what: 'the Needs you tab leaves with nothing waiting', timeout: 10000 });
-      check('N-last', '"Inbox ›" on the last item goes to Sessions on the Needs you tab; with nothing waiting it says "Nothing needs you." once, with no count and no waiting row; after a tap on All the tab is gone',
-        chip.pressed === 'true' && empty.count === 0 && left.length === 0, `tab ${JSON.stringify(empty)}; waiting rows ${left.length}; after All: no Needs you tab; terminate ${JSON.stringify(ended)}`);
+      check('N-last', '"Inbox ›" on the last item goes to Sessions on the Needs you tab; with nothing waiting it says "Nothing needs you." once, with no count and no waiting row; after a tap on Sessions the tab is gone',
+        chip.pressed === 'true' && empty.count === 0 && left.length === 0, `tab ${JSON.stringify(empty)}; waiting rows ${left.length}; after Sessions: no Needs you tab; terminate ${JSON.stringify(ended)}`);
       await settle();
     });
   } finally {

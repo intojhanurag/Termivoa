@@ -1,0 +1,20 @@
+/*
+ * Geist and Geist Mono (from npm `geist` 1.7.2, kept in the repository; SIL Open Font License 1.1; see
+ * third_party/geist/LICENSE). Vite copies the variable woff2 files into
+ * dist/assets, so the gateway serves them from the app's own origin.
+ */
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

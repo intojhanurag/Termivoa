@@ -5,7 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  Browser, Env, HERE, NODES, api, click, freePort, interactive, pageFetch, pairDirect, plain, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
+  Browser, COMPUTER_OF, Env, HERE, NODES, api, chooseComputer, click, drawerBar, freePort, interactive, openDrawer, pageFetch, pairDirect, plain, pushPath, run, setInput,
+  settingsComputer, sleep, tapTerminalText, terminalText, typeLine, until,
 } from './lib.mjs';
 import { herdrSteps } from './herdr.mjs';
 import { githubSteps } from './github.mjs';
@@ -73,10 +74,10 @@ async function step(id, name, fn) {
   }
 }
 
-const rows = () => app.eval(`[...document.querySelectorAll('.session-row')].map((b) => ({
-  title: b.querySelector('.row-title')?.firstChild?.textContent.trim(), meta: b.querySelector('.row-meta')?.innerText.trim() }))`);
+/** The session rows; computer: the All computers header over the row, or the computer chosen in the drawer. */
+const rows = () => app.eval(`(() => { ${COMPUTER_OF} return [...document.querySelectorAll('.session-row')].map((b) => ({
+  title: b.querySelector('.row-title')?.firstChild?.textContent.trim(), meta: b.querySelector('.row-meta')?.innerText.trim(), computer: computerOf(b) })); })()`);
 const problems = () => app.eval(`[...document.querySelectorAll('.computer-problem')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim())`);
-const chips = () => app.eval(`[...document.querySelectorAll('[aria-label=Computers] .chip')].map((e) => e.innerText.trim())`);
 
 async function settingsOf(stack) {
   const r = await api(tool, `${stack.origin}/api/v1/settings`);
@@ -159,7 +160,7 @@ const tokens = {};
 /** The second phone of the F checks: browser, app page, API page, vps CLI. */
 const found = {};
 /** In-app navigation, as the app's own links do: no new page load. */
-const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
+const inApp = (path) => pushPath(app, path);
 
 // ---------- dev-server preview (docs/peer-preview.md) ----------
 const devPorts = {};
@@ -533,10 +534,14 @@ try {
     time('Sessions list load (navigation → rows from both computers)', Date.now() - started);
     const r = await rows();
     await shot('b3-sessions');
-    const c = await chips();
-    const labelled = r.find((x) => x.title === 'mac-1')?.meta.includes('mac') && r.find((x) => x.title === 'vps-1')?.meta.includes('vps');
-    check('B3-list', 'Sessions list shows sessions from both computers with labels and chips All/mac/vps',
-      labelled && ['All', 'mac', 'vps'].every((x) => c.includes(x)), `chips ${JSON.stringify(c)}; rows ${JSON.stringify(r)}`);
+    const bar = await drawerBar(app);
+    const labelled = r.find((x) => x.title === 'mac-1')?.computer === 'mac' && r.find((x) => x.title === 'vps-1')?.computer === 'vps';
+    const drawer = await openDrawer(app);
+    await click(app, 'All computers');
+    const choices = drawer.rows.slice(0, 3).map((x) => x.label);
+    check('B3-list', 'Sessions list shows sessions from both computers under their computer headers; the drawer bar says All computers and the drawer offers All computers/mac/vps',
+      labelled && bar?.pill === 'All computers' && JSON.stringify(bar.headers) === '["mac","vps"]' && JSON.stringify(choices) === '["All computers","mac","vps"]',
+      `bar ${JSON.stringify(bar)}; drawer ${JSON.stringify(choices)}; rows ${JSON.stringify(r)}`);
   });
 
   await step('B3-echo', 'Open a vps session from the mac app and echo round-trip', async () => {
@@ -736,7 +741,7 @@ try {
     await until(async () => (await problems()).some((p) => p.includes("can't reach")), { what: 'still unreachable before Retry', timeout: 5000 }).catch(() => undefined);
     if ((await problems()).length) await click(app, 'Retry');
     const started = Date.now();
-    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.includes('vps') || x.title.startsWith('vps')), { what: 'vps back', timeout: 30000 })
+    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.computer === 'vps'), { what: 'vps back', timeout: 30000 })
       .catch(async () => until(async () => (await problems()).length === 0, { what: 'no problems', timeout: 10000 }));
     time('vps recovery (Retry → no problem row)', Date.now() - started);
     await shot('b5-vps-recovered');
@@ -777,7 +782,7 @@ try {
   });
 
   // ---- B6-fit: nothing is wider than the phone (390 px) ----
-  await step('B6-fit', 'Sessions and Settings → Computers fit 390 px, also with long commands and names', async () => {
+  await step('B6-fit', 'Sessions, Settings and Settings → vps fit 390 px, also with long commands and names', async () => {
     // Boxes sticking out past the right edge, or scrolling sideways, except the deliberate side scrollers.
     // The second pass makes every code element long (a long machine name), as on a real Mac.
     const overflow = () => app.eval(`(() => {
@@ -804,7 +809,13 @@ try {
     await lengthen();
     seen.computersLong = await overflow();
     await shot('b6-fit-computers');
-    check('B6-fit', `Sessions and Settings → Computers fit ${width} px, also with long commands and names`,
+    // vps's own page (Settings → vps), while vps says pair again.
+    await settingsComputer(app, 'vps');
+    seen.vpsPage = await overflow();
+    await lengthen();
+    seen.vpsPageLong = await overflow();
+    await shot('b6-fit-vps-page');
+    check('B6-fit', `Sessions, Settings (the Computers cards) and Settings → vps fit ${width} px, also with long commands and names`,
       Object.values(seen).every((list) => list.length === 0), `width ${width}; ${JSON.stringify(seen)}`);
   });
 
@@ -884,11 +895,11 @@ try {
     await until(async () => {
       const now = await problems();
       for (const p of now) seen.add(p);
-      return now.length === 0 && (await rows()).some((x) => x.meta.startsWith('vps'));
+      return now.length === 0 && (await rows()).some((x) => x.computer === 'vps');
     }, { what: 'vps rows', timeout: 20000, every: 100 }).catch(() => undefined);
     const unreachable = [...seen].filter((p) => p.includes("can't reach"));
     const probs = await problems();
-    const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
+    const vpsRows = (await rows()).filter((x) => x.computer === 'vps').length;
     const pass = path === terminalPath && waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0;
     if (!done.includes('vps is added')) await confirmByApi().catch(() => undefined);
     return { tapped, pass, unreachable, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; rows seen ${JSON.stringify([...seen])}` };
@@ -990,14 +1001,265 @@ try {
     const r = await addByPaste('b7-readd');
     time('re-add vps after a node change (pterm pair --via → outcome)', r.ms);
     await openSessions();
-    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows again', timeout: 20000 }).catch(() => undefined);
+    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.computer === 'vps'), { what: 'vps rows again', timeout: 20000 }).catch(() => undefined);
     const probs = await problems();
-    const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
+    const vpsRows = (await rows()).filter((x) => x.computer === 'vps').length;
     await shot('b7-readd-sessions');
     const devices = (await vps.cli(['devices'])).stdout.split('\n').filter((l) => l.includes('https://mac.tailx.ts.net') && / active /.test(l)).length;
     check('B7-readd', 'Re-adding vps after the node ID change works (new node pinned, sessions back)',
       r.outcome === 'added' && probs.length === 0 && vpsRows > 0 && devices === 1,
       `outcome ${r.outcome}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; active bound devices on vps ${devices}`);
+  });
+
+  // ---- U: the side drawer, Settings by computer and Geist (docs/ui-revamp.md) ----
+  const escape = () => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  const drawerOpen = () => app.eval(`document.querySelector('.drawer') !== null`);
+  /** Sessions in All computers, with both computers answering. */
+  let uSessions;
+  async function allComputers() {
+    // One session of its own on each computer, so the U checks also run alone (--only U).
+    uSessions ??= await Promise.all([makeSession(mac, 'u-mac'), makeSession(vps, 'u-vps')]);
+    await openSessions();
+    if ((await drawerBar(app))?.pill !== 'All computers') await chooseComputer(app, 'All computers');
+    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.computer === 'vps') && (await rows()).some((x) => x.computer === 'mac'), { what: 'rows of both computers', timeout: 30000 });
+  }
+  const waiting = async (stack) => (await api(tool, `${stack.origin}/api/v1/sessions`)).json.sessions.filter((one) => one.agent?.state === 'waiting').length;
+  const titlesOf = (list, computer) => list.filter((x) => x.computer === computer).map((x) => x.title).sort();
+
+  await step('U1', 'The drawer opens with All computers, each computer with its state line and count, and the ways out; Escape closes it', async () => {
+    await allComputers();
+    await shot('u-sessions-two-computers');
+    const listed = await rows();
+    const need = { mac: await waiting(mac), vps: await waiting(vps) };
+    const drawer = await openDrawer(app);
+    await shot('u-drawer-open');
+    const row = (label) => drawer.rows.find((x) => x.label === label);
+    const line = (label) => { const n = listed.filter((x) => x.computer === label).length; return `${n} session${n === 1 ? '' : 's'}`; };
+    await escape();
+    await until(async () => !(await drawerOpen()), { what: 'the drawer closed by Escape' });
+    const focus = await app.eval(`document.activeElement?.getAttribute('aria-label')`);
+    check('U1', 'The menu button opens the drawer (focus inside): All computers (current), mac and vps, each with "N sessions" as the list shows them and its waiting count, then Needs you, Wall, Settings and + Add a computer; Escape closes it and focus is back on the menu button',
+      drawer.focused && JSON.stringify(drawer.rows.map((x) => x.label)) === '["All computers","mac","vps","Needs you","Wall","Settings","+ Add a computer"]'
+        && row('All computers').current && !row('mac').current && ['mac', 'vps'].every((c) => row(c).state.startsWith(line(c)) && row(c).count === need[c])
+        && row('All computers').count === need.mac + need.vps && focus === 'Computers and menu',
+      `rows ${JSON.stringify(drawer.rows)}; list ${line('mac')} on mac, ${line('vps')} on vps; waiting on the hosts ${JSON.stringify(need)}; focus after Escape: ${focus}`);
+  });
+
+  await step('U7', 'The drawer closes on Escape and on a tap beside the panel; focus returns to the menu button', async () => {
+    await allComputers();
+    const focus = () => app.eval(`document.activeElement?.getAttribute('aria-label')`);
+    await openDrawer(app);
+    await escape();
+    const byEscape = await until(async () => !(await drawerOpen()), { what: 'closed by Escape', timeout: 5000 }).catch(() => false);
+    const afterEscape = await focus();
+    const panel = (await openDrawer(app)) && await app.eval(`Math.round(document.querySelector('dialog.drawer .drawer-panel').getBoundingClientRect().right)`);
+    // A real tap beside the panel (right of it), as on a phone.
+    const point = { x: Math.min(385, panel + 40), y: 420 };
+    for (const type of ['mousePressed', 'mouseReleased']) await app.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point });
+    const byTap = await until(async () => !(await drawerOpen()), { what: 'closed by a tap beside it', timeout: 5000 }).catch(() => false);
+    const afterTap = await focus();
+    // A tap on the panel itself (its title) keeps it open.
+    await openDrawer(app);
+    const title = await app.eval(`(() => { const r = document.querySelector('#drawer-title').getBoundingClientRect(); return { x: Math.round(r.left + 10), y: Math.round(r.top + r.height / 2) }; })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) await app.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...title });
+    await sleep(300);
+    const stays = await drawerOpen();
+    await escape();
+    check('U7', 'Escape closes the drawer and focus is on "Computers and menu"; a tap beside the panel closes it, focus back there too; a tap on the panel keeps it open',
+      byEscape && afterEscape === 'Computers and menu' && byTap && afterTap === 'Computers and menu' && stays,
+      `Escape: closed ${byEscape}, focus ${afterEscape}; tap at ${JSON.stringify(point)} (panel ends at ${panel}): closed ${byTap}, focus ${afterTap}; tap on the panel title: still open ${stays}`);
+  });
+
+  await step('U2', 'Choosing a computer in the drawer filters Sessions to it; the choice stays when Sessions opens again; All computers shows both again', async () => {
+    await allComputers();
+    const all = await rows();
+    const seen = {};
+    for (const label of ['mac', 'vps']) {
+      await chooseComputer(app, label);
+      await until(async () => JSON.stringify((await rows()).map((x) => x.title).sort()) === JSON.stringify(titlesOf(all, label)), { what: `only ${label}'s rows`, timeout: 10000 }).catch(() => undefined);
+      seen[label] = { titles: (await rows()).map((x) => x.title).sort(), bar: await drawerBar(app), line: await app.eval(`document.querySelector('.host-line')?.innerText.trim()`) };
+    }
+    await shot('u-sessions-vps');
+    // Settings and back (Done): the choice stays for the visit.
+    await click(app, 'Settings');
+    await app.waitText('This phone');
+    await click(app, 'Done');
+    await until(() => drawerBar(app), { what: 'Sessions again' });
+    const kept = (await drawerBar(app)).pill;
+    await chooseComputer(app, 'All computers');
+    const back = await drawerBar(app);
+    const ok = (label, other) => JSON.stringify(seen[label].titles) === JSON.stringify(titlesOf(all, label)) && seen[label].titles.length > 0
+      && !seen[label].titles.some((title) => titlesOf(all, other).includes(title) && !titlesOf(all, label).includes(title))
+      && seen[label].bar.pill === label && seen[label].bar.headers.length === 0 && seen[label].line.startsWith(`${label} ·`);
+    check('U2', 'mac chosen: exactly the rows of the mac header in All computers, no headers, pill "mac", status line "mac · …"; the same for vps; vps stays chosen after Settings → Done; All computers brings both headers back',
+      ok('mac', 'vps') && ok('vps', 'mac') && all.some((x) => x.title === 'u-vps' && x.computer === 'vps') && !seen.mac.titles.includes('u-vps') && seen.vps.titles.includes('u-vps') && seen.mac.titles.includes('u-mac') && kept === 'vps' && JSON.stringify(back.headers) === '["mac","vps"]',
+      `mac ${JSON.stringify(seen.mac)}; vps ${JSON.stringify(seen.vps)}; after Settings → Done: ${kept}; All computers ${JSON.stringify(back)}`);
+  });
+
+  /**
+   * A session on stack titled title that waits on a question (a script draws a numbered menu, as an agent does, as
+   * in N-inbox). Returns [stack, session]; endWaiting ends them.
+   */
+  async function waitOn(stack, title) {
+    const script = join(stack.home, 'drawer-ask.sh');
+    writeFileSync(script, `printf '\\033[2J\\033[H\\033[?25l\\n Run the drawer check?\\n\\n\\342\\235\\257 1. Yes\\n  2. No\\n'\nread -n 1 -s key\nprintf '\\033[?25h\\nanswered\\n'\n`);
+    const session = await makeSession(stack, title);
+    await openSessions();
+    await inApp(`${stack === mac ? '' : `/c/${stack.host}`}/sessions/${session.id}`);
+    await liveReady();
+    await typeLine(app, `/bin/bash ${script}`);
+    await until(async () => (await api(tool, `${stack.origin}/api/v1/sessions`)).json.sessions.some((one) => one.id === session.id && one.agent?.state === 'waiting'), { what: `${title} waits`, timeout: 20000 });
+    return [stack, session];
+  }
+  async function endWaiting(made) {
+    for (const [stack, session] of made) {
+      const now = (await api(tool, `${stack.origin}/api/v1/sessions`)).json?.sessions?.find((one) => one.id === session.id);
+      if (now && now.state !== 'exited') await api(tool, `${stack.origin}/api/v1/sessions/${session.id}/terminate`, 'POST', { operationId: crypto.randomUUID(), generation: now.generation });
+    }
+    await openSessions();
+    if ((await drawerBar(app))?.pill !== 'All computers') await chooseComputer(app, 'All computers').catch(() => undefined);
+  }
+
+  await step('U8', 'With a computer chosen in the drawer, New session opens with that computer selected', async () => {
+    await allComputers();
+    const seen = {};
+    for (const label of ['vps', 'mac']) {
+      await chooseComputer(app, label);
+      await click(app, 'new session on…');
+      await app.waitText('New session');
+      seen[label] = await until(() => app.eval(`(() => { const p = [...document.querySelectorAll('[aria-label=Computers] .chip[aria-pressed=true]')].map((e) => e.innerText.trim());
+        return p.length > 0 && { pressed: p, runs: /Runs on ([\\w-]+)/.exec(document.body.innerText)?.[1] ?? null }; })()`), { what: `New session with ${label}` });
+      if (label === 'vps') await shot('u-new-session-vps');
+      await app.eval('history.back()');
+      await until(() => drawerBar(app), { what: 'Sessions again' });
+    }
+    await chooseComputer(app, 'All computers');
+    check('U8', 'vps chosen: New session opens with the vps chip pressed and "Runs on vps"; mac chosen: the mac chip and "Runs on mac"',
+      ['vps', 'mac'].every((label) => JSON.stringify(seen[label].pressed) === JSON.stringify([label]) && seen[label].runs === label), JSON.stringify(seen));
+  });
+
+  await step('U3', 'An amber pill shows for another computer that needs you; a tap chooses it', async () => {
+    const made = [];
+    try {
+      made.push(await waitOn(vps, 'u-wait'));
+      const need = { mac: await waiting(mac), vps: await waiting(vps) };
+      await inApp('/');
+      await chooseComputer(app, 'mac');
+      const amber = await until(async () => (await drawerBar(app))?.amber, { what: 'the amber pill', timeout: 20000 });
+      await shot('u-amber-pill');
+      const drawer = await openDrawer(app);
+      await escape();
+      await until(async () => !(await drawerOpen()), { what: 'the drawer closed' });
+      await app.eval(`document.querySelector('.drawer-amber').click()`);
+      const after = await until(async () => { const b = await drawerBar(app); return b?.pill === 'vps' && b; }, { what: 'vps chosen', timeout: 10000 });
+      const listed = await rows();
+      await shot('u-amber-chosen');
+      const count = (label) => drawer.rows.find((x) => x.label === label)?.count;
+      check('U3', 'With mac chosen and a vps session waiting, the amber pill "vps 1" shows; the drawer counts 1 on vps, on All computers and on Needs you; a tap on the pill chooses vps: pill "vps", no amber pill, the waiting session listed',
+        need.mac === 0 && need.vps === 1 && amber.startsWith('vps') && amber.includes('1') && count('vps') === 1 && count('mac') === 0 && count('All computers') === 1 && count('Needs you') === 1
+          && after.amber === null && listed.some((x) => x.title === 'u-wait'),
+        `waiting ${JSON.stringify(need)}; amber "${amber}"; drawer ${JSON.stringify(drawer.rows.map((x) => `${x.label}:${x.count}`))}; after the tap ${JSON.stringify(after)}; rows ${JSON.stringify(listed.map((x) => x.title))}`);
+    } finally {
+      await endWaiting(made);
+    }
+  });
+
+  await step('U9', 'With a computer chosen, the Needs you queue stays on it: Next never opens another computer\'s item', async () => {
+    const made = [];
+    const queueButton = () => app.eval(`document.querySelector('.queue-bar button')?.innerText.trim() ?? null`);
+    const tapNeed = async (title) => {
+      await until(() => app.eval(`!!document.querySelector('.chips .chip') && [...document.querySelectorAll('.chips .chip')].some((e) => e.innerText.trim().startsWith('Needs you'))`), { what: 'the Needs you tab', timeout: 20000 });
+      await app.eval(`[...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim().startsWith('Needs you')).click()`);
+      const titles = await until(() => app.eval(`(() => { const part = document.querySelector('section[aria-label="Needs you"]'); return part && [...part.querySelectorAll('.inbox-row .row-title')].map((e) => e.innerText.trim()); })()`), { what: 'the Needs you rows' });
+      await app.eval(`[...document.querySelectorAll('section[aria-label="Needs you"] .inbox-row')].find((b) => b.querySelector('.row-title').innerText.trim() === ${JSON.stringify(title)}).click()`);
+      const button = await until(() => queueButton(), { what: 'the queue button', timeout: 20000 });
+      return { titles, button, path: await app.eval('location.pathname') };
+    };
+    try {
+      made.push(await waitOn(mac, 'u-wait-mac'), await waitOn(vps, 'u-wait-vps'));
+      // Control: in All computers the queue has both.
+      await openSessions();
+      const all = await tapNeed('u-wait-vps');
+      await inApp('/');
+      await chooseComputer(app, 'vps');
+      const vpsOnly = await tapNeed('u-wait-vps');
+      await shot('u-queue-vps');
+      await inApp('/');
+      check('U9', 'Two sessions wait, one on mac and one on vps. In All computers the vps item\'s Next says "Next · 1 left ›"; with vps chosen, the Needs you tab lists only the vps item and its Next says "Inbox ›" (the mac item is not in its queue)',
+        all.button === 'Next · 1 left ›' && JSON.stringify(vpsOnly.titles) === '["u-wait-vps"]' && vpsOnly.button === 'Inbox ›' && vpsOnly.path.startsWith(`/c/${vps.host}/sessions/`),
+        `All computers: rows ${JSON.stringify(all.titles)}, button "${all.button}"; vps chosen: rows ${JSON.stringify(vpsOnly.titles)}, button "${vpsOnly.button}" at ${vpsOnly.path}`);
+    } finally {
+      await endWaiting(made);
+    }
+  });
+
+  await step('U4', 'Settings: a computer card opens its page; the phone\'s Back and ‹ Settings return to the main page; Notifications is its own level', async () => {
+    await allComputers();
+    await click(app, 'Settings');
+    const page = () => app.eval(`(() => { const t = (e) => e?.innerText.replace(/\\s+/g, ' ').trim() ?? null;
+      return { path: location.pathname, h1: t(document.querySelector('main h1')), back: t(document.querySelector('.sc-page-head .sc-back')),
+        cards: [...document.querySelectorAll('.sc-card')].map((c) => t(c.querySelector('.sc-card-head'))), sections: [...document.querySelectorAll('main section > h2')].map(t),
+        notifications: !!document.querySelector('#notifications') && document.querySelector('#notifications').closest('[hidden]') === null }; })()`);
+    const main = await until(async () => { const p = await page(); return p.cards.length === 2 && p; }, { what: 'the Settings main page' });
+    await shot('u-settings-main');
+    await settingsComputer(app, 'mac');
+    await until(async () => (await page()).sections.includes('This computer'), { what: 'This computer on mac\'s page' });
+    const macPage = await page();
+    await shot('u-settings-computer');
+    await app.eval('history.back()');
+    const afterBack = await until(async () => { const p = await page(); return p.h1 === 'Settings' && p; }, { what: 'the main page after Back' });
+    await until(() => app.eval(`(() => { const b = [...document.querySelectorAll('.sc-card .sc-open')].find((e) => e.querySelector('.computer-name')?.innerText.trim() === 'vps'); b?.click(); return !!b; })()`), { what: 'the vps card' });
+    const vpsPage = await until(async () => { const p = await page(); return p.h1 === 'vps' && p; }, { what: 'vps\'s page' });
+    await click(app, '‹ Settings');
+    const afterButton = await until(async () => { const p = await page(); return p.h1 === 'Settings' && p; }, { what: 'the main page after ‹ Settings' });
+    await app.eval(`[...document.querySelectorAll('button.sc-row')].find((b) => b.firstElementChild?.innerText.trim() === 'Notifications').click()`);
+    const notifications = await until(async () => { const p = await page(); return p.notifications && p; }, { what: 'the Notifications level' });
+    await app.eval('history.back()');
+    const afterNotifications = await until(async () => { const p = await page(); return p.h1 === 'Settings' && !p.notifications && p; }, { what: 'the main page after Notifications' });
+    check('U4', 'The main page has a card per computer (mac with Home, vps) and This phone; a tap on mac opens its page (‹ Settings, mac, This computer); the phone\'s Back returns to the main page; vps\'s ‹ Settings too; Notifications opens on its own level and Back returns; all at /settings',
+      main.cards[0].startsWith('mac') && main.cards[0].includes('Home') && main.cards[1].startsWith('vps') && main.sections.includes('This phone') && !main.notifications
+        && macPage.back === '‹ Settings' && macPage.h1 === 'mac' && macPage.cards.length === 0 && afterBack.cards.length === 2
+        && vpsPage.back === '‹ Settings' && afterButton.cards.length === 2 && notifications.cards.length === 0 && afterNotifications.cards.length === 2
+        && [main, macPage, afterBack, vpsPage, afterButton, notifications, afterNotifications].every((p) => p.path === '/settings'),
+      `main ${JSON.stringify(main)}; mac ${JSON.stringify(macPage)}; Back ${afterBack.h1}; vps ${vpsPage.h1}; ‹ Settings ${afterButton.h1}; Notifications ${JSON.stringify(notifications.sections)}; Back ${afterNotifications.h1}`);
+    await click(app, 'Done');
+  });
+
+  await step('U5', 'The drawer\'s + Add a computer opens Settings at Add a computer', async () => {
+    await allComputers();
+    await openDrawer(app);
+    await click(app, '+ Add a computer');
+    const at = await until(() => app.eval(`(() => { const g = document.querySelector('#add-computer [role=group][aria-label="Add a computer"]'); if (!g) return null;
+      const r = document.querySelector('#add-computer').getBoundingClientRect();
+      return { path: location.pathname, buttons: [...g.querySelectorAll('button')].map((b) => b.innerText.trim()), inView: r.top < innerHeight && r.bottom > 0, drawer: document.querySelector('.drawer') !== null }; })()`), { what: 'Add a computer open in Settings' });
+    await shot('u-add-computer');
+    await app.eval(`[...document.querySelectorAll('#add-computer [role=group] button')].find((b) => b.innerText.trim() === 'Cancel').click()`);
+    check('U5', '+ Add a computer in the drawer closes it and opens Settings with Add a computer open (Scan QR, Paste link, Cancel) and in view',
+      at.path === '/settings' && JSON.stringify(at.buttons) === '["Scan QR","Paste link","Cancel"]' && at.inView && !at.drawer, JSON.stringify(at));
+  });
+
+  await step('U6', 'Geist is the body font and loads from the app\'s own origin; no request leaves the test computers', async () => {
+    const page = await browser.page();
+    const urls = [];
+    browser.listeners.push((m) => { if (m.sessionId === page.sessionId && m.method === 'Network.requestWillBeSent') urls.push(m.params.request.url); });
+    try {
+      await page.front();
+      await page.send('Network.enable');
+      await page.go(`${mac.origin}/`);
+      await page.waitText('Sessions');
+      const font = await until(() => page.eval(`document.fonts.ready.then(() => ({ body: getComputedStyle(document.body).fontFamily, h1: getComputedStyle(document.querySelector('h1')).fontFamily,
+        loaded: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/g, '')) }))
+        .then((r) => r.loaded.includes('Geist') && r)`), { what: 'Geist loaded', timeout: 15000 });
+      await sleep(500);
+      const files = urls.filter((u) => /\.(woff2?|ttf|otf)(\?|$)/.test(u));
+      const foreign = urls.filter((u) => !/^(data|blob):/.test(u) && ![mac.origin, vps.origin].includes(new URL(u).origin));
+      check('U6', 'The computed font of the body and of the title is Geist first, the Geist face is loaded, its file comes from https://mac.tailx.ts.net, and no request of the page goes to another origin than mac or vps',
+        /^"?Geist"?,/.test(font.body) && /^"?Geist"?,/.test(font.h1) && files.some((u) => /Geist-Variable[^/]*\.woff2$/.test(u)) && files.every((u) => u.startsWith(`${mac.origin}/`)) && foreign.length === 0,
+        `body ${font.body}; h1 ${font.h1}; loaded ${JSON.stringify(font.loaded)}; font files ${JSON.stringify(files.map((u) => u.replace(mac.origin, '')))}; other origins ${JSON.stringify(foreign)}; ${urls.length} requests`);
+    } finally {
+      await page.close();
+      await app.front();
+    }
   });
 
   // ---- H: herdr on the phone (docs/herdr-provider.md, section 15; herdr.mjs) ----

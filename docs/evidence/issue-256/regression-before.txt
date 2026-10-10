@@ -1,0 +1,29 @@
+=== RUN   TestDeleteAccountPreservesOtherFileNames
+=== RUN   TestDeleteAccountPreservesOtherFileNames/hardlink
+    token_delete_test.go:59: outside file unchanged=false error=<nil>
+=== RUN   TestDeleteAccountPreservesOtherFileNames/symlink
+=== RUN   TestDeleteAccountPreservesOtherFileNames/replaced-hardlink
+    token_delete_test.go:59: outside file unchanged=false error=<nil>
+=== RUN   TestDeleteAccountPreservesOtherFileNames/replaced-symlink
+--- FAIL: TestDeleteAccountPreservesOtherFileNames (0.02s)
+    --- FAIL: TestDeleteAccountPreservesOtherFileNames/hardlink (0.01s)
+    --- PASS: TestDeleteAccountPreservesOtherFileNames/symlink (0.00s)
+    --- FAIL: TestDeleteAccountPreservesOtherFileNames/replaced-hardlink (0.01s)
+    --- PASS: TestDeleteAccountPreservesOtherFileNames/replaced-symlink (0.01s)
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries/normal
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries/missing
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries/damaged-file
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries/empty-directory
+=== RUN   TestDeleteAccountHandlesNormalMissingAndInvalidEntries/nonempty-directory
+--- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries (0.02s)
+    --- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries/normal (0.01s)
+    --- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries/missing (0.00s)
+    --- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries/damaged-file (0.00s)
+    --- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries/empty-directory (0.00s)
+    --- PASS: TestDeleteAccountHandlesNormalMissingAndInvalidEntries/nonempty-directory (0.00s)
+=== RUN   TestDisconnectReportsLocalRemovalFailure
+--- PASS: TestDisconnectReportsLocalRemovalFailure (0.02s)
+FAIL
+FAIL	github.com/intojhanurag/phone-terminal/internal/github	0.631s
+FAIL

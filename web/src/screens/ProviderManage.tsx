@@ -33,6 +33,10 @@ export const CHANGED = 'The list changed. Look again, then try again.';
 export const LAST_TAB = 'This is the workspace\'s last tab. Close the workspace.';
 /** Shown in place of the Close tab buttons while an item has one terminal. */
 export const LAST_TAB_HINT = 'Close the workspace to end its last tab.';
+/** LAST_TAB_HINT's place when the workspace must close its worktrees first. */
+export const WORKTREES_FIRST_TAB_HINT = 'Close its worktrees first, then close this workspace to end its last tab.';
+/** LAST_TAB_HINT's place when the workspace closes only together with the others at the main folder. */
+export const TOGETHER_TAB_HINT = 'End this last tab by closing its workspace in herdr on the computer.';
 /** Fixed app words, also for a peer whose error detail is deliberately hidden. */
 export const CLOSE_CHANGED = 'The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer.';
 
@@ -52,8 +56,8 @@ export type ManageStep =
   /** Done, and the list was read again. */
   | { readonly kind: 'done' }
   | { readonly kind: 'note'; readonly note: ManageNote }
-  /** CHANGED, and the list was read again. */
-  | { readonly kind: 'changed' };
+  /** CHANGED (or `text`), and the list was read again. */
+  | { readonly kind: 'changed'; readonly text?: string };
 
 export const SLOW = 'This takes longer than the phone waits. Look at the list before you try again.';
 
@@ -80,7 +84,7 @@ export async function manageStep(
     if (error instanceof ApiError && error.code === 'operation_conflict' && body.action === 'closeTab') return { kind: 'note', note: { kind: 'error', text: LAST_TAB } };
     if (error instanceof ApiError && (error.code === 'operation_conflict' || error.code === 'session_missing')) {
       await reload();
-      if (error.code === 'operation_conflict' && body.action === 'closeItem') return { kind: 'note', note: { kind: 'error', text: CLOSE_CHANGED } };
+      if (error.code === 'operation_conflict' && body.action === 'closeItem') return { kind: 'changed', text: CLOSE_CHANGED };
       return { kind: 'changed' };
     }
     return { kind: 'note', note: { kind: 'error', text: words(error) } };
@@ -176,12 +180,6 @@ export function useAction<Busy>() {
   return { busy, running, run };
 }
 
-/** Focus returns to the button that opened the sheet when it closes, if that button is still in the page. */
-function useReturnFocus(): void {
-  const [opener] = useState(() => globalThis.document?.activeElement);
-  useEffect(() => () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus(); }, [opener]);
-}
-
 export function NoteLine({ note, name, provider }: { readonly note: ManageNote; readonly name: string; readonly provider: string }) {
   switch (note.kind) {
     case 'uncommitted': return <Notice tone="warning" role="alert" title={<><bdi>{name}</bdi> has changes that are not committed. Commit or discard them first.</>} />;
@@ -263,7 +261,8 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
         busy={off}
         onClose={onClose}
       />
-      {mode === 'changed' && <Notice tone="danger" role="alert" title={CHANGED} />}
+      {/* An error note in this mode carries the changed words of that action (CLOSE_CHANGED). */}
+      {mode === 'changed' && <Notice tone="danger" role="alert" title={note?.kind === 'error' ? note.text : CHANGED} />}
       {mode !== 'changed' && note !== undefined && <NoteLine note={note} name={item.name} provider={info.name} />}
       {mode === 'menu' && (
         <>
@@ -284,7 +283,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
                 </li>
               ))}
             </ul>
-            {item.targets.length < 2 && <p className="hint-text">{first ? "Close its worktrees first, then close this workspace to end its last tab." : together ? "End this last tab by closing its workspace in herdr on the computer." : LAST_TAB_HINT}</p>}
+            {item.targets.length < 2 && <p className="hint-text">{first ? WORKTREES_FIRST_TAB_HINT : together ? TOGETHER_TAB_HINT : LAST_TAB_HINT}</p>}
           </section>
           <ul className="menu-list">
             <li>
@@ -353,8 +352,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   const agent = offeredAgent(picked, entry.info.agentKinds);
   const [prompt, setPrompt] = useState('');
   const { busy, running, run } = useAction<ItemBusy>();
-  useReturnFocus();
-  // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
+  // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the menu opens (New tab asks only when there is a kind) and when the chooser opens.
   const chooser = mode === 'newTab';
   const checkingKinds = useAgentKinds(onKinds, chooser);
@@ -368,7 +366,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
       switch (step.kind) {
         case 'open': onOpened({ computer: entry.computer, provider: entry.info.id, targetId: step.targetId }, step.notice); break;
         case 'done': onDone(action); break;
-        case 'changed': setMode('changed'); break;
+        case 'changed': if (step.text !== undefined) setNote({ kind: 'error', text: step.text }); setMode('changed'); break;
         // A refused agent tab stays in the chooser, with its prompt.
         case 'note': setNote(step.note); setMode(agentTab ? 'newTab' : 'menu'); break;
       }
@@ -489,7 +487,6 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   const [note, setNote] = useState<ManageNote>();
   const [checking, setChecking] = useState(false);
   const { busy, running, run } = useAction<string>();
-  useReturnFocus();
   const close = () => { if (!running.current) onClose(); };
   const words = (error: unknown) => onFailure(error, entry.computer);
 

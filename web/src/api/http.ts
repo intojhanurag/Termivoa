@@ -227,7 +227,7 @@ export interface Client {
   provider(id: string): Promise<HTTPProviderSnapshotResponse>;
   /** Opens (or reuses) the provider session of one terminal. */
   providerOpen(id: string, body: HTTPProviderOpenRequest): Promise<HTTPProviderOpenResponse>;
-  /** Settings → Integrations on that computer. */
+  /** Settings → (computer) on that computer. */
   providerUpdate(id: string, body: HTTPProviderUpdateRequest): Promise<HTTPProviderInfo>;
   /** A new worktree and maybe an agent in it; waits up to PROVIDER_CREATE_TIMEOUT_MS. */
   providerCreate(id: string, body: HTTPProviderCreateRequest): Promise<HTTPProviderCreateResponse>;

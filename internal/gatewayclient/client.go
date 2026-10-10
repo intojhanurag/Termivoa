@@ -46,20 +46,35 @@ type Config struct {
 	ClientBuild string // 1..128 bytes, sent in ipc.hello
 }
 
-// Client serializes RPC exchanges on one lazily dialed connection. A
-// connection that fails framing, validation, correlation, or cancellation is
-// closed, and the next call dials a new one. Live streams use their own
-// connections.
-// ponytail: one serialized connection; add a small pool if gateway RPC latency
-// under concurrent browsers matters.
-type Client struct {
-	dial func(context.Context) (net.Conn, error)
-	slot chan struct{}
-	done chan struct{}
+const (
+	maxConcurrentSlowRPC        = 4
+	maxConcurrentIntegrationRPC = 4
+)
 
-	mu     sync.Mutex // guards conn and closed against Close
-	conn   *rpcConn
-	closed bool
+// Client keeps fast RPC exchanges on one lazily dialed connection. Blocking
+// operations use at most maxConcurrentSlowRPC independent connections so they
+// cannot hold up authentication and session reads. GitHub and herdr
+// create/manage calls use their own maxConcurrentIntegrationRPC slots so they
+// cannot starve session create/terminate. A connection that fails
+// framing, validation, correlation, or cancellation is closed. Live streams
+// use their own connections.
+type Client struct {
+	dial      func(context.Context) (net.Conn, error)
+	slot      chan struct{}
+	slowSlots chan struct{}
+	extSlots  chan struct{} // GitHub and herdr create/manage
+	done      chan struct{}
+
+	mu         sync.Mutex // guards conn, operations and closed against Close
+	conn       *rpcConn
+	operations map[*rpcOperation]struct{}
+	closed     bool
+}
+
+// Registered before dialing, so Close also cancels a dial in progress.
+type rpcOperation struct {
+	cancel context.CancelFunc
+	conn   net.Conn
 }
 
 type rpcConn struct {
@@ -83,12 +98,16 @@ func New(config Config) (*Client, error) {
 }
 
 func newClient(dial func(context.Context) (net.Conn, error)) *Client {
-	client := &Client{dial: dial, slot: make(chan struct{}, 1), done: make(chan struct{})}
+	client := &Client{
+		dial: dial, slot: make(chan struct{}, 1), done: make(chan struct{}),
+		slowSlots: make(chan struct{}, maxConcurrentSlowRPC), extSlots: make(chan struct{}, maxConcurrentIntegrationRPC),
+		operations: make(map[*rpcOperation]struct{}),
+	}
 	client.slot <- struct{}{}
 	return client
 }
 
-// Close closes the shared RPC connection and interrupts an active exchange.
+// Close closes the shared and active slow RPC connections and interrupts dials.
 // It is idempotent. Streams returned by OpenLive are closed by their owners.
 func (client *Client) Close() error {
 	client.mu.Lock()
@@ -98,6 +117,12 @@ func (client *Client) Close() error {
 	}
 	client.closed = true
 	close(client.done)
+	for operation := range client.operations {
+		operation.cancel()
+		if operation.conn != nil {
+			_ = operation.conn.Close()
+		}
+	}
 	if client.conn == nil {
 		return nil
 	}
@@ -478,32 +503,82 @@ func (client *Client) GitHubRepos(ctx context.Context, credential string) (proto
 		protocol.GatewayRPCCredentialPayload{Credential: credential})
 }
 
-// dedicated sends one request on its own connection and decodes its result.
+// dedicated sends one bounded, isolated exchange and never retries it.
 func dedicated[Result any](
 	ctx context.Context, client *Client, credential string, requestType protocol.GatewayRPCMessageType, payload any,
 ) (Result, error) {
 	var result Result
-	if ctx == nil {
-		return result, errors.New("gatewayclient: context must not be nil")
-	}
 	if err := checkCredential(credential); err != nil {
 		return result, err
+	}
+	return isolatedRoundTrip[Result](ctx, client, client.extSlots, requestType, payload, true, nil)
+}
+
+// slowRequest covers handlers that wait for git/processes, network delivery,
+// or process start. Cached reads (including the per-request preview check)
+// and authentication keep the shared connection.
+func slowRequest(requestType protocol.GatewayRPCMessageType) bool {
+	switch requestType {
+	case protocol.GatewaySessionCreate, protocol.GatewaySessionTerminate,
+		protocol.GatewayPushTest, protocol.GatewayProvidersOpen:
+		return true
+	}
+	return false
+}
+
+func isolatedRoundTrip[R any](ctx context.Context, client *Client, slots chan struct{}, requestType protocol.GatewayRPCMessageType,
+	payload any, uncertain bool, check func(R) error,
+) (R, error) {
+	var result R
+	if ctx == nil {
+		return result, errors.New("gatewayclient: context must not be nil")
 	}
 	data, requestID, err := encodeRequest(ctx, requestType, payload)
 	if err != nil {
 		return result, err
 	}
 	select {
+	case <-ctx.Done():
+		return result, ctx.Err()
 	case <-client.done:
 		return result, net.ErrClosed
 	default:
 	}
-	connection, err := dialRPC(ctx, client.dial)
+	// Do not build an unbounded queue of blocked HTTP handlers or broker dials.
+	select {
+	case slots <- struct{}{}:
+	default:
+		return result, &gatewayapi.Error{Code: protocol.LimitExceeded, Message: "too many operations in progress; try again after one finishes"}
+	}
+	defer func() { <-slots }()
+	operationCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	operation := &rpcOperation{cancel: cancel}
+	client.mu.Lock()
+	if client.closed {
+		client.mu.Unlock()
+		return result, net.ErrClosed
+	}
+	client.operations[operation] = struct{}{}
+	client.mu.Unlock()
+	defer func() {
+		client.mu.Lock()
+		delete(client.operations, operation)
+		client.mu.Unlock()
+	}()
+	connection, err := dialRPC(operationCtx, client.dial)
 	if err != nil {
 		return result, err
 	}
 	defer connection.conn.Close()
-	clearDeadline, err := setContextDeadline(ctx, connection.conn.SetDeadline)
+	client.mu.Lock()
+	if client.closed {
+		client.mu.Unlock()
+		return result, net.ErrClosed
+	}
+	operation.conn = connection.conn
+	client.mu.Unlock()
+	clearDeadline, err := setContextDeadline(operationCtx, connection.conn.SetDeadline)
 	if err != nil {
 		return result, err
 	}
@@ -514,11 +589,14 @@ func dedicated[Result any](
 		return result, remote
 	}
 	if err == nil {
-		result, err = protocol.DecodeRPCPayload[Result](response)
+		result, err = protocol.DecodeRPCPayload[R](response)
+	}
+	if err == nil && check != nil {
+		err = check(result)
 	}
 	if err != nil {
-		var none Result
-		return none, failure(ctx, err, true)
+		var none R
+		return none, failure(operationCtx, err, uncertain)
 	}
 	return result, nil
 }
@@ -532,8 +610,8 @@ func (client *Client) mutate(
 	if err := checkCredential(credential); err != nil {
 		return protocol.HTTPSessionMutationResponse{}, err
 	}
-	// Keep operation correlation inside the serialized exchange so a mismatched
-	// acknowledgement poisons the connection before another mutation is written.
+	// Keep operation correlation inside the exchange so a mismatched
+	// acknowledgement is uncertain and closes the connection.
 	return roundTrip(ctx, client, requestType, payload, true, func(result protocol.HTTPSessionMutationResponse) error {
 		if result.OperationID != operationID {
 			return errors.New("gatewayclient: result operation ID mismatch")
@@ -542,9 +620,9 @@ func (client *Client) mutate(
 	})
 }
 
-// roundTrip performs one serialized exchange on the shared connection. When
-// uncertain is set, any failure after the request may have been written is
-// reported as ErrDeliveryUncertain. check runs before the connection is
+// roundTrip isolates known blocking handlers; other exchanges serialize on
+// the shared connection. With uncertain set, a failure after possible delivery
+// is reported as ErrDeliveryUncertain. check runs before the connection is
 // released; its failure poisons the connection.
 func roundTrip[R any](
 	ctx context.Context,
@@ -554,6 +632,9 @@ func roundTrip[R any](
 	uncertain bool,
 	check func(R) error,
 ) (R, error) {
+	if slowRequest(requestType) {
+		return isolatedRoundTrip[R](ctx, client, client.slowSlots, requestType, payload, uncertain, check)
+	}
 	var result R
 	if ctx == nil {
 		return result, errors.New("gatewayclient: context must not be nil")

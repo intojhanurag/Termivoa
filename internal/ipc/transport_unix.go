@@ -278,20 +278,76 @@ func validatePrivateFile(path string) error {
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return errors.New("path is not a regular file")
+	if err := validatePrivateUnixObject(info); err != nil {
+		return err
 	}
 	if info.Mode().Perm() != 0o600 {
 		return fmt.Errorf("file mode is %04o, want 0600", info.Mode().Perm())
 	}
-	return requireCurrentUnixOwner(info)
+	return nil
 }
 
 func securePrivateFile(path string) error {
-	if err := os.Chmod(path, 0o600); err != nil {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
 		return err
 	}
-	return validatePrivateFile(path)
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	return securePrivateUnixFile(file, path)
+}
+
+func validatePrivateUnixObject(info os.FileInfo) error {
+	if !info.Mode().IsRegular() {
+		return errors.New("path is not a regular file")
+	}
+	if err := requireCurrentUnixOwner(info); err != nil {
+		return err
+	}
+	if info.Sys().(*syscall.Stat_t).Nlink != 1 {
+		return errors.New("private file must have exactly one hard link")
+	}
+	return nil
+}
+
+// Permission repair stays on this validated descriptor even if path is renamed.
+// Path identity is checked before reporting success; later caller reopens are
+// not bound to this descriptor.
+func securePrivateUnixFile(file *os.File, path string) error {
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if err := validatePrivateUnixObject(info); err != nil {
+		return err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	info, err = file.Stat()
+	if err != nil {
+		return err
+	}
+	if err := validatePrivateUnixObject(info); err != nil {
+		return err
+	}
+	if info.Mode().Perm() != 0o600 {
+		return errors.New("private file permission repair did not produce mode 0600")
+	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !pathInfo.Mode().IsRegular() || !os.SameFile(info, pathInfo) {
+		return errors.New("private file path changed during permission repair")
+	}
+	if err := validatePrivateUnixObject(pathInfo); err != nil {
+		return err
+	}
+	if pathInfo.Mode().Perm() != 0o600 {
+		return errors.New("private file permissions changed during repair")
+	}
+	return nil
 }
 
 // RequireCurrentOwner reports whether the current user owns info's file.

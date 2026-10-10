@@ -11,7 +11,7 @@ import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, sameSession, useAllSessions, type ComputerStatus, type HostedSession,
+  byChip, cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, sameSession, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -20,6 +20,7 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { GONE, markOpened, type ProviderTap } from './Herdr';
+import { chosenHost } from './Drawer';
 import { inboxItems, itemAt, nextReady, queueStep, type InboxItem, type Place, type Queue } from './Inbox';
 import { readViewed } from './activity';
 import { providerKey, staleSettings, unpolledOrigins, useProviders } from './providers';
@@ -83,7 +84,7 @@ type View =
    */
   | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: number; readonly notice?: string }
   /** `section`: scroll to it once (the Home Screen hint on Sessions). */
-  | { readonly name: 'settings'; readonly section?: 'notifications' }
+  | { readonly name: 'settings'; readonly section?: 'notifications' | 'add-computer' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
 
@@ -254,6 +255,10 @@ export function queueNext(items: ReadonlyArray<InboxItem>, visited: ReadonlySet<
   const { next, left } = queueStep(items, visited, current);
   return { left, next, visited: new Set([...visited, ...(current === undefined ? [] : [current]), ...(next === undefined ? [] : [next.key])]) };
 }
+
+/** The queue's items: only the drawer's chosen computer's while it is still in the list, else every computer's. */
+export const queueItems = (items: ReadonlyArray<InboxItem>, computers: ReadonlyArray<Pick<Computer, 'host'>>, chosen: string | undefined): InboxItem[] =>
+  byChip(items, chosenHost(computers, chosen));
 
 /** Sessions from a terminal (‹ Sessions, Back, the last Next, a terminal that is gone): on the "Needs you" tab while a queue run is on. */
 export const sessionsView = (run: boolean, message?: string): Extract<View, { name: 'sessions' }> =>
@@ -609,6 +614,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const [preview] = useState(() => homePreview(setPreviewAt));
   const viewRef = useRef(view);
   viewRef.current = view;
+  // The computer chosen in the Sessions drawer (its host), kept while the app runs; undefined: All computers.
+  const [chosenComputer, setChosenComputer] = useState<string>();
   const adding = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
   // The "Needs you" queue: the items this run already showed; undefined while no queue runs. Set by a tap on an
   // inbox row or a confirmed notification tap, never by an address.
@@ -668,6 +675,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       window.history.replaceState(null, '', '/');
     }
     setSettings(undefined);
+    setChosenComputer(undefined);
     setView(reason === undefined ? { name: 'setup' } : { name: 'setup', reason });
   }, [home]);
 
@@ -977,7 +985,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   useEffect(() => { if (!queueScreen(view.name)) setVisited(undefined); }, [view.name]);
   const place: Place | undefined = view.name === 'live' || view.name === 'preview' ? { session: view.session }
     : view.name === 'provider' ? { tap: { computer: view.computer, provider: view.provider, targetId: view.target } } : undefined;
-  const step = queueOn ? queueNext(inboxItems(tabs, providers.entries, readViewed()), visited, place) : undefined;
+  const step = queueOn ? queueNext(queueItems(inboxItems(tabs, providers.entries, readViewed()), computers, chosenComputer), visited, place) : undefined;
   // A notification tap (an empty run) with nothing else waiting shows no control: "Inbox ›" would lead to "Nothing needs you.".
   const queue: Queue | undefined = step === undefined || (step.left === 0 && visited?.size === 0) ? undefined : {
     left: step.left,
@@ -1097,6 +1105,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           providers={providers.entries}
           tab={view.tab}
           inbox={view.inbox}
+          computer={chosenComputer}
+          onComputer={setChosenComputer}
+          onAddComputer={() => navigate({ name: 'settings', section: 'add-computer' })}
           onOpenItem={(item) => { movedAt.current = Date.now(); setVisited(new Set([item.key])); openItem(item); }}
           onOpenTarget={openTarget}
           onCreated={(tap, notice, key) => {
@@ -1108,7 +1119,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           onTypeIn={(session, command) => navigate(installView(session, command))}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
-          onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
+          onNew={() => {
+            const computer = computers.find((one) => one.host === chosenHost(computers, chosenComputer));
+            navigate({ name: 'new', back: { name: 'sessions' }, ...(computer === undefined ? {} : { computer }) });
+          }}
           onWall={() => navigate({ name: 'wall' })}
           onSettings={() => navigate({ name: 'settings' })}
           onHomeScreenSteps={() => navigate({ name: 'settings', section: 'notifications' })}
@@ -1134,7 +1148,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       {view.name === 'new' && (
         <NewSession
           entries={all.entries}
-          {...(view.back?.name === 'live' ? { initial: view.back.session.computer } : {})}
+          {...(view.back?.name === 'live' ? { initial: view.back.session.computer } : view.computer === undefined ? {} : { initial: view.computer })}
           onCancel={() => navigate(view.back ?? { name: 'sessions' })}
           onStarted={(session, command) => {
             void refresh(session.computer.origin);

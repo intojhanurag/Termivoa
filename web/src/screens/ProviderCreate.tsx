@@ -82,7 +82,7 @@ export const offeredAgent = (picked: string | undefined, kinds: ReadonlyArray<st
 
 /** Said when a fresh settings read took the picked agent away, so the change to no agent is not silent. */
 export const droppedAgent = (picked: string | undefined, kinds: ReadonlyArray<string>, provider: string): string | undefined =>
-  picked !== undefined && !kinds.includes(picked) ? `${picked} is not running in ${provider} now.` : undefined;
+  picked !== undefined && !kinds.includes(picked) ? `${picked} is not available in ${provider} now.` : undefined;
 
 /** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. `prompted`: a first prompt was sent with the request. */
 export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, prompted: boolean, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
@@ -259,7 +259,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
+  // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the sheet opens.
   const checkingKinds = useAgentKinds(onKinds);
 

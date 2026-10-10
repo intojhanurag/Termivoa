@@ -1,7 +1,7 @@
 ---
 title: Changes
 description: Use the Termivoa Changes view to review an agent's uncommitted edits on your phone, ask about a file or lines, then commit and push.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 The Termivoa **Changes** view shows what a coding agent changed in your project: the changed files and a red and green diff for each.
@@ -68,6 +68,19 @@ If git fails, the sheet shows its output, such as a hook error. The list reloads
 :::caution
 The commit runs your repository's own hooks, as a commit on your computer does. Push never forces, so it cannot overwrite commits on the remote.
 :::
+
+## What happens when git times out?
+
+**Next beta:** Termivoa stops git and its ordinary hook children before
+reporting a timed-out commit or push. Your repository's hooks and git settings
+still apply. This does not undo a commit or push that already finished; check
+**Changes** and the branch before trying again. Termivoa does not retry it.
+
+| Outcome | What to do |
+| --- | --- |
+| A hook was stopped before the write finished | Fix the hook on the computer, then try again yourself. |
+| The write finished but its answer was lost | Check the commit and branch before another commit or push. |
+| A hook deliberately launched a detached program on macOS or Linux | Manage that program on the computer; cleanup is not a sandbox for hooks. |
 
 ## What are the limits?
 

@@ -1,7 +1,7 @@
 ---
 title: Providers
 description: A provider is a terminal workspace tool on your computer that Termivoa shows on your phone. herdr is the first provider. More can follow.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 A provider is a terminal workspace tool on your computer, such as herdr, whose projects and coding agents Termivoa shows on your phone.
@@ -26,13 +26,13 @@ herdr is the only provider today. Termivoa is built so that other workspace tool
 | Live | One terminal of the provider, opened with a tap. It is read-only until you tap **Take control**. |
 | The **⋯** menu on a row | **New tab**, **Close tab**, **Close workspace** and **Remove worktree**, each after a confirmation where it ends or deletes something. **New workspace** is under the list. |
 | Notifications | A buzz when an agent is blocked or finished. |
-| **Settings → Integrations** | One card for each computer. With the provider installed: the switches **On**, **Buzz when blocked** and **Buzz when finished**, and **Start herdr** when it does not run. Without it: **Not installed** and **Install herdr**. |
+| **Settings**, a computer's page | A **herdr** part on the page of each computer. With the provider installed: the switches **On**, **Buzz when blocked** and **Buzz when finished**, and **Start herdr** when it does not run. Without it: **Not installed** and **Install herdr**. |
 
-A computer without a provider shows no tab. Its card in **Settings → Integrations** says **Not installed**.
+A computer without a provider shows no tab. Its page in **Settings** says **Not installed** in the **herdr** part.
 
 ## How do I turn a provider on?
 
-You do not. Termivoa finds a supported provider on the computer by itself. If the provider is not installed, **Install herdr** opens a terminal with the install command typed in, and you press Enter. See [Termivoa + herdr](/docs/guides/herdr/#how-do-i-install-or-start-herdr-from-the-phone). To turn it off for one computer, open **Settings → Integrations** and turn **On** off.
+You do not. Termivoa finds a supported provider on the computer by itself. If the provider is not installed, **Install herdr** opens a terminal with the install command typed in, and you press Enter. See [Termivoa + herdr](/docs/guides/herdr/#how-do-i-install-or-start-herdr-from-the-phone). To turn it off for one computer, open **Settings**, tap that computer's card, and turn **On** off.
 
 ## What can a phone see and do through a provider?
 

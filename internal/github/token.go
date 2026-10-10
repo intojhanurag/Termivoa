@@ -137,34 +137,15 @@ func saveAccount(dataDir string, acc *account) error {
 	return err
 }
 
-// deleteAccount overwrites the file's bytes with zeros, syncs and removes
-// it. No file is not an error. A path that is not a regular file (a
-// symlink) is removed without writing through it.
+// deleteAccount removes only the stored-login name. It never overwrites an
+// inode that another name could share; removal is not secure erasure.
+// Absence is success. A symlink is unlinked without following its target.
 func deleteAccount(dataDir string) error {
-	path := filepath.Join(dataDir, tokenFileName)
-	info, err := os.Lstat(path)
+	err := os.Remove(filepath.Join(dataDir, tokenFileName))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return os.Remove(path)
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|openNoFollow, 0)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info, statErr := file.Stat(); statErr == nil {
-		_, _ = file.Write(make([]byte, info.Size()))
-		_ = file.Sync()
-	}
-	_ = file.Close()
-	return os.Remove(path)
+	return err
 }
 
 // tokenAnswer is GitHub's answer on /login/oauth/access_token.
