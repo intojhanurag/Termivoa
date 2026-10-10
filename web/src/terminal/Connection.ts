@@ -34,6 +34,7 @@ import {
 import { DeliveryUncertainError, InputSender } from './InputSender';
 import type { ConnectGate } from './scheduler';
 import { SnapshotAssembler } from './SnapshotAssembler';
+import { ChatStore, type ChatView } from './chat';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
 /** A commit or push was sent but its reply can no longer arrive. It is never resent. */
@@ -70,6 +71,9 @@ export const ATTACH_TIMEOUT_MS = 5_000;
  * reply does not hold back the next request until a reconnect.
  */
 export const FILES_TIMEOUT_MS = 15_000;
+
+/** Errors that end the session or the access, whatever request they answer. */
+const SESSION_ENDING: ReadonlySet<string> = new Set(['unauthorized', 'revoked', 'session_lost', 'session_missing', 'generation_changed', 'protocol_mismatch']);
 
 /** WebSocket.OPEN, without depending on the global in tests. */
 const SOCKET_OPEN = 1;
@@ -435,6 +439,18 @@ export class Connection {
   readonly getWorktreeRemoval = (): WorktreeRemoval | undefined => this.removal;
 
   readonly getFiles = (): FilesView | undefined => this.files;
+
+  /** Chat view (docs/chat-view.md): pulled while Chat is on screen, in memory only. */
+  readonly chat = new ChatStore({
+    send: (type, payload) => this.sendSession(type, payload),
+    emit: () => this.emit(),
+    later: (run, ms) => {
+      const timer = setTimeout(run, ms);
+      return () => clearTimeout(timer);
+    },
+  });
+
+  readonly getChat = (): ChatView => this.chat.get();
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -982,6 +998,13 @@ export class Connection {
         this.stop('revoked', this.errorText('revoked', message.payload.message));
         return;
       case 'error':
+        if (this.chat.owns(message.requestId)) {
+          // A refused chat request says so on the Chat screen, not as a banner; a lost session or access still counts.
+          const { code, message: text } = message.payload;
+          this.chat.onError(code);
+          if (SESSION_ENDING.has(code)) this.handleError(code, this.errorText(code, text));
+          return;
+        }
         if (message.requestId === this.writeRequest) {
           const { code, message: text } = message.payload;
           if (code === 'not_controller' || code === 'stale_lease') {
@@ -1051,6 +1074,15 @@ export class Connection {
           return;
         case 'changes.patch':
           this.handleChangesPatch(message.requestId, message.payload);
+          return;
+        case 'chat.state':
+          this.chat.onState(message.payload, message.requestId);
+          return;
+        case 'chat.changed':
+          this.chat.onChanged(message.payload.historyId);
+          return;
+        case 'chat.page':
+          this.chat.onPage(message.payload, message.requestId);
           return;
         case 'files.listed': {
           const request = this.takeFilesReply(message.requestId);
@@ -1330,6 +1362,7 @@ export class Connection {
         this.sendSession('snapshot.applied', { snapshotId, revision: snapshot.revision });
         this.reconnectAttempt = 0;
         this.settleGate('live');
+        const attached = this.status.link === 'attaching';
         this.update({
           ...(this.status.link === 'attaching' ? { link: 'live' as const } : {}),
           buffer: snapshot.screen.buffer,
@@ -1337,6 +1370,7 @@ export class Connection {
           rows: snapshot.screen.rows,
         });
         this.markNewOutput();
+        if (attached) this.chat.connected();
         if (this.pendingPatch !== undefined) {
           this.scheduleFrame();
         }
@@ -1803,6 +1837,7 @@ export class Connection {
     this.failFiles(undefined);
     this.failTasks(undefined);
     this.failBranches(undefined);
+    this.chat.disconnected();
     if (this.removalRequest !== undefined) {
       // As with a write: the host may have removed it; never resend.
       this.removalRequest = undefined;
@@ -1843,6 +1878,7 @@ export class Connection {
     this.stopHeartbeat();
     this.failHistory();
     this.dropControl(undefined);
+    this.chat.disconnected();
     const socket = this.socket;
     this.socket = undefined;
     this.socketEpoch++;

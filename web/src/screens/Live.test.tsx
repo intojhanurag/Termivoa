@@ -7,7 +7,7 @@ import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { areaClick, ChangesWait, liveTabs, SessionLost, TabBar } from './Live';
+import { agentRuns, areaClick, ChangesWait, changedPath, chatOffered, liveTabs, SessionLost, TabBar, ViewSwitch } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -229,5 +229,48 @@ describe('session lost', () => {
     const html = renderToStaticMarkup(<SessionLost title="build" where="vps" onSessions={noop} onStartNew={async () => undefined} />);
     expect(html).toContain('“build” ended on vps. Nothing was re-run.');
     expect(html).toMatch(/<button type="button" class="primary"><span class="btn-swap"><span>New session<\/span><span class="off" aria-hidden="true">.*?Starting…<\/span><\/span><\/button>/u);
+  });
+});
+
+describe('the Chat | Terminal switch', () => {
+  const on = { protocolRevision: 8, chat: { enabled: true } };
+  const facts = { agent: true, chatShown: false, unsupported: false, provider: false };
+
+  it('shows only for a computer with Chat (revision 8 and settings.chat) and a session with an agent', () => {
+    expect(chatOffered(on, facts)).toBe(true);
+    // Off on that computer: the switch still shows, and Chat says how to turn it on.
+    expect(chatOffered({ protocolRevision: 8, chat: { enabled: false } }, facts)).toBe(true);
+    expect(chatOffered({ protocolRevision: 7, chat: { enabled: true } }, facts)).toBe(false);
+    expect(chatOffered({ protocolRevision: 8 }, facts)).toBe(false);
+    expect(chatOffered(undefined, facts)).toBe(false);
+    expect(chatOffered(on, { ...facts, agent: false })).toBe(false);
+    expect(chatOffered(on, { ...facts, provider: true })).toBe(false);
+  });
+
+  it('hides after the computer said it cannot read that agent, but not while Chat is on screen', () => {
+    expect(chatOffered(on, { ...facts, unsupported: true })).toBe(false);
+    expect(chatOffered(on, { ...facts, unsupported: true, chatShown: true })).toBe(true);
+    // The agent exited while Chat is open: the switch stays, so Terminal is one tap away.
+    expect(chatOffered(on, { ...facts, agent: false, chatShown: true })).toBe(true);
+  });
+
+  it('counts an agent only once it works, asks or rests after work: a quiet shell is idle too', () => {
+    const at = '2026-10-10T10:00:00Z';
+    expect(agentRuns(undefined)).toBe(false);
+    expect(agentRuns({ state: 'idle', stateSince: at })).toBe(false);
+    expect(agentRuns({ state: 'idle', stateSince: at, afterWork: true })).toBe(true);
+    expect(agentRuns({ state: 'working', stateSince: at })).toBe(true);
+    expect(agentRuns({ state: 'waiting', stateSince: at })).toBe(true);
+  });
+
+  it('finds the changed file of a Chat edit, also when the session sits below the repository top', () => {
+    expect(changedPath(['src/tax.ts', 'web/src/tax.ts'], 'src/tax.ts')).toBe('src/tax.ts');
+    expect(changedPath(['api/src/tax.ts'], 'src/tax.ts')).toBe('api/src/tax.ts');
+    expect(changedPath(['api/xsrc/tax.ts'], 'src/tax.ts')).toBeUndefined();
+  });
+
+  it('is two labelled buttons, the shown one pressed', () => {
+    const html = renderToStaticMarkup(<ViewSwitch mode="chat" onMode={noop} />);
+    expect(html).toBe('<span class="view-switch" role="group" aria-label="View"><button type="button" class="active" aria-pressed="true">Chat</button><button type="button" aria-pressed="false">Terminal</button></span>');
   });
 });

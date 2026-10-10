@@ -1979,3 +1979,71 @@ describe('Connection for multi-computer', () => {
     expect(third.socket().url).toBe('wss://host.invalid/api/v1/ws');
   });
 });
+
+describe('Connection chat (docs/chat-view.md)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const last = (socket: FakeSocket, type: string) => socket.sent.filter((message) => message.type === type).at(-1);
+  const H = '0123456789abcdef';
+  const cursor = (n: number) => `c${String(n).padStart(21, '0')}`;
+  const page = (ids: string[], after: number) => ({
+    historyId: H, blocks: ids.map((blockId) => ({ id: blockId, kind: 'assistant_text', text: blockId })), after: cursor(after), complete: true,
+  });
+
+  it('opens once live, pulls after chat.changed, and opens again after a reconnect with no replay', async () => {
+    const { connection, socket } = harness();
+    connection.chat.open();
+    expect(socket().types()).not.toContain('chat.open');
+    await attachLive(socket());
+    const open = last(socket(), 'chat.open');
+    expect(open).toMatchObject({ sessionId, generation, payload: { limit: 30 } });
+    socket().reply(open, 'chat.state', { link: 'linked', agent: 'claude', historyId: H });
+    socket().reply(open, 'chat.page', page(['a', 'b'], 1));
+    expect(connection.getChat()).toMatchObject({ link: 'linked', agent: 'claude' });
+    expect(connection.getChat().blocks.map((block) => block.id)).toEqual(['a', 'b']);
+
+    socket().receive('chat.changed', { historyId: H });
+    const read = last(socket(), 'chat.read');
+    expect(read?.payload).toEqual({ after: cursor(1), limit: 30 });
+    socket().reply(read, 'chat.page', page(['b', 'c'], 2));
+    expect(connection.getChat().blocks.map((block) => block.id)).toEqual(['a', 'b', 'c']);
+    // A notice is no answer: an unasked page is ignored.
+    socket().receive('chat.page', page(['zz'], 9));
+    expect(connection.getChat().blocks).toHaveLength(3);
+
+    socket().close();
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    await attachLive(socket(), '2');
+    expect(socket().types().filter((type) => type.startsWith('chat.'))).toEqual(['chat.open']);
+    // The blocks stay on screen until the fresh latest page replaces them.
+    expect(connection.getChat().blocks).toHaveLength(3);
+    const again = last(socket(), 'chat.open');
+    socket().reply(again, 'chat.state', { link: 'linked', agent: 'claude', historyId: H });
+    socket().reply(again, 'chat.page', page(['c', 'd'], 3));
+    expect(connection.getChat().blocks.map((block) => block.id)).toEqual(['c', 'd']);
+  });
+
+  it('keeps a refused chat request on the Chat screen, not in a banner', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.chat.open();
+    socket().reply(last(socket(), 'chat.open'), 'error', { code: 'internal_error', message: 'no' });
+    expect(connection.getChat().link).toBe('failed');
+    expect(connection.getStatus().notice).toBeUndefined();
+    connection.chat.close();
+    expect(last(socket(), 'chat.close')?.payload).toEqual({});
+  });
+
+  it('still ends the view when a chat request is refused because access ended', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.chat.open();
+    socket().reply(last(socket(), 'chat.open'), 'error', { code: 'revoked', message: 'This phone was removed.' });
+    expect(connection.getStatus().link).toBe('revoked');
+  });
+});

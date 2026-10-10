@@ -8,8 +8,7 @@ All notable changes are documented here. The format follows
 
 ### Added
 
-- **Chat view, computer side (next beta; not on the phone until its own
-  screen ships).** Host: `pterm chat on` (asks y/N first) lets the broker
+- **Chat view, computer side.** Host: `pterm chat on` (asks y/N first) lets the broker
   read the Claude Code transcript of the agent in a session, read-only and
   only while a phone has Chat open, and serve it as bounded chat pages
   (prompts, answers, tool calls with short masked previews, edit counts and
@@ -18,8 +17,20 @@ All notable changes are documented here. The format follows
   file's header, and refuses links, shared files and files others can
   write. `pterm chat off`, `pterm chat status` and a `pterm doctor` line;
   any paired phone can turn it off. macOS and Linux. Protocol revision 8.
-  Phone: no change yet.
-
+- **Chat view, phone side** ([#285](https://github.com/intojhanurag/Termivoa/issues/285),
+  ADR 0014). Phone: a **Chat | Terminal** switch under the session tabs once
+  Claude Code works in a session; Chat shows your messages, the agent's
+  replies (sanitized markdown: no pictures, no web page code; links open
+  only after a confirm sheet with the full address), tool steps in one box,
+  edits with their changed lines and **Open in Changes ›**, **Thought for
+  Ns**, **Conversation compacted**, a folded **Task** row, **↑ Earlier
+  messages**, **N new ↓**, the working line with **esc stop**, the answer
+  card in place of the message box, and the message box on the Compose path
+  (needs control). **Chat isn't available for this session** with **Show
+  terminal** and **Why?** for every reason. Chat loads on first use, keeps
+  at most 2,000 blocks in memory and stores nothing. **Settings → (computer)
+  → Chat view** shows On or Off and turns it off for every device; only
+  `pterm chat on` at the computer turns it on.
 - **Touch gestures on the Live terminal.** Phone: hold a finger still on
   the terminal, then slide to send arrow keys; with the keyboard up, tap a
   letter on the command line to move the cursor there; swipe sideways on the

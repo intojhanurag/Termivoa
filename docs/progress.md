@@ -3729,3 +3729,26 @@ and browser run after explicit nonempty guard also pass. No runtime edits.
   scripts/check`; `cd site && pnpm install --frozen-lockfile
   --ignore-workspace && npx astro build` (29 pages, all internal links valid).
 - Local branch `fix/sweep-review-followups` only; not pushed, no PR.
+
+## 2026-10-10 — Chat view, phone side (M1b, #285, ADR 0014)
+
+- Built on the final protocol (revision 8, `393bd0b`): the pull-model
+  `ChatStore` in `web/src/terminal/chat.ts` (owned by `Connection`), the lazy
+  Chat screen (`Chat.tsx`, `chatText.ts`, `chat.css`) for Paper screens 1–4,
+  the **Chat | Terminal** switch in Live, and the **Chat view** row on a
+  computer's page in Settings (off only, S1). Build notes and the
+  differences from the Paper screens: `docs/chat-view.md`, section 15.
+- Checks: `pnpm install --frozen-lockfile`; `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (includes `pnpm typecheck`, `pnpm test:web`, `pnpm
+  build:web`); `cd site && pnpm install --frozen-lockfile --ignore-workspace
+  && npx astro build` (30 pages, all internal links valid).
+- E2E: `PW=<playwright-core> node scripts/e2e-multicomputer/chat.mjs` runs a
+  real mac dev stack and the neutral demo agent, with the host chat **faked
+  in the page** (the host side, M1a, is not merged): 8 of 8 checks pass
+  (CH1–CH8; [evidence](evidence/chat-view-phone/chat.md)). A real-host e2e
+  and docs screenshots stay pending until M1a lands.
+- Bundle: new lazy `Chat` chunk about 20 KB (6.5 KB gzip) plus CSS 5.9 KB
+  (1.6 KB gzip); Live grew by about 2.1 KB (0.75 KB gzip); the entry chunk did
+  not grow.
+- No real transcript, agent, credential or provider credit used. Branch
+  `feat/chat-view-phone`; depends on the host pull request (M1a).

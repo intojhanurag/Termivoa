@@ -118,7 +118,7 @@ See [Set up a GitHub repository](/docs/guides/github/). You connect a computer i
 
 ## Chat view
 
-**Next beta.** Chat view lets a phone read the coding agent's conversation of a session as a chat, read-only. This beta adds only the computer side; the phone screen comes in a later beta. It is off on every computer until you turn it on at that computer. See [What does Chat view send to the phone?](/docs/reference/security/#what-does-chat-view-send-to-the-phone)
+**Next beta.** Chat view lets a phone read the coding agent's conversation of a session as a chat, read-only. See [Chat view](/docs/guides/chat/). It is off on every computer until you turn it on at that computer. See [What does Chat view send to the phone?](/docs/reference/security/#what-does-chat-view-send-to-the-phone)
 
 | Command | What it does |
 | --- | --- |
