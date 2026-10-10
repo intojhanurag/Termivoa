@@ -516,17 +516,24 @@ export class Connection {
     return true;
   }
 
-  sendWheel(button: 'wheel-up' | 'wheel-down'): boolean {
+  /**
+   * One wheel step at `at`, the cell under the finger or pointer (clamped to
+   * the grid), since tmux and vim pick the pane by it. Without a point (the
+   * dock's wheel keys), the cursor cell.
+   */
+  sendWheel(button: 'wheel-up' | 'wheel-down', at?: { readonly row: number; readonly column: number }): boolean {
     const screen = this.screen;
     if (screen === undefined) {
       return false;
     }
     const kind: InputMousePayload['kind'] = 'wheel';
+    const clamp = (value: number, size: number) => Math.min(Math.max(Math.trunc(value) || 0, 0), size - 1);
+    const cell = at ?? screen.cursor;
     return this.withSender((sender) => sender.sendMouse(
       kind,
       button,
-      screen.cursor.column,
-      screen.cursor.row,
+      clamp(cell.column, screen.columns),
+      clamp(cell.row, screen.rows),
       { shift: false, alt: false, ctrl: false, meta: false },
     ));
   }

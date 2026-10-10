@@ -14,6 +14,8 @@ New features on `main` show here until the next beta ships.
 
 - **Fixed: the terminal could draw one row too low after you changed the text size.** The top row showed an old line and the newest line was hidden until the next full redraw. Now the whole picture moves to the new size. See [Change the text size](/docs/guides/live-terminal/#change-the-text-size).
 
+- **Fixed: a swipe in a full-screen app scrolls the pane under your finger.** In `tmux` with split panes and mouse mode, or in `vim` with splits, a swipe or a trackpad scroll no longer scrolls the pane that holds the cursor. See [Scroll the terminal](/docs/guides/live-terminal/#scroll-the-terminal).
+
 ## v0.1.0-beta.4 (2026-10-10) — open-source beta
 
 The first public, free and open-source release. The binaries are not signed. Anyone can download it with `curl`; see [Quick start](/docs/quick-start/). Updating from beta.3 keeps your data and pairings.

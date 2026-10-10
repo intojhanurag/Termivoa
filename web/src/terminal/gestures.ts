@@ -176,8 +176,8 @@ export interface GestureHost {
   cell(): { readonly width: number; readonly height: number } | undefined;
   /** One key, without modifiers. False when refused (no control, link down); nothing is queued. */
   send(key: GestureKey): boolean;
-  /** One-finger travel that is not a gesture: app scroll and the history pull, as before. */
-  drag(phase: 'start' | 'move', y: number): void;
+  /** One-finger travel that is not a gesture: app scroll (at the finger's cell) and the history pull, as before. */
+  drag(phase: 'start' | 'move', point: TouchPoint): void;
   fontSize(): number;
   /** Once, on lift, so the PTY resizes once. */
   setFontSize(size: number): void;
@@ -225,13 +225,13 @@ export class TouchGestures {
     const { state } = this;
     if (state.kind === 'plain' || (state.kind === 'idle' && !host.enabled())) {
       this.state = { kind: 'plain' };
-      host.drag('start', first.y);
+      host.drag('start', first);
       return;
     }
     if (state.kind === 'idle' && touches.length === 1) {
       const stop = host.later(() => this.arm(), HOLD_MS);
       this.state = { kind: 'pending', at: host.now(), start: first, last: first, stop };
-      host.drag('start', first.y);
+      host.drag('start', first);
       return;
     }
     if (touches.length === 2 && second !== undefined && (state.kind === 'idle' || state.kind === 'pending' || state.kind === 'scroll')) {
@@ -257,11 +257,11 @@ export class TouchGestures {
     switch (state.kind) {
       case 'plain':
       case 'scroll':
-        host.drag('move', first.y);
+        host.drag('move', first);
         return false;
       case 'pending':
         state.last = first;
-        host.drag('move', first.y);
+        host.drag('move', first);
         if (distance(first, state.start) > HOLD_SLOP_PX) {
           state.stop();
           this.state = { kind: 'scroll', at: state.at };

@@ -234,6 +234,24 @@ func TestStructuredMouseUsesAuthoritativeTerminalMode(t *testing.T) {
 	}
 }
 
+// The wheel report carries the cell the client names, so it must be the
+// pointer's cell, not the cursor's (#288): tmux and vim pick the pane by it.
+func TestStructuredWheelReportsGivenCell(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	ctx := context.Background()
+
+	if err := core.WriteOutput(ctx, []byte("\x1b[?1000h\x1b[?1006h")); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.SendMouse(ctx, uv.MouseWheelEvent(uv.Mouse{X: 14, Y: 3, Button: uv.MouseWheelUp})); err != nil {
+		t.Fatal(err)
+	}
+	if got := readOutput(t, core.Output()); got != "\x1b[<64;15;4M" {
+		t.Fatalf("wheel output = %q", got)
+	}
+}
+
 func TestAlternateScreenPreservesNormalState(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)

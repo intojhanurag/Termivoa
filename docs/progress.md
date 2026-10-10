@@ -39,6 +39,27 @@ Last updated: 2026-10-10
   including GE4 tap to place after the GE3 pinch, without the workaround.
   `phase-b.mjs --no-web-build --only U` (Chrome for Testing): 13 of 13.
 
+### Fix: wheel steps at the finger's cell (2026-10-10, branch `fix/issue-288`, issue #288)
+
+- Real: `Connection.sendWheel` sent the cursor cell, and the host encodes
+  that cell in the mouse report. New `TestStructuredWheelReportsGivenCell`
+  (`internal/terminal/core_test.go`) shows a wheel at column 14, row 3 goes
+  to the program as `ESC[<64;15;4M`, so tmux and vim pick the pane by it.
+- Fix: app scroll (swipe and desktop `wheel`) passes `TerminalView.cellAt`
+  of the touch or pointer to `sendWheel`, which clamps it to the grid; the
+  dock's `▲`/`▼` keep the cursor cell. No protocol change (`input.mouse`
+  already has `column` and `row`).
+- Review fix: a swipe takes its cell once at start (`AppScroll`, clamped
+  `cellAt`) and keeps it, so a swipe that leaves the pane or the grid
+  scrolls one pane only. New `AppScroll` and `TerminalView.cellAt` tests in
+  `Connection.test.ts` fail without it; web 1141 tests, `scripts/check` and
+  `gestures.mjs` GE1–GE8 pass again.
+- Checks: new `Connection.test.ts` case fails without the fix; `cd web &&
+  npx vitest run` (60 files, 1139 tests); `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (pass); `go test -race ./internal/terminal/` (pass); site
+  build (pass, all internal links valid); `gestures.mjs` (WebKit) GE1–GE8
+  pass; `phase-b.mjs --no-web-build --only U` U1–U9 pass.
+
 ### Feature: touch gestures on the Live terminal (2026-10-10, branch `feat/touch-gestures`)
 
 - Owner decisions: all five gestures; a per-phone **Terminal gestures**
