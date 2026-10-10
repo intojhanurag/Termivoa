@@ -10,6 +10,17 @@ Most Termivoa problems start with one check on the computer. It never prints sec
 pterm doctor
 ```
 
+## macOS or Windows will not open `pterm` after a browser download
+
+The Termivoa binaries are not signed. A browser marks a downloaded file as "from the internet", and then the system stops an unsigned file. A `curl` or `gh` download gets no such mark, so the install steps use them.
+
+| System | What you see | Fix |
+| --- | --- | --- |
+| macOS | A message that Apple could not verify `pterm`, and it does not open | Download again with the `curl` line from [Install on macOS](/docs/install/macos/), or remove the mark: `xattr -d com.apple.quarantine ~/.local/bin/pterm` |
+| Windows | "Windows protected your PC" (SmartScreen) | Download again with `curl.exe` from [Install on Windows](/docs/install/windows/), or remove the mark in PowerShell: `Unblock-File .\pterm.exe` in the folder where you saved it |
+
+Remove the mark only from a file you downloaded from the Termivoa release page and checked against `SHA256SUMS`.
+
 ## Keyboard focus goes to the page start after closing a sheet
 
 Update Termivoa and reload the app. Closing a sheet now
