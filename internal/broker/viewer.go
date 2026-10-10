@@ -484,26 +484,19 @@ func (subscription *ViewerSubscription) hostMessage(messageType protocol.Message
 }
 
 func (subscription *ViewerSubscription) hostMessageForRequest(messageType protocol.MessageType, payload any, requestID string) ([]byte, error) {
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("broker: encode %s payload: %w", messageType, err)
-	}
 	if requestID == "" {
 		requestID = uuid.New().String()
 	}
 	sessionID, generation := subscription.session.id, subscription.session.generation
-	message, err := json.Marshal(protocol.Envelope{
+	message, err := protocol.EncodeHost(protocol.Envelope{
 		Version: protocol.Version, Type: messageType, RequestID: requestID,
-		SessionID: &sessionID, Generation: &generation, Payload: payloadJSON,
-	})
+		SessionID: &sessionID, Generation: &generation,
+	}, payload)
+	if errors.Is(err, protocol.ErrOutboundMessageTooLarge) {
+		return nil, fmt.Errorf("%w: %w", errOutboundMessageTooLarge, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("broker: encode %s envelope: %w", messageType, err)
-	}
-	if len(message) > protocol.MaxOutboundMessageBytes {
-		return nil, fmt.Errorf("%w: %s is %d bytes", errOutboundMessageTooLarge, messageType, len(message))
-	}
-	if _, err := protocol.DecodeHost(message); err != nil {
-		return nil, fmt.Errorf("broker: validate %s envelope: %w", messageType, err)
 	}
 	return message, nil
 }
@@ -665,7 +658,31 @@ func signalViewer(subscription *ViewerSubscription) {
 	}
 }
 
+// nextViewerCaptureAt schedules one shared screen copy at the earliest slot a
+// viewer can use. Dirty output remains pending when no viewer can receive it.
+// Delivery, acknowledgement and detach requests recalculate this in the actor.
+func (session *Session) nextViewerCaptureAt() time.Time {
+	if session.captureAfter.IsZero() {
+		return time.Time{}
+	}
+	var next time.Time
+	for _, viewer := range session.viewers {
+		if viewer.inFlight != nil || viewer.awaiting != nil || viewer.noticeInFlight != nil || len(viewer.notices) != 0 {
+			continue
+		}
+		at := session.captureAfter
+		if viewer.nextFrameAt.After(at) {
+			at = viewer.nextFrameAt
+		}
+		if next.IsZero() || at.Before(next) {
+			next = at
+		}
+	}
+	return next
+}
+
 func (session *Session) capturePublished() error {
+	session.captureAfter = time.Time{}
 	frame, err := session.terminal.ScreenSnapshot(session.ctx)
 	if err != nil {
 		return err
@@ -924,6 +941,13 @@ func (session *Session) latestViewerFrame(
 	}
 	if viewer.inFlight == nil || viewer.inFlightEpoch != epoch {
 		return nil, errViewerDeliveryStale
+	}
+	// Snapshot catch-up checks need current output even when this is the only
+	// viewer and its in-flight snapshot has paused scheduled publication.
+	if !session.captureAfter.IsZero() {
+		if err := session.capturePublished(); err != nil {
+			return nil, err
+		}
 	}
 	return session.published, nil
 }

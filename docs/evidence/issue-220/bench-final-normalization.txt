@@ -1,0 +1,12 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/intojhanurag/phone-terminal/internal/broker
+cpu: Apple M5
+BenchmarkHostTerminalMessage/80-10 	    3948	    301541 ns/op	  290026 B/op	      11 allocs/op
+BenchmarkHostTerminalMessage/80-10 	    3997	    298172 ns/op	  289379 B/op	      11 allocs/op
+BenchmarkHostTerminalMessage/200-10         	    1699	    698547 ns/op	  700578 B/op	      11 allocs/op
+BenchmarkHostTerminalMessage/200-10         	    1700	    704017 ns/op	  711426 B/op	      12 allocs/op
+BenchmarkHostTerminalMessage/400-10         	     877	   1374643 ns/op	 1460319 B/op	      13 allocs/op
+BenchmarkHostTerminalMessage/400-10         	     831	   1371631 ns/op	 1437271 B/op	      12 allocs/op
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	7.673s

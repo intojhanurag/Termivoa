@@ -161,8 +161,10 @@ describe('createProblem', () => {
       .toBe('“brave-otter” already exists in this repository. Pick another name, or tap 🎲 for a new one.');
     expect(createProblem(new ApiError(409, 'not_a_repository', 'no repo'), 'a'))
       .toBe('This folder is not in a git repository. cd into a repo first.');
-    expect(createProblem(new ApiError(429, 'limit_exceeded', 'too many'), 'a'))
-      .toBe('Termivoa reached a limit on this computer. Wait for pending actions to finish and check the session and worktree limits before trying again.');
+    for (const hostMessage of ['too many', 'another worktree is being created', 'private peer details']) {
+      expect(createProblem(new ApiError(429, 'limit_exceeded', hostMessage), 'a'))
+        .toBe('Termivoa reached a limit on this computer. Wait for pending actions to finish, such as another worktree creation, or remove a finished worktree or session, then try again.');
+    }
     expect(createProblem(new ApiError(422, 'worktree_failed', 'git worktree add failed: husky - post-checkout failed'), 'a'))
       .toBe('git worktree add failed: husky - post-checkout failed. Nothing was left behind, so you can try again.');
     expect(createProblem(new ApiError(0, 'network', 'Connection unavailable'), 'a')).toBe('Connection unavailable');

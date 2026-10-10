@@ -5,7 +5,8 @@
 //
 //   node scripts/docs-screenshots/herdr.mjs [--web-build]
 //
-// Writes phone-herdr-*.webp (390×844) next to this file; copy them to
+// Writes phone-herdr-*.webp (tab, live, create) and phone-settings-main, -computer
+// (390×844) next to this file; copy them to
 // site/src/assets/docs/.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,7 +60,11 @@ try {
   const app = await browser.page();
   browser.pages = [app];
   const shot = async (name) => { await sleep(800); await app.shot(join(PNG, `${name}.png`)); console.log('shot', name); };
-  const sessions = async () => { await app.front(); await app.go(`${mac.origin}/`); await app.waitText('Sessions'); };
+  const sessions = async () => {
+    await app.front(); await app.go(`${mac.origin}/`); await app.waitText('Sessions');
+    // The Home Screen hint pushes the list down; close it the way a user would.
+    if (await app.eval(`document.body.innerText.includes('add Termivoa to your Home Screen')`)) await click(app, 'Not now');
+  };
 
   step = 'pair';
   await app.go(`${mac.origin}/`);
@@ -91,7 +96,7 @@ try {
     const chip = await app.eval(`[...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim().startsWith('herdr'))`).catch(() => null);
     if (chip === null) return false;
     await app.eval(`[...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim().startsWith('herdr')).click()`);
-    return until(() => app.eval(`document.body.innerText.includes('silver-meadow') && document.body.innerText.toLowerCase().includes('on vps')`), { timeout: 8000, what: 'mac and vps projects' });
+    return until(() => app.eval(`document.body.innerText.includes('silver-meadow') && document.body.innerText.includes('acme-web')`), { timeout: 8000, what: 'mac and vps projects' });
   }, { what: 'the herdr tab with both computers', timeout: 90000 });
   await shot('herdr-tab');
 
@@ -113,11 +118,17 @@ try {
   await shot('herdr-create');
   await click(app, 'Close');
 
-  step = 'integrations';
+  // Settings main page: one card per computer with its herdr (and GitHub) chips.
+  step = 'settings-main';
   await app.go(`${mac.origin}/settings`);
-  await until(() => app.eval(`document.body.innerText.includes('herdr on mac') && document.body.innerText.includes('herdr on vps')`), { what: 'both Integrations cards', timeout: 20000 });
-  await app.eval(`document.getElementById('integrations-heading').scrollIntoView({ block: 'start' }); scrollBy(0, -16)`);
-  await shot('herdr-integrations');
+  await until(() => app.eval(`document.querySelectorAll('.sc-card').length === 2 && [...document.querySelectorAll('.sc-card')].every((e) => e.innerText.includes('herdr'))`), { what: 'both computer cards with herdr', timeout: 20000 });
+  await shot('settings-main');
+
+  // A computer page: the herdr and GitHub blocks of mac.
+  step = 'settings-computer';
+  await app.eval(`[...document.querySelectorAll('.sc-card .sc-open')].find((e) => e.querySelector('.computer-name')?.innerText.trim() === 'mac').click()`);
+  await until(() => app.eval(`document.body.innerText.includes('‹ Settings') && document.body.innerText.includes('Buzz when blocked')`), { what: 'the mac page', timeout: 20000 });
+  await shot('settings-computer');
 
   step = 'convert';
   await convert(await browser.page({ bypassCSP: true }));
@@ -133,7 +144,7 @@ process.exit(process.exitCode ?? 0);
 
 /** PNG (DPR 3) to WebP at 390 × 844 CSS px through a canvas. */
 async function convert(page) {
-  for (const name of ['herdr-tab', 'herdr-live', 'herdr-create', 'herdr-integrations']) {
+  for (const name of ['herdr-tab', 'herdr-live', 'herdr-create', 'settings-main', 'settings-computer']) {
     const data = readFileSync(join(PNG, `${name}.png`)).toString('base64');
     const webp = await page.eval(`(async () => {
       const img = new Image(); img.src = 'data:image/png;base64,${data}'; await img.decode();
