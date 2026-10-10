@@ -260,6 +260,28 @@ no total-host CPU or full-soak claim. Commands, raw results and doc coverage:
 Pending: parent integration/PR review, integrated busy soak, iPhone/Android
 Wall + Live checks and Windows evidence. No push/PR/merge/deploy by the helper.
 
+### Later phones get notification attempts after many hung subscriptions (#207, 2026-10-08)
+
+- Reproduced against `08f0332` via a Go source overlay: 25 and 64 fake
+  subscriptions, with all but the last hanging and the production timeout
+  ratio preserved, returned zero accepted messages after the shared deadline.
+- Each request now gets a bounded share of half the remaining send window,
+  with the other half reserved for encryption, scheduling and cleanup.
+  Four workers, 64 subscriptions and rate/in-flight bounds stay unchanged.
+  Temporary timeouts and cancellation keep subscriptions; expired or invalid
+  ones still leave. No schema or protocol change, no new pairing.
+- Passed on macOS arm64/Go 1.27.1: `go test -race -count=10 ./internal/webpush`,
+  `go test -race ./internal/store`, `go vet ./internal/webpush ./internal/store`
+  and `git diff --check`. With Node 24.11.0/pnpm 10.33.0,
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`
+  passed (29 pages, all internal links valid). The tests reach the healthy
+  endpoint before the deadline, try every endpoint within four workers,
+  finish without live requests and retain transiently failing subscriptions.
+- Evidence, reproduction and slow-service tradeoff:
+  [issue-207](evidence/issue-207/README.md). Full repository checks, independent
+  PR review and hosted checks remain for the coordinator. No real pushes
+  sent; real iPhone and other real-device gates stay open.
+
 ### Summary (2026-09-27)
 
 The v0 flow is complete on `main` and verified on the macOS development

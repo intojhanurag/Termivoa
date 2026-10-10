@@ -79,6 +79,8 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
 
+**Next beta:** a temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
+
 ## Next is not there after a notification tap
 
 **Next beta.** Reload Termivoa once after an update, then tap a new notification. The **Next** button of [Needs you](/docs/guides/needs-you/) needs the updated app to be active; right after an update the old one can still handle the tap.

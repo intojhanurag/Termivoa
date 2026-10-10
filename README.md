@@ -86,6 +86,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   changed question is never answered by mistake.
 - **Notifications.** A buzz when an agent waits or finishes, from every
   computer you paired. Only the session name and status, never terminal text.
+  Next beta: many stalled push subscriptions no longer use up the whole
+  send window before another phone gets a delivery attempt.
 - **Needs you.** One list of every agent that waits for you, on every
   computer and in herdr, with a **Next** button to go from one to the next.
   A notification tap starts there too. Next beta.
