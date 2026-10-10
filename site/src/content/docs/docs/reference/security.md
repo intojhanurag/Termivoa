@@ -14,7 +14,7 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 - `pterm setup` refuses to run while other Tailscale Serve handlers share the Termivoa address (port 443), and `pterm doctor` reports them. Such a handler is the same origin as the app, so it could act as the app. Handlers on other ports of the same computer are other origins, but browsers send them the Termivoa cookie, so `pterm doctor` warns about them. Termivoa's own preview port 8443 removes the cookie.
 - `pterm` runs the Tailscale CLI only when no other user can replace it (the file and every folder up to `/` belong to root or to you and are not writable by others), and checks this again before each run. `pterm doctor` says why it refused one.
 - An `/api` request must say where it comes from (`Origin` or `Sec-Fetch-Site: same-origin`), so a page on another computer in your tailnet cannot read your API with your cookie. This needs iOS 16.4 or later on iPhone, also with one computer.
-- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm doctor` reports Funnel as a problem. `pterm setup` refuses to run while Funnel is on for port 443 or 8443, also a Funnel that runs in the foreground (`tailscale funnel` without `--bg`), and prints how to turn it off.
+- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm doctor` and `pterm launch` warn about Funnel. `pterm setup` and `pterm pair` refuse to run while Funnel is on for port 443 or 8443, also a Funnel that runs in the foreground (`tailscale funnel` without `--bg`), and print how to turn it off.
 
 ## How does pairing work?
 
@@ -92,10 +92,6 @@ It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/
 
 ## What does the phone see and do with herdr?
 
-:::note[Next beta]
-Not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/herdr/).
-:::
-
 A paired phone can already run any command in a Termivoa session, so herdr gives it no new power on the computer.
 
 | | |
@@ -117,10 +113,6 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 
 ## What does GitHub change?
 
-:::note[Next beta]
-Not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
-:::
-
 When you tap **Connect** on a computer's page in **Settings**, that computer logs in to GitHub with the Termivoa GitHub App. Nothing changes on a computer that you do not connect.
 
 | Question | Answer |
@@ -141,9 +133,9 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 
 **Disconnect** on a computer's page in **Settings** (or `pterm github disconnect`) asks GitHub to revoke the login and removes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
 
-**Next beta:** confirmed `pterm uninstall --delete-data` on macOS and Linux tries to revoke this computer's saved GitHub login before deleting it locally. If GitHub does not confirm revocation, Termivoa prints the [Authorized GitHub Apps](https://github.com/settings/applications) link so you can revoke manually. Canceling while revocation is running stops before local deletion. A copied login can remain usable when revocation is unconfirmed; check GitHub rather than assuming it ended.
+Confirmed `pterm uninstall --delete-data` on macOS and Linux tries to revoke this computer's saved GitHub login before deleting it locally. If GitHub does not confirm revocation, Termivoa prints the [Authorized GitHub Apps](https://github.com/settings/applications) link so you can revoke manually. Canceling while revocation is running stops before local deletion. A copied login can remain usable when revocation is unconfirmed; check GitHub rather than assuming it ended.
 
-**Next beta:** when Termivoa removes its saved GitHub login, it preserves another file linked to the same stored contents. Local deletion is not secure erasure: copies and backups can retain the login. Use GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) to end access for a copied login.
+When Termivoa removes its saved GitHub login, it deletes only its own file name. It does not overwrite the contents. If another file is a hard link to the same contents, that file stays and still holds the login. Local deletion is not secure erasure: copies and backups can keep the login. Use GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) to end access for a copied login.
 
 ## Who can see changes, commit and push?
 
@@ -151,8 +143,8 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 - [Files](/docs/guides/files/) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
-- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks. **Next beta:** timed-out writes stop git's ordinary hook children before returning; this is cleanup, not a sandbox. Hooks remain trusted programs and can deliberately launch detached programs on macOS or Linux.
-- Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone. **Next beta:** in a folder that Termivoa cloned from GitHub, git uses Termivoa's GitHub login for that repository. See [What does GitHub change?](#what-does-github-change)
+- A commit includes only ticked files that git lists as changed, and runs your repository's own hooks. Timed-out writes stop git's ordinary hook children before returning; this is cleanup, not a sandbox. Hooks remain trusted programs and can deliberately launch detached programs on macOS or Linux.
+- Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone. In a folder that Termivoa cloned from GitHub, git uses Termivoa's GitHub login for that repository. See [What does GitHub change?](#what-does-github-change)
 
 ## What does Termivoa store?
 
@@ -160,8 +152,9 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 | --- | --- |
 | Paired phones, projects, shell profiles, session names, settings | Terminal output and history |
 | Notification subscriptions | Your typing |
-| Logs | Pairing links and login secrets in clear text (only a one-way hash is kept) |
-| **Next beta:** the GitHub login of that computer, if you connected one | The GitHub login on the phone or in a log |
+| The private key that signs notifications to the push service, in the database | Pairing links and phone sign-in cookies in clear text (only a one-way hash is kept) |
+| Logs | The GitHub login on the phone or in a log |
+| The GitHub login of that computer, if you connected one, in a file that only your user account can read. It is not encrypted. | |
 
 Home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
 
@@ -187,8 +180,8 @@ With several computers, each computer sends its own notifications straight to yo
 - With **Found on your network** anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
 - A preview from another computer can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home cannot be reached, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
-- **Next beta:** if you change herdr's prefix key from `ctrl+b`, a phone with control of a herdr terminal could send that prefix key to herdr. At worst it detaches the phone. `pterm doctor` warns about it.
-- **Next beta:** a GitHub code that someone else started, a stolen GitHub login, or a backup of a connected computer gives access to your chosen repositories until you revoke **Termivoa** on GitHub. See [What does GitHub change?](#what-does-github-change)
+- If you change herdr's prefix key from `ctrl+b`, a phone with control of a herdr terminal could send that prefix key to herdr. At worst it detaches the phone. `pterm doctor` warns about it.
+- A GitHub code that someone else started, a stolen GitHub login, or a backup of a connected computer gives access to your chosen repositories until you revoke **Termivoa** on GitHub. See [What does GitHub change?](#what-does-github-change)
 - The controls have automated tests, but no independent security audit yet.
 
 ## Common questions
@@ -199,7 +192,7 @@ Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access
 
 ### Can someone on the internet reach my terminal?
 
-No. Only devices in your tailnet can.
+No. Only devices in your tailnet can reach it, and only phones you paired can use it.
 
 ### Does this website count visitors?
 
@@ -216,7 +209,7 @@ This is a one-person project. You get a reply within 7 days, and a first assessm
 
 ## How are private saved files checked?
 
-**Next beta:** Termivoa checks a private file before repairing its permissions.
+Termivoa checks a private file before repairing its permissions.
 Linked files, shared hard links, unsafe types and disallowed owners are refused.
 Normal owned files keep their identity while their permissions are tightened.
 

@@ -50,7 +50,7 @@ On Android, Chrome can also add it to the home screen.
 
 ## Add another computer
 
-Pair the phone with one computer first; it becomes home. To use more computers from the same app, run `pterm pair --via <home>` on each other computer, then tap **Add** next to it in **Settings → Found on your network**, or scan, paste or tap its link in the app. You check the code the same way. See [Use several computers](/docs/guides/computers/).
+Pair the phone with one computer first; it becomes home. To use more computers from the same app, run `pterm pair --via <home>` on each other computer, then tap **Add** next to it in **Settings → Computers → Found on your network**, or scan, paste or tap its link in the app. You check the code the same way. See [Use several computers](/docs/guides/computers/).
 
 ## See and rename your phones
 

@@ -1,7 +1,7 @@
 ---
 title: Sessions
 description: Use the Termivoa Sessions list on your phone to start, read, rename and end the shells and coding agents that run on your computer.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
@@ -14,8 +14,11 @@ Each row shows:
 
 - the session name, which follows the folder after `cd` unless you renamed the session;
 - the project, shell and age, for example "Home · zsh · 35 min";
+- for a session in a [worktree](/docs/guides/worktrees/), the **⎇** badge with the worktree name in front, for example "⎇ fix-login · Home · zsh · 35 min";
 - the last line of output, or the question when an agent waits for you;
 - a dot for new output since this phone last opened it.
+
+With [several computers](/docs/guides/computers/) and **All computers** chosen, each computer's sessions are under a header with its colour dot and name.
 
 Sessions that wait for you are at the top. Tap a row to open it in the [live terminal](/docs/guides/live-terminal/), which shows the session's full folder path.
 
@@ -35,10 +38,13 @@ The **run first** command is typed once, with Enter, only if no one else has con
 | **Working** | Busy, or printed output in the last few seconds. |
 | **Waiting** | An agent or `[y/N]` prompt waits for you. The row shows the question and **Answer ›**. |
 | **Your turn** | An agent finished and you have not opened the session since. |
+| **Starting** | The session is starting. |
+| **Ending** | The session is ending. |
 | **Exited** | The shell ended, with its exit code if any, for example **Exited · 1**. |
 | **Lost** | The computer restarted, you logged out, or the broker (the background process that owns sessions) stopped. |
+| **You**, **Other device** or **No one** | Who has [control](/docs/guides/live-terminal/#take-control-to-type), shown when no other badge shows. |
 
-A plain shell at its prompt shows no badge. Waiting sessions can [notify your phone](/docs/guides/notifications/). After time away, a [recap card](/docs/guides/recap/) says what happened.
+A plain shell at its prompt shows who has control. Waiting sessions can [notify your phone](/docs/guides/notifications/). After time away, a [recap card](/docs/guides/recap/) says what happened.
 
 ## Rename a session
 
@@ -52,19 +58,9 @@ A plain shell at its prompt shows no badge. Waiting sessions can [notify your ph
 
 This stops the program and everything it started. On the computer, get the ID from `pterm list` and run `pterm terminate <session-id>`.
 
-## Common questions
-
-### Does a session stop when I close Termivoa?
-
-No. It runs on the computer until the program exits, you end it, or it is lost.
-
-### Why does it say "This session is gone"?
-
-The session ended and cannot come back or open. It stays on the list as **Exited** or **Lost**. Start a new session. Termivoa never runs old commands again.
-
 ## How do I read an older session's age?
 
-**Next beta:** Termivoa uses compact elapsed ages for sessions and last-seen computer labels.
+Termivoa uses compact elapsed ages for sessions and last-seen computer labels.
 
 | Label | Meaning |
 | --- | --- |
@@ -75,3 +71,13 @@ The session ended and cannot come back or open. It stays on the list as **Exited
 | No age label | The date is missing or unreadable. |
 
 Months and years are approximate elapsed units.
+
+## Common questions
+
+### Does a session stop when I close Termivoa?
+
+No. It runs on the computer until the program exits, you end it, or it is lost.
+
+### Why does it say "This session is gone"?
+
+The session ended and cannot come back or open. It stays on the list as **Exited** or **Lost**. Start a new session. Termivoa never runs old commands again.

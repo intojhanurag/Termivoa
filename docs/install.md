@@ -1,6 +1,6 @@
 # Installing Termivoa
 
-> Status: **private beta** (`v0.1.0-beta.3`). The binaries are **unsigned**.
+> Status: **free and open-source beta** (`v0.1.0-beta.4`). The binaries are **unsigned**.
 > Signed and notarized releases need the owner's Apple Developer ID and Windows
 > code-signing identity. Nothing below has passed the release gate yet. You can
 > also build from source ([README: build from source](../README.md#build-from-source)) or
@@ -11,12 +11,13 @@
 > short version of this guide is the
 > [quick start](https://termivoa.com/docs/quick-start/).
 
-## Private beta
+## Download a release
 
-The beta is a prerelease in the private repository, so only invited
-collaborators can download it. Use the [GitHub CLI](https://cli.github.com/)
-(`gh auth login` first). Files that `gh` downloads get no "downloaded from the
-internet" mark, so macOS and Windows do not block the unsigned binary. A
+The beta is a prerelease in the public repository. Anyone can download it
+with `curl`; no GitHub account is needed. Files that `curl` (or the
+[GitHub CLI](https://cli.github.com/), `gh`) downloads get no "downloaded from
+the internet" mark, so macOS and Windows do not block the unsigned binary
+(checked on macOS 26: `curl` adds no `com.apple.quarantine` attribute). A
 browser download does get the mark: macOS then refuses to open it and Windows
 shows SmartScreen.
 
@@ -27,7 +28,7 @@ macOS (Apple Silicon):
 
 ```sh
 mkdir -p ~/.local/bin
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+curl -fsSL -o ~/.local/bin/pterm https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/pterm-darwin-arm64
 chmod +x ~/.local/bin/pterm
 ~/.local/bin/pterm setup
 ```
@@ -35,22 +36,30 @@ chmod +x ~/.local/bin/pterm
 Linux (x86_64; use `pterm-linux-arm64` on arm64):
 
 ```sh
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+base=https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4
+curl -fsSL --remote-name-all $base/pterm-linux-amd64 $base/install-linux.sh $base/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
 sh install-linux.sh ./pterm-linux-amd64
 ```
 
-Windows 11 (x64, PowerShell):
+Windows 11 (x64, PowerShell; `curl.exe` ships with Windows):
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
 cd "$env:LOCALAPPDATA\Programs\Termivoa"
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+curl.exe -fsSL -o pterm.exe https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/pterm-windows-amd64.exe
 .\pterm.exe setup
 ```
 
+`gh release download v0.1.0-beta.4 -R intojhanurag/Termivoa -p <file>` works
+as well.
+
 Keep the executable where it is after setup: the startup entries point to its
-path. `SHA256SUMS` in the release lists the checksum of every file
-(`shasum -a 256 -c SHA256SUMS --ignore-missing`). Then continue with
+path. `SHA256SUMS` in the release lists the checksum of every file under
+its release name. `shasum -a 256 -c SHA256SUMS --ignore-missing` checks only
+files that keep that name (it fails with "no file was verified" for a file
+saved as `pterm`); for a renamed file, compare `shasum -a 256 <file>` with
+its line in `SHA256SUMS`. Then continue with
 [Pair your phone](https://termivoa.com/docs/pair-your-phone/).
 
 Termivoa runs two per-user processes from one `pterm` executable:
@@ -139,8 +148,8 @@ As root it prints the commands that make a normal user and copy the files
 to it; under `sudo` it says to run it without `sudo`. If the shell does not
 find `pterm` yet, setup's last lines give the `export PATH=…` command for
 this terminal, and say whether new logins have it (bash with Ubuntu's
-`~/.profile` does; zsh does not). Invited beta testers can download the
-binary instead of building it; see [Private beta](#private-beta).
+`~/.profile` does; zsh does not). You can download the
+binary instead of building it; see [Download a release](#download-a-release).
 
 Linux uses the XDG directories:
 
@@ -568,7 +577,7 @@ Start a session and tap **Take control**. `pterm attach` starts read-only;
 `--control` takes control. Ctrl+] detaches without ending the session.
 
 
-### Next beta: how is the GitHub login removed during uninstall?
+### How is the GitHub login removed during uninstall?
 
 On macOS/Linux, confirmed `pterm uninstall --delete-data` tries to revoke the
 saved pair before removing local data. A request-only outage prints the

@@ -6,10 +6,6 @@ lastUpdated: 2026-10-10
 
 Termivoa puts every coding agent that waits for you, on all your computers, in one list called **Needs you**, and a **Next** button takes you from one to the next.
 
-:::note[Next beta]
-This page describes a feature that is not in `v0.1.0-beta.3` yet. It is a change in the phone app only. Update Termivoa on your home computer to the next beta to get it.
-:::
-
 ## Where is the Needs you tab?
 
 On the Sessions list, **Needs you** is the last tab in the tab row, after **Sessions** (and **herdr**, when a computer has it). An amber number on it counts what waits for an answer, for example **Needs you 3**.

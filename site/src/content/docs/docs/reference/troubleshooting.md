@@ -12,7 +12,7 @@ pterm doctor
 
 ## Keyboard focus goes to the page start after closing a sheet
 
-**Next beta.** Update Termivoa and reload the app. Closing a sheet now
+Update Termivoa and reload the app. Closing a sheet now
 returns focus to the control that opened it, if that control is still
 available. If the control disappeared or became unavailable, use Tab to
 pick another control. Focus that you moved elsewhere stays there.
@@ -39,7 +39,7 @@ Sessions continue when it wakes.
 
 ## Why is the first open slow?
 
-**Next beta:** Termivoa sends compressed app files when your browser supports
+Termivoa sends compressed app files when your browser supports
 them. First open and opening after an update still need a download. Keep
 Tailscale connected and allow that download to finish; later opens can use
 the phone's saved app files. If a custom network proxy rejects the download,
@@ -100,11 +100,11 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
 
-**Next beta:** a temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
+A temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
 
 ## Next is not there after a notification tap
 
-**Next beta.** Reload Termivoa once after an update, then tap a new notification. The **Next** button of [Needs you](/docs/guides/needs-you/) needs the updated app to be active; right after an update the old one can still handle the tap.
+Reload Termivoa once after an update, then tap a new notification. The **Next** button of [Needs you](/docs/guides/needs-you/) needs the updated app to be active; right after an update the old one can still handle the tap.
 
 | You opened the session with | Next shows |
 | --- | --- |
@@ -134,7 +134,7 @@ delivery = "herdr"
 
 `delivery` can be `"off"`, `"herdr"`, `"terminal"` or `"system"`. Then run `herdr server reload-config`; if nothing changes, restart herdr.
 
-**Next beta:** on a computer's page in **Settings**, the **herdr** part with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
+On a computer's page in **Settings**, the **herdr** part with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
 
 ## macOS blocks pterm (Gatekeeper)
 
@@ -305,14 +305,14 @@ Run `pterm setup` again and answer `y` to the linger question. More in [Keep ses
 ## Why did a commit, push or worktree creation time out?
 
 Termivoa allows about two minutes for a git write. A slow hook or remote can
-exceed that. **Next beta:** git and its ordinary hook children are stopped
+exceed that. Termivoa stops git and its ordinary hook children
 before failure is reported or a failed worktree is cleaned up. Check the
 branch and files before retrying: a completed commit or push is not undone.
 Fix the hook or connection on the computer. Termivoa does not automatically
 send the write again. A program that a hook deliberately detached on macOS
 or Linux is outside this cleanup; manage it on the computer.
 
-## Changes says "not a git repository"
+## Changes says "This folder is not a git repository."
 
 `cd` into your project in the terminal, then tap **Refresh**. The session's folder is not in a git repository.
 
@@ -324,16 +324,17 @@ or Linux is outside this cleanup; manage it on the computer.
 
 Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<name>` or branch `termivoa/<name>` exists. A removed worktree keeps its branch (and name) until you run `git branch -d termivoa/<name>`.
 
-## New worktree says there are too many worktrees
-
-Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
-
 ## New worktree says "Termivoa reached a limit on this computer"
 
-**Next beta.** Termivoa creates one worktree at a time on each computer.
-Wait for any earlier create to finish, then try **Create** again. If no
-create is running, remove a finished worktree or end a finished session to
-make room. Extra requests are refused immediately and do not run later.
+The phone shows "Termivoa reached a limit on this computer. Wait for other actions to finish, or remove a worktree or session you no longer need, then try again." It has these causes:
+
+| Cause | Fix |
+| --- | --- |
+| Another worktree is being created. Termivoa creates one worktree at a time on each computer. | Wait for it to finish, then tap **Create** again. |
+| The repository has 50 worktrees in `~/termivoa/worktrees`, the most allowed. | Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. |
+| The computer has too many sessions or running actions. | End a finished session, then try again. |
+
+Extra requests are refused at once and do not run later.
 
 If the app closed while a create was already running, check Sessions for
 its worktree before making another. The computer can still finish that
@@ -506,10 +507,6 @@ That computer could not be set up for notifications; home and the other computer
 
 ## herdr
 
-:::note[Next beta]
-These entries are not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/herdr/).
-:::
-
 ### The herdr tab is missing
 
 Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` line when it finds herdr.
@@ -517,7 +514,7 @@ Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` lin
 - herdr is not installed. Install herdr 0.8.2 or later.
 - Termivoa cannot find it. It looks in the Homebrew folder (macOS), `/usr/local/bin`, `/usr/bin` (Linux), `~/.local/bin` and `~/.cargo/bin`, and then on the `PATH` that Termivoa runs with. It checks again about every 30 seconds.
 - **On** is off on that computer's page in **Settings**. Turn it on.
-- Termivoa on that computer is older than the next beta. Update it.
+- Termivoa on that computer is older than `v0.1.0-beta.4`. Update it.
 
 ### The herdr card says "Not installed"
 
@@ -531,15 +528,15 @@ Termivoa started herdr's server, but it did not answer in time. Run `herdr serve
 
 ### Why does "codex is not available in herdr now." appear?
 
-**Next beta:** Termivoa offers supported agent kinds when their commands are installed or an agent of that kind runs in herdr. The picked kind is no longer available to the latest check. The **New worktree** or **New tab** sheet falls back to no agent and never starts another kind in its place. Pick a listed agent, or check its installation on that computer and tap **Check again**.
+Termivoa offers supported agent kinds when their commands are installed or an agent of that kind runs in herdr. The picked kind is no longer available to the latest check. The **New worktree** or **New tab** sheet falls back to no agent and never starts another kind in its place. Pick a listed agent, or check its installation on that computer and tap **Check again**.
 
 ### Why is an installed agent missing from herdr's choices?
 
-**Next beta:** Termivoa checks commands without starting them. An agent installed only through herdr's shell settings may be missing until it runs there once. Check that herdr supports starting that kind and that the command is installed for the computer running Termivoa, then tap **Check again**. Choices are limited to 16, with running kinds first. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
+Termivoa checks commands without starting them. An agent installed only through herdr's shell settings may be missing until it runs there once. Check that herdr supports starting that kind and that the command is installed for the computer running Termivoa, then tap **Check again**. Choices are limited to 16, with running kinds first. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
 
 ### Why does herdr say "too many requests; wait a minute and try again"?
 
-Termivoa limits repeated creates on each computer. **Next beta:** a refusal
+Termivoa limits repeated creates on each computer. A refusal
 before creation starts keeps your allowance; an attempted create still
 counts if it fails. **New worktree** and **New tab** with an agent share
 three attempts per minute. Wait about a minute before another create. If a
@@ -630,17 +627,13 @@ Someone attached to that terminal directly in herdr, or its pane closed at that 
 
 ## GitHub
 
-:::note[Next beta]
-These entries are not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
-:::
-
 ### There is no GitHub part on a computer's page in Settings
 
 Check each cause. `pterm github status` on the computer says "GitHub: not available in this build" when the build has no GitHub.
 
-- Termivoa on that computer is older than the next beta. Update it.
+- Termivoa on that computer is older than `v0.1.0-beta.4`. Update it.
 - The computer runs Windows. GitHub is for macOS and Linux only.
-- The Termivoa build has no GitHub App. Use a release build of the next beta.
+- The Termivoa build has no GitHub App. Use a release build, `v0.1.0-beta.4` or later.
 
 ### "git is not on mac. GitHub needs it."
 
@@ -722,7 +715,7 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 
 ## Why does Termivoa say too many operations are in progress?
 
-**Next beta:** Termivoa limits simultaneous slow actions on each computer.
+Termivoa limits simultaneous slow actions on each computer.
 On home, a slow action can say **too many operations in progress; try again
 after one finishes**. Worktree creation instead says **Termivoa reached a
 limit on this computer.** Wait for a pending action to finish, then try
@@ -740,7 +733,7 @@ See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-a
 
 ## What if uninstall cannot confirm GitHub revocation?
 
-**Next beta, macOS and Linux:** Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
+On macOS and Linux, Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
 
 | Output or result | What should I do? |
 | --- | --- |
@@ -751,7 +744,7 @@ See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-a
 
 ## Why is a private file refused?
 
-**Next beta:** Termivoa refuses a linked, shared, wrongly owned or non-file
+Termivoa refuses a linked, shared, wrongly owned or non-file
 object where it expects a private file. An unreadable file or one that changes
 during a permission check can also be refused. The refusal may prevent startup
 or leave GitHub unavailable.
@@ -772,7 +765,7 @@ private saved files checked?](/docs/reference/security/#how-are-private-saved-fi
 
 ## Why does History say unavailable?
 
-**Next beta:** Termivoa says **History unavailable right now. Return to live
+Termivoa says **History unavailable right now. Return to live
 and try again.** if the computer cannot finish a consistent history read,
 output keeps changing, or the read reaches its limits. A loading attempt has
 one minute. Tap **Done**, let output slow, then tap **history** again. It
@@ -787,19 +780,19 @@ See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
 
 ## Why is herdr Start or Create and start temporarily off?
 
-**Next beta:** Termivoa waits for **Checking available agents…** to finish before starting an agent. The choices update in place; a removed selection stays unselected. **Shell** and **No agent** remain available. If a check fails, last known choices remain and the computer may refuse an agent that stopped. See [herdr agent checks](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
+Termivoa waits for **Checking available agents…** to finish before starting an agent. The choices update in place; a removed selection stays unselected. **Shell** and **No agent** remain available. If a check fails, last known choices remain and the computer may refuse an agent that stopped. See [herdr agent checks](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
 
 ## Why can I not close a herdr workspace's last tab?
 
-**Next beta:** Termivoa closes a workspace to end its last tab. When **Close workspace** is off, close its linked worktrees first, or close workspaces sharing the project's main folder in herdr on the computer. If the list changed during a close, inspect it again before trying another action.
+Termivoa closes a workspace to end its last tab. When **Close workspace** is off, close its linked worktrees first, or close workspaces sharing the project's main folder in herdr on the computer. If the list changed during a close, inspect it again before trying another action.
 
 ## Why does a GitHub repository have no push age?
 
-**Next beta:** Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
+Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#what-does-a-repositorys-push-age-mean).
 
 ## Why does Termivoa not start after a backup hard-linked its files?
 
-**Next beta:** on macOS and Linux, Termivoa refuses a private file that has a
+On macOS and Linux, Termivoa refuses a private file that has a
 second hard link. Some backup tools, such as rsnapshot or `cp -al`, make
 backups with hard links instead of copies. Then Termivoa's database or
 GitHub login is also reachable through the backup, so the broker stops at

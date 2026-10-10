@@ -1,30 +1,29 @@
 ---
 title: Install on macOS
-description: Install the Termivoa pterm beta on an Apple Silicon Mac with the GitHub CLI, then let setup start it at every login with two LaunchAgents.
-lastUpdated: 2026-10-04
+description: Install the free Termivoa pterm beta on an Apple Silicon Mac with one curl download, then let setup start it at every login with two LaunchAgents.
+lastUpdated: 2026-10-10
 ---
 
-Termivoa installs on an Apple Silicon Mac as one file, `pterm`, that you download with the GitHub CLI and set up with `pterm setup`.
+Termivoa installs on an Apple Silicon Mac as one file, `pterm`, that you download from GitHub and set up with `pterm setup`. It is free and open source; you need no account.
 
 :::note
-Private beta. The Mac has the most testing, including with a real iPhone.
+Open-source beta (`v0.1.0-beta.4`). The binaries are not signed. The Mac has the most testing, including with a real iPhone.
 :::
 
 ## Requirements
 
 - A Mac with Apple Silicon (M1 or later).
 - [Tailscale](https://tailscale.com/download) on the Mac and the phone, signed in to the same account.
-- The [GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login`. You need an invite to the private repository.
 
-No Node.js, Go or other tools are needed.
+No Node.js, Go or other tools are needed. [Set up a GitHub repository](/docs/guides/github/) also needs `git` on the computer.
 
 ## Install
 
-Make a folder, download the beta, make it runnable and run setup:
+Make a folder, download the beta with `curl`, make it runnable and run setup:
 
 ```sh
 mkdir -p ~/.local/bin
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+curl -fsSL -o ~/.local/bin/pterm https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/pterm-darwin-arm64
 chmod +x ~/.local/bin/pterm
 ~/.local/bin/pterm setup
 ```
@@ -32,8 +31,14 @@ chmod +x ~/.local/bin/pterm
 Then follow [Pair your phone](/docs/pair-your-phone/).
 
 :::caution
-Download with `gh`, not a browser. The binary is not signed, and macOS blocks unsigned files from a browser, but not from `gh`.
+Download with `curl` or `gh`, not a browser. The binary is not signed. macOS blocks unsigned files that a browser downloads, but not files from `curl` or `gh`.
 :::
+
+With the [GitHub CLI](https://cli.github.com/) (`gh`), this line replaces the `curl` line:
+
+```sh
+gh release download v0.1.0-beta.4 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+```
 
 ## Use `pterm` without the full path
 
@@ -46,11 +51,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 
 ## Check the download (optional)
 
-Download the release's `SHA256SUMS` file next to the binary and run:
+Before you run setup, compare the checksum (a fingerprint of the file) with the release's `SHA256SUMS` file:
 
 ```sh
-shasum -a 256 -c SHA256SUMS --ignore-missing
+curl -fsSL https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/SHA256SUMS | grep pterm-darwin-arm64
+shasum -a 256 ~/.local/bin/pterm
 ```
+
+The two long numbers must be the same. If they are not, delete `~/.local/bin/pterm` and download it again.
 
 ## Where does pterm put its files?
 

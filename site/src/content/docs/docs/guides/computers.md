@@ -154,13 +154,13 @@ The camera stops when the app reads a code, when you tap **Cancel**, and when yo
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |
 | [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer) | Works per computer. Each computer answers the preview question in `pterm setup` itself. A computer on an older Termivoa shows no **Preview ready** chip. The bar over a page from another computer shows `vps · untrusted page`. |
-| [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
+| [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → This phone → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
 
 With one computer, there is no side menu and no computer pill.
 
 ## How do I switch between computers?
 
-**Next beta.** Tap the menu button (**≡**) or the computer pill at the top of Sessions. The side menu opens from the left.
+Tap the menu button (**≡**) or the computer pill at the top of Sessions. The side menu opens from the left.
 
 ![The side menu open over Sessions: under Computers, All computers (chosen), mac with 2 sessions and vps with 1 session; at the bottom Needs you, Wall, Settings and + Add a computer.](../../../../assets/docs/phone-computers-drawer.webp)
 
@@ -179,7 +179,7 @@ When you look at one computer and another computer needs you, an amber pill with
 
 ## Where are a computer's settings?
 
-**Next beta.** Open **Settings**. Settings has a main page and one page for each computer.
+Open **Settings**. Settings has a main page and one page for each computer.
 
 ![The Settings main page: under Computers (Home serves this app to your phone.) the cards mac with Home and vps, each with the chips herdr, Connect GitHub and 1 project; Found on your network with the hint to run pterm setup or pterm pair --via mac; + Add a computer; and This phone with Name iPhone, Notifications Off, Terminal text size 14 px and Build.](../../../../assets/docs/phone-settings-main.webp)
 

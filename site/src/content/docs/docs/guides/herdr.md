@@ -6,10 +6,6 @@ lastUpdated: 2026-10-10
 
 Termivoa shows the projects of your computers' herdr on your phone, so you can see which coding agent is blocked, open its terminal and answer it.
 
-:::note[Next beta]
-This page describes features that are not in `v0.1.0-beta.3` yet. Update Termivoa on the computer to the next beta to get them.
-:::
-
 ## What is herdr?
 
 [herdr](https://herdr.dev) is a terminal workspace tool, and the first [provider](/docs/providers/) that Termivoa supports. It runs coding agents in workspaces, tabs and panes. Termivoa reads each computer's herdr and shows its projects on the phone. It opens one herdr terminal at a time in [Live](/docs/guides/live-terminal/).
@@ -20,10 +16,10 @@ A computer without herdr shows no herdr tab, and nothing changes.
 
 | Need | Detail |
 | --- | --- |
-| herdr 0.8.2 or later | Installed on that computer: Homebrew `herdr`, or in `~/.local/bin` or `~/.cargo/bin`, or on the `PATH` that Termivoa runs with. |
+| herdr 0.8.2 or later | Installed on that computer: Homebrew `herdr` (`/opt/homebrew/bin`), or in `/usr/local/bin` (macOS and Linux), `/usr/bin` (Linux), `~/.local/bin` or `~/.cargo/bin`, or on the `PATH` that Termivoa runs with. |
 | herdr running | Its server must run. If it does not, tap **Start herdr** on the phone. Only the default herdr session shows. Named herdr sessions do not show. |
 | macOS or Linux | Windows is not supported. |
-| Termivoa from the next beta | On that computer. |
+| Termivoa `v0.1.0-beta.4` or later | On that computer. |
 | A setting | None. Termivoa finds herdr by itself within about 30 seconds, also when you install herdr while Termivoa runs. The phone shows it the next time you open Termivoa or switch back to it. |
 
 ## What do I see on the phone?
@@ -111,11 +107,11 @@ Open **Settings** and tap the computer's card, such as **mac**. Its page has a *
 
 The switches are saved on that computer, for every phone.
 
-**Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
+Under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → This phone → Notifications**.
 
 ## Which agents can I start?
 
-**Next beta:** Termivoa offers up to 16 agent kinds that herdr supports starting,
+Termivoa offers up to 16 agent kinds that herdr supports starting,
 with kinds already running listed first. You can start an installed agent in
 **New worktree** or **New tab** without starting it manually first.
 
@@ -137,7 +133,7 @@ A worktree is a second folder of a git repository on its own branch. herdr makes
 
 1. In the **herdr** tab, tap **+** on a git project row.
 2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts, and cannot end in `.lock`.
-3. Under **Start an agent in it**, tap an available agent (such as `claude` or `codex`), or **No agent**. **Next beta:** installed agents can appear before any agent runs in herdr, and stay listed after their last running agent stops. The sheet reads the choices again when it opens. If your choice is no longer available, the sheet goes to **No agent** and says, for example, "codex is not available in herdr now." It never starts another agent in its place.
+3. Under **Start an agent in it**, tap an available agent (such as `claude` or `codex`), or **No agent**. Installed agents can appear before any agent runs in herdr, and stay listed after their last running agent stops. The sheet reads the choices again when it opens. If your choice is no longer available, the sheet goes to **No agent** and says, for example, "codex is not available in herdr now." It never starts another agent in its place.
 4. Optional: write a **First prompt (optional)**. It cannot have control characters such as Esc.
 5. Tap **Create and start** (or **Create** with **No agent**).
 
@@ -147,7 +143,7 @@ The sheet says "herdr makes the folder and a new branch from where shop is now."
 
 ### When does a create use my allowance?
 
-**Next beta:** Termivoa allows three attempted creates per minute for each
+Termivoa allows three attempted creates per minute for each
 phone on each computer, shared by **New worktree** and **New tab** with an
 agent. A refusal before creation starts keeps that allowance. Correct the
 choice and try again yourself; Termivoa does not retry a create automatically.
@@ -182,7 +178,7 @@ In the **herdr** tab, each row has a **⋯** button. It opens a menu for that wo
 | **Close tab** | Ends one tab of that workspace. The menu lists the tabs. The last tab has no **Close tab**: use **Close workspace**. | Asks "Close tab 2? Its terminals end." |
 | **Close workspace** | Ends the terminals of that workspace. | Asks "Close silver-meadow? Its terminals end. Files stay." |
 | **Remove worktree** | Closes a worktree and deletes its folder. Only a worktree has this action, never the main checkout. | Asks "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." |
-| **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. For a folder that is not a project yet, tap **Add a folder** in that sheet, or **From GitHub** to put one of your repositories on that computer (**Next beta**, see [GitHub](/docs/guides/github/)). | Nothing to confirm. |
+| **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. For a folder that is not a project yet, tap **Add a folder** in that sheet, or **From GitHub** to put one of your repositories on that computer (see [GitHub](/docs/guides/github/)). | Nothing to confirm. |
 
 A worktree that you closed keeps its folder. It then shows under its project as a dimmed row with **closed**. Tap **Open** to get its workspace back.
 
@@ -240,7 +236,7 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 
 ### Why is there no herdr tab?
 
-herdr is not installed on that computer, or Termivoa cannot find it, or **On** is off on that computer's page in **Settings**, or Termivoa there is older than the next beta. Run `pterm doctor` on the computer. See [The herdr tab is missing](/docs/reference/troubleshooting/#the-herdr-tab-is-missing).
+herdr is not installed on that computer, or Termivoa cannot find it, or **On** is off on that computer's page in **Settings**, or Termivoa there is older than `v0.1.0-beta.4`. Run `pterm doctor` on the computer. See [The herdr tab is missing](/docs/reference/troubleshooting/#the-herdr-tab-is-missing).
 
 ### Can I open a herdr terminal from a link?
 
@@ -256,7 +252,7 @@ Yes. Each computer reads its own herdr. The **herdr** tab shows all of them in *
 
 ## Why does starting an agent wait for a check?
 
-**Next beta:** Termivoa checks that computer's offered agents when **New worktree** opens, when its workspace menu opens, and when **New tab** opens.
+Termivoa checks that computer's offered agents when **New worktree** opens, when its workspace menu opens, and when **New tab** opens.
 
 | What you see | What to do |
 | --- | --- |

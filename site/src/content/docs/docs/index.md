@@ -1,13 +1,13 @@
 ---
 title: Introduction
 description: Termivoa is a phone web app plus the pterm host program that runs terminal sessions and coding agents on your own computer, with no cloud.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 Termivoa lets you use the terminal sessions on your own computer from your phone's browser, privately over Tailscale.
 A session can be a shell or a coding agent, such as Claude Code or Codex.
 
-Status: Private beta (`v0.1.0-beta.3`). Only invited testers can download it.
+Status: free and open-source beta (`v0.1.0-beta.4`). Anyone can download it; the binaries are not signed yet.
 
 ## What is Termivoa?
 
@@ -35,6 +35,10 @@ People who run long terminal jobs or coding agents and want to check on them awa
 | Network | [Tailscale](https://tailscale.com/download) on the computer and the phone, signed in to the same account. |
 
 ## Common questions
+
+### Is Termivoa free?
+
+Yes. Termivoa is free and open source under the Apache-2.0 license. The code is on [GitHub](https://github.com/intojhanurag/Termivoa).
 
 ### Do my sessions stop when I close the phone app?
 

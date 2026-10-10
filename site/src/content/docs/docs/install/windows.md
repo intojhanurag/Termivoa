@@ -1,31 +1,30 @@
 ---
 title: Install on Windows
-description: Install the Termivoa pterm beta on Windows 11 x64 with PowerShell and the GitHub CLI, then start it at every sign-in with two Scheduled Tasks.
-lastUpdated: 2026-10-04
+description: Install the free Termivoa pterm beta on Windows 11 x64 with PowerShell and curl.exe, then start it at every sign-in with two Scheduled Tasks.
+lastUpdated: 2026-10-10
 ---
 
-Termivoa installs on Windows 11 (x64) as one file, `pterm.exe`, that you download with the GitHub CLI and set up with `pterm setup`.
+Termivoa installs on Windows 11 (x64) as one file, `pterm.exe`, that you download from GitHub with `curl.exe` and set up with `pterm setup`. It is free and open source; you need no account.
 
 :::caution
-Private beta. Windows support is written but not yet tested on real hardware.
+Open-source beta (`v0.1.0-beta.4`). The binaries are not signed. Windows support is written but not yet tested on real hardware.
 :::
 
 ## Requirements
 
 - Windows 11 on x64.
 - [Tailscale](https://tailscale.com/download) on the computer and the phone, signed in to the same account.
-- The [GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login`. You need an invite to the private repository.
 
-No administrator rights are needed.
+No administrator rights are needed. [Set up a GitHub repository](/docs/guides/github/) also needs `git` on the computer.
 
 ## Install
 
-In PowerShell, make a folder, download the beta and run setup:
+In PowerShell, make a folder, download the beta with `curl.exe` (part of Windows 11) and run setup:
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
 cd "$env:LOCALAPPDATA\Programs\Termivoa"
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+curl.exe -fsSL -o pterm.exe https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/pterm-windows-amd64.exe
 .\pterm.exe setup
 ```
 
@@ -33,9 +32,26 @@ Then follow [Pair your phone](/docs/pair-your-phone/).
 
 `pterm` is not on your PATH. Where these docs say `pterm`, go to this folder and type `.\pterm.exe`, for example `.\pterm.exe doctor`.
 
-## Why use `gh` and this folder?
+With the [GitHub CLI](https://cli.github.com/) (`gh`), this line replaces the `curl.exe` line:
 
-- The binary is not signed. A browser download gets a "downloaded from the internet" mark that makes SmartScreen warn; a `gh` download does not.
+```powershell
+gh release download v0.1.0-beta.4 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+```
+
+## Check the download (optional)
+
+Before you run setup, compare the checksum (a fingerprint of the file) with the release's `SHA256SUMS` file:
+
+```powershell
+(curl.exe -fsSL https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/SHA256SUMS) | Select-String pterm-windows-amd64.exe
+(Get-FileHash pterm.exe).Hash.ToLower()
+```
+
+The two long numbers must be the same. If they are not, delete `pterm.exe` and download it again.
+
+## Why use `curl.exe` and this folder?
+
+- The binary is not signed. A browser download gets a "downloaded from the internet" mark that makes SmartScreen warn; a `curl.exe` or `gh` download does not.
 - Do not put `pterm.exe` on the Desktop, in Documents or in a Temp folder. OneDrive may move those folders, and setup refuses Temp. The startup tasks run this exact path.
 
 ## How does it start when you sign in?
