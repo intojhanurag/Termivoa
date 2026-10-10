@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -496,7 +498,7 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 	info, err := fs.Stat(handler.assets, name)
 	// Source maps and dotfiles (.vite/manifest.json, .DS_Store) are build
 	// byproducts, never part of the served site.
-	if hidden := path.Ext(name) == ".map" || strings.HasPrefix(name, ".") || strings.Contains(name, "/."); hidden || err != nil || !info.Mode().IsRegular() {
+	if hidden := path.Ext(name) == ".map" || path.Ext(name) == ".gz" || strings.HasPrefix(name, ".") || strings.Contains(name, "/."); hidden || err != nil || !info.Mode().IsRegular() {
 		// /push/<host>/ is the scope of a peer's push registration: no page
 		// may load there, or that worker would control it.
 		// A provider terminal's address (/p/<provider>/<target>, /c/<host>/p/…)
@@ -508,8 +510,36 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 		}
 		name = "index.html"
 	}
-	data, err := fs.ReadFile(handler.assets, name)
+	selected := name
+	if strings.HasPrefix(name, "assets/") {
+		// Sidecars are generated from public immutable assets at build time.
+		// Never compress API bodies or the cookie-dependent app document.
+		response.Header().Add("Vary", "Accept-Encoding")
+		response.Header().Add("Vary", "Range")
+		identityAllowed := acceptsIdentity(request.Header.Values("Accept-Encoding"))
+		// Keep ranges on the original bytes when identity is acceptable.
+		// A multipart range body is not itself a gzip stream.
+		if acceptsGzip(request.Header.Values("Accept-Encoding")) && (request.Header.Get("Range") == "" || !identityAllowed) {
+			if compressed, statErr := fs.Stat(handler.assets, name+".gz"); statErr == nil && compressed.Mode().IsRegular() {
+				selected += ".gz"
+				response.Header().Set("Content-Encoding", "gzip")
+			}
+		}
+		if selected == name && !identityAllowed {
+			response.Header().Set("Cache-Control", "no-store")
+			http.Error(response, "no acceptable asset encoding", http.StatusNotAcceptable)
+			return
+		}
+		if selected != name && request.Header.Get("Range") != "" {
+			// Range is optional: return a full encoded representation when the
+			// client forbids identity, rather than falsely gzip-label multipart.
+			request = request.Clone(request.Context())
+			request.Header.Del("Range")
+		}
+	}
+	data, err := fs.ReadFile(handler.assets, selected)
 	if err != nil {
+		response.Header().Del("Content-Encoding")
 		response.Header().Set("Cache-Control", "no-store")
 		http.NotFound(response, request)
 		return
@@ -527,12 +557,78 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 	response.Header().Set("Content-Type", contentType)
 	if strings.HasPrefix(name, "assets/") {
 		response.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		// The validator and byte ranges describe the selected representation.
+		response.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(data)))
 	} else {
 		// index.html, the service worker, manifest and icons must revalidate
 		// so a new build is picked up.
 		response.Header().Set("Cache-Control", "no-store")
 	}
-	http.ServeContent(response, request, name, time.Time{}, bytes.NewReader(data))
+	// ServeContent cannot infer whether Content-Encoding came from a dynamic
+	// compressor. These bytes are already encoded, including on HEAD requests.
+	// Set the length only on a full 200: a 412 has an empty body.
+	http.ServeContent(fullLength{response, strconv.Itoa(len(data))}, request, name, time.Time{}, bytes.NewReader(data))
+}
+
+type fullLength struct {
+	http.ResponseWriter
+	length string
+}
+
+func (writer fullLength) WriteHeader(code int) {
+	if code == http.StatusOK {
+		writer.Header().Set("Content-Length", writer.length)
+	}
+	writer.ResponseWriter.WriteHeader(code)
+}
+
+func acceptsGzip(headers []string) bool {
+	explicit, wildcard := encodingQuality(headers, "gzip")
+	if explicit >= 0 {
+		return explicit > 0
+	}
+	return wildcard > 0
+}
+
+func acceptsIdentity(headers []string) bool {
+	explicit, wildcard := encodingQuality(headers, "identity")
+	if explicit >= 0 {
+		return explicit > 0
+	}
+	return wildcard != 0
+}
+
+func encodingQuality(headers []string, wanted string) (float64, float64) {
+	explicit, wildcard := -1.0, -1.0
+	for _, header := range headers {
+		for _, entry := range strings.Split(header, ",") {
+			parts := strings.Split(entry, ";")
+			coding := strings.ToLower(strings.TrimSpace(parts[0]))
+			if coding != wanted && coding != "*" {
+				continue
+			}
+			quality := 1.0
+			for _, parameter := range parts[1:] {
+				key, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
+				if !ok || !strings.EqualFold(key, "q") {
+					quality = 0
+					break
+				}
+				q, err := strconv.ParseFloat(value, 64)
+				if err != nil || !(q >= 0 && q <= 1) {
+					quality = 0
+					break
+				}
+				quality = q
+			}
+			if coding == wanted {
+				explicit = max(explicit, quality)
+			} else {
+				wildcard = max(wildcard, quality)
+			}
+		}
+	}
+	return explicit, wildcard
 }
 
 // deviceConnectSources adds the exact https and wss origins of the cookie

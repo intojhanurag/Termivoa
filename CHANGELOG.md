@@ -13,6 +13,14 @@ All notable changes are documented here. The format follows
   repeatedly, while preserving the row and message limits. Phone: no app
   change; the same **history** action reads the same pages.
 
+### Changed
+
+- **Smaller phone downloads** (#223). Phone: first-open and update downloads
+  use gzip for immutable app assets when the browser accepts it. Host: serves
+  build-time compressed files with representation-specific validators,
+  correct HEAD and range behavior, preserving raw assets and source-map
+  exclusions. API bodies and the app document remain uncompressed.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,

@@ -54,6 +54,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   connection (#218, Next beta). Known slow gateway exchanges have four
   independent slots with fail-fast admission. A real Git post-checkout hook
   fixture proves list, authentication and Live-open remain available.
+
+- Immutable phone assets use build-time gzip for smaller first-open and
+  update downloads (#223). Raw representations, service-worker URLs and
+  source-map exclusions remain. Real-phone/cellular and external proxy
+  transfer measurements remain pending.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

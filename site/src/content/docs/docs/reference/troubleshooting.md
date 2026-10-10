@@ -29,6 +29,19 @@ Keep the computer on power and stop sleep:
 
 Sessions continue when it wakes.
 
+## Why is the first open slow?
+
+**Next beta:** Termivoa sends compressed app files when your browser supports
+them. First open and opening after an update still need a download. Keep
+Tailscale connected and allow that download to finish; later opens can use
+the phone's saved app files. If a custom network proxy rejects the download,
+check that it supports ordinary browser content-encoding negotiation.
+
+| Situation | What to check |
+| --- | --- |
+| First open or an update | The phone's connection and Tailscale on both devices |
+| A custom proxy reports a download error | Its content-encoding settings; Termivoa also supplies ordinary uncompressed files |
+
 ## It reconnects often
 
 - Keep the computer awake.

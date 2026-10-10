@@ -12,6 +12,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Smaller phone downloads.** App files transfer compressed on first open and after updates when the phone supports it. No new setup step. See [Download changes](/docs/quick-start/#what-changes-for-downloads-in-the-next-beta).
+
 - **Fixed: a slow worktree creation could hold up other sessions.** The
   Sessions list and new session opens remain available while a checkout or
   hook finishes. Too many simultaneous slow actions ask you to wait until
