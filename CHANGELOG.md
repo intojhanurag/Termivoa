@@ -8,6 +8,18 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Chat view, computer side (next beta; not on the phone until its own
+  screen ships).** Host: `pterm chat on` (asks y/N first) lets the broker
+  read the Claude Code transcript of the agent in a session, read-only and
+  only while a phone has Chat open, and serve it as bounded chat pages
+  (prompts, answers, tool calls with short masked previews, edit counts and
+  one hunk; never thinking text or images). It links a session to a
+  transcript only by the agent's own pid file, its working folder and the
+  file's header, and refuses links, shared files and files others can
+  write. `pterm chat off`, `pterm chat status` and a `pterm doctor` line;
+  any paired phone can turn it off. macOS and Linux. Protocol revision 8.
+  Phone: no change yet.
+
 - **Touch gestures on the Live terminal.** Phone: hold a finger still on
   the terminal, then slide to send arrow keys; with the keyboard up, tap a
   letter on the command line to move the cursor there; swipe sideways on the

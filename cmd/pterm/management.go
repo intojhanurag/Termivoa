@@ -52,6 +52,7 @@ Available commands:
   pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
   pterm github status                Show whether this computer is connected to GitHub.
   pterm github disconnect            Remove this computer's GitHub login.
+  pterm chat on|off|status           Turn Chat view on (asks y/N first) or off, or show it.
   pterm setup [--verbose]            First run: a short plan, one confirmation, startup,
                                      phone address, Tailscale Serve (asks), pairing.
                                      --verbose also shows the checks, the startup

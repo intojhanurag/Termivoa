@@ -16,6 +16,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/transcript"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -33,6 +34,9 @@ type BrokerConfig struct {
 	// nil means no feature (Windows, tests). cmd/pterm builds it; RunBroker
 	// fills its DataDir, RuntimeDir and Profile.
 	GitHub *github.Config
+	// Chat names the folders the Chat view reads (docs/chat-view.md); nil
+	// means Chat is not supported (Windows, tests). cmd/pterm builds it.
+	Chat *transcript.Config
 
 	// Ready is an internal integration-test observation point. It receives no
 	// ownership: the broker remains solely responsible for every value and the
@@ -165,7 +169,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 		Registry: registry, Store: persistence,
 		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority, Push: notifier,
 		Shutdown: shutdown, Development: config.Profile == platform.DevelopmentProfile, Herdr: config.Herdr,
-		GitHub: gitHub,
+		GitHub: gitHub, Chat: config.Chat,
 	})
 	if err != nil {
 		return err

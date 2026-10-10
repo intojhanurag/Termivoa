@@ -4,9 +4,34 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
-type processInfo struct{ pid, parent, session int }
+type processInfo struct {
+	pid, parent, session int
+	start                time.Time
+}
+
+// clockTicks is USER_HZ, the unit of /proc/<pid>/stat starttime.
+// ponytail: 100 on every mainstream Linux build; read sysconf(_SC_CLK_TCK)
+// (cgo) if a host with another value shows up.
+const clockTicks = 100
+
+// bootTime reads btime from /proc/stat: when the system booted.
+func bootTime() time.Time {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return time.Time{}
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(line, "btime "); ok {
+			if seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				return time.Unix(seconds, 0)
+			}
+		}
+	}
+	return time.Time{}
+}
 
 // liveProcesses lists every process that is not a zombie by reading
 // /proc/<pid>/stat. Linux is a development host only. Zombies cannot be
@@ -17,6 +42,7 @@ func liveProcesses() ([]processInfo, error) {
 		return nil, err
 	}
 	var live []processInfo
+	booted := bootTime()
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil || pid <= 0 {
@@ -27,7 +53,7 @@ func liveProcesses() ([]processInfo, error) {
 			continue
 		}
 		// The command name is parenthesized and may contain spaces; fields
-		// after it are: state ppid pgrp session.
+		// after it are: state ppid pgrp session ... starttime (the 20th).
 		closing := strings.LastIndexByte(string(stat), ')')
 		if closing < 0 {
 			continue
@@ -41,7 +67,13 @@ func liveProcesses() ([]processInfo, error) {
 		if parentErr != nil || sessionErr != nil {
 			continue
 		}
-		live = append(live, processInfo{pid: pid, parent: parent, session: sid})
+		info := processInfo{pid: pid, parent: parent, session: sid}
+		if len(fields) > 19 && !booted.IsZero() {
+			if ticks, err := strconv.ParseInt(fields[19], 10, 64); err == nil {
+				info.start = booted.Add(time.Duration(ticks) * time.Second / clockTicks)
+			}
+		}
+		live = append(live, info)
 	}
 	return live, nil
 }

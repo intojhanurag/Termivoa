@@ -15,6 +15,14 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Chat view M1a, host side (2026-10-11, branch `feat/chat-view-host`; not merged)
+
+- Scope: [chat-view.md](chat-view.md) section 14 (approved design) and the new section 15 "Build notes". Protocol revision 8 (`chat`) first, committed alone (`393bd0b`) for the phone side (M1b).
+- Built: `internal/transcript` (bind, tail, Claude parser, masking, guard), `internal/broker/chat.go` (hub, pull flow, switch), `ptyhost.TreeProcesses`, `pterm chat on|off|status`, the doctor line, `PATCH /api/v1/chat` (off only), `scripts/fakeagent`, `scripts/chat-capture.sh` with `scripts/chatcapture` (owner only; not run).
+- Safety: synthetic fixtures only; no file under the real `~/.claude`, `~/.codex` or `~/.config` was opened; no agent was started; `guard.go` panics on a test folder outside temp.
+- Checks: `GOTOOLCHAIN=go1.27.1 sh scripts/check`; `go test -race ./...`; `go vet` for darwin, `GOOS=linux` and `GOOS=windows` (`CGO_ENABLED=0`); `pnpm protocol:check`; `FuzzClaudeLine` and `FuzzTail` 90 s each; `cd site && npx astro build`. Numbers: [evidence/chat-view/m1a-bench.md](evidence/chat-view/m1a-bench.md).
+- Blocked on the owner: the scripted capture with a real Claude Code (credits, rule 12) and owner review (rule 24). The phone screen is M1b.
+
 ### Chat view design (2026-10-10, branch `docs/chat-view-design`; owner approved 2026-10-10)
 
 - Issue #285. Design `docs/chat-view.md`, ADR 0014 (accepted), Paper screens in `docs/evidence/chat-view/`. Critical under rule 24 (changes what data reaches the phone).

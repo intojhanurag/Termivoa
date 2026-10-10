@@ -524,6 +524,57 @@ the install page in iPhone Safari and the Home Screen app, a second try with
 the same refresh token after a lost answer, and that nothing reaches the
 Keychain or `~/.git-credentials` with the real app (design, section 12).
 
+## Chat view
+
+See [chat-view.md](chat-view.md), sections 8 and 14, and ADR
+[0014](decisions/0014-chat-view.md). Host side built in M1a. What is new:
+
+- **New data leaves the computer.** With Chat on, any non-thumbnail viewer of
+  a session (the same rule as Files) can read bounded pages of the agent's
+  transcript: prompts, answers, tool summaries, previews of tool output
+  (2 KiB, 40 lines), edit counts and one 40-line hunk. The new exposure is
+  mainly what the agent read outside the project and older turns the
+  terminal had dropped. Never sent: thinking text, images, attachments,
+  sub-agent transcripts, raw tool structures, token usage, system prompts,
+  the transcript path, pids or the agent's session ID.
+- **Switch.** `chat.enabled` in `settings`, absent means off. Only the admin
+  channel (`pterm chat on`, y/N at the computer; same-user peer check) turns
+  it on (S1); the gateway schema allows only `{"enabled": false}`, and the
+  broker refuses true again. Off stops every tail and closes every file at
+  once; each viewer gets `chat.state off`.
+- **Reads outside project roots.** Only `<home>/.claude`, fixed by
+  `cmd/pterm`, never from the phone. Binding (S4, S5): a process of the
+  session tree with its own `sessions/<pid>.json` (≤ 4 KiB, pid, start within
+  5 s, session UUID), exactly one `projects/*/<id>.jsonl`, in the folder that
+  encodes the agent's OS working folder, whose first `sessionId` line names
+  the same session and folder. Every part is `Lstat`ed (no symlink), the file
+  has one link, is owned by the user and not writable by group or others, is
+  opened with `os.Root` + `platform.OpenRegular`, and the handle's inode must
+  match. Nothing is sent before the header check; all reads use the held
+  handle; every 2 s the path's inode is compared again.
+- **No guessing (S2).** No process names, no newest file, no folder-only
+  match. After `/clear` the link ends as `none(cleared)`.
+- **Hostile text (S3, S7).** Every text field is cleaned of control, bidi
+  and zero-width characters and masked (PEM blocks, `ghp_`/`gho_`/`ghu_`/
+  `ghs_`/`ghr_`, `github_pat_`, `sk-`, `sk-ant-`, `AKIA`/`ASIA`, `xox[bpas]-`,
+  `AIza`, JWT shapes, `Authorization: Bearer`) before it is cut. Masking is
+  defense in depth, not a guarantee. The phone must render text or sanitized
+  markdown only (M1b).
+- **Resource bounds (S6, F4).** One chat request per viewer and per
+  session, 10 opens a minute per device, pages ≤ 256 KiB and 200 blocks,
+  ≤ 8 MiB read a page, lines over 1 MiB stream-scanned, at most 8 tails a
+  computer, 10 s linger. Pages wait for the writer budget; `chat.changed` is
+  one tiny coalesced message, never in the actor's notice queue.
+- **Revocation (S8).** The subscriber is removed when the binding's revoked
+  channel closes, and revocation is checked before each send.
+- **Logs (S9, S10).** One line per `chat.open`: device ID, Termivoa session
+  ID, time. No path, pid, agent session ID or transcript text is logged.
+  lsof runs only for the agent pid's working folder at bind time.
+- **Storage (rule 19).** Memory only; nothing in SQLite, logs or files.
+- **Not covered.** A process of the same user can write a fake pid file and
+  transcript that pass every check (it can already type into the terminal).
+  A secret shape the mask does not know reaches the phone.
+
 ## Operational and release limits
 
 Do not install startup tasks, configure Tailscale Serve/HTTPS, use a coding-agent
