@@ -546,8 +546,9 @@ export type BrokerRPCSessionCreateRequestPayload = {
  * the branch already exists. not_a_repository: the source folder is not in a git
  * repository. worktree_failed: git worktree add failed (for example a post-checkout hook or
  * the timeout); the message ends with what git printed, and nothing is left behind.
- * limit_exceeded: the repository already has 50 worktrees there. A replayed operationId
- * never creates a second worktree.
+ * limit_exceeded: another worktree is being created on this computer, the repository
+ * already has 50 worktrees there, or the computer reached its session limit. A replayed
+ * operationId never creates a second worktree.
  */
 export type WorktreeCreate = {
     readonly base:            string;

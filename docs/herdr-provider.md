@@ -2,7 +2,7 @@
 
 Status: **accepted for build, version 2 (2026-10-04).** ADR [0008](decisions/0008-herdr-provider.md). The owner approved the product in Paper (file `termivoa`, artboards H1–H6) and delegated the approval of this feature in writing to the coordinating agent ("approve if all looks good, then ship"). Under AGENTS.md rule 24 the coordinator approves after the independent security and feasibility reviews; section 20 records every finding and its resolution. Built on branch `feat/herdr` (M1a, M1b, M2; protocol revision 4). Where the build differs from the text below, section 21 is right.
 
-What it does: a **herdr** tab in Sessions shows each computer's herdr projects (fold and unfold), their worktrees, and agent state words with a roll-up; a tap opens that one real terminal full screen in the existing Live screen; the workspace's tabs are chips on top; the phone buzzes when an agent is blocked or finished; **Settings → Integrations** turns it on or off per computer. M2 adds **+** on a project row: a new worktree and an agent in it.
+What it does: a **herdr** tab in Sessions shows each computer's herdr projects (fold and unfold), their worktrees, and agent state words with a roll-up; a tap opens that one real terminal full screen in the existing Live screen; the workspace's tabs are chips on top; the phone buzzes when an agent is blocked or finished; **Settings → (the computer) → herdr** turns it on or off per computer. M2 adds **+** on a project row: a new worktree and an agent in it.
 
 Names below: a **provider** is a terminal workspace tool on a computer (herdr now; maybe tmux or zellij later). A **group** is a project row, an **item** is a row under it (a herdr workspace: the main checkout or a linked worktree), a **target** is one terminal the phone can open (a herdr pane). A **provider session** is the in-memory broker session that shows a target. Demo names (`shop`, `silver-meadow`) stand for real ones.
 
@@ -33,7 +33,7 @@ Every row was run on 2026-10-04 against an **isolated** herdr: `HOME=<tmp> herdr
 
 ## 2. Goals and non-goals
 
-Goals: herdr tab with groups, items, state words, roll-up and a count; the All tab section of H1; open one target in Live with tab chips; push on blocked and finished; Settings → Integrations; nothing changes for a computer without herdr; no re-pairing. M2: create a worktree and start an agent with an optional first prompt.
+Goals: herdr tab with groups, items, state words, roll-up and a count; the All tab section of H1; open one target in Live with tab chips; push on blocked and finished; Settings → (the computer) → herdr; nothing changes for a computer without herdr; no re-pairing. M2: create a worktree and start an agent with an optional first prompt.
 
 Non-goals: split panes, the mouse, prefix keys (never); herdr layout changes, renames, closing anything (closing a workspace, removing a worktree, a new tab, a new workspace and starting herdr came later: [herdr-manage.md](herdr-manage.md), ADR 0009); named herdr sessions (default session only); Windows; events; terminal titles or screen text in the list or in pushes; other providers (the wire is generic; none is built).
 
@@ -362,7 +362,7 @@ The table is the plan; the built set is 25 `H-*` checks, listed in `scripts/e2e-
 | H-auth | No cookie: 401; bad `targetId`: 400; unknown target: 404 |
 | H-down | Fake stopped: "herdr is not running on mac"; the Sessions tab loads as fast as without herdr |
 | H-hang | Fake socket accepts and never answers: Sessions unaffected; herdr shows not running |
-| H-settings | Integrations off hides mac's herdr; notify switches survive a reload |
+| H-settings | herdr off on mac's page in Settings hides mac's herdr; notify switches survive a reload |
 | H-doctor | `pterm doctor` reports the fake's version (proof the real herdr is not used) |
 | H-create (M2) | **+**, a name, the fake agent: a new worktree row, Live opens it; a bad name and a prompt with ESC are refused by the app and the host |
 | H-fit | Nothing wider than 390 px on the herdr screens |
@@ -544,7 +544,7 @@ Each difference and why. Everything else is built as written above.
 | Push (section 7) | Names are cleaned twice (herdr, then the push builder); a cut name is 39 characters and "…" | Reuses the push builder's cleaning |
 | `pterm doctor` | A herdr line only when herdr is installed; never counts as a problem | Nothing changes on a computer without herdr |
 | Create answer (integration) | Create answers once a poll turn that **started after its last step** has the new terminal (at most 3 s), not as soon as any cached snapshot has it | A poll between `worktree.create` and `agent.start` cached the shell pane without its agent; on a herdr without `terminal attach` that target could not open yet (`TestCreateAnswersAfterAReadThatSawTheAgent`) |
-| Integrations on (integration) | Turning herdr on wakes the poll loop at once; the `PATCH` never waits for herdr (it shares the gateway's broker connection with the Sessions list). The app's Integrations card shows the state of its latest provider read (F10), which it reads while Settings is open and again right after a save | The `PATCH` answer still says `off` for the moment before that poll |
+| Integrations on (integration) | Turning herdr on wakes the poll loop at once; the `PATCH` never waits for herdr (it shares the gateway's broker connection with the Sessions list). The herdr block on the computer's page in Settings shows the state of its latest provider read (F10), which it reads while Settings is open and again right after a save | The `PATCH` answer still says `off` for the moment before that poll |
 | `/p/…` addresses (integration) | The gateway serves the app for `/p/<provider>/<target>` and `/c/<host>/p/…` although the target ID has a dot | Its "a path with an extension is a file" rule answered 404, so a reload, a link or a notification tap with the app closed showed "404 page not found" (`TestStaticSite`) |
 | Revision gates (integration) | `protocol/v1/revision.json` names the revision that added each gated feature (`features`: `peerPreview` 2, `providers` 4); generation emits `FEATURE_REVISION` and the app gates on it | One source for the gates; `PROTOCOL_REVISION` grows with every bump and must not be a gate |
 | One-row git project (integration) | A git project with only its main checkout shows as one row (like a workspace outside git) and keeps its **+** | It had no **+**, so such a project could not get a worktree from the phone |

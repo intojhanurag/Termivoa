@@ -308,18 +308,17 @@ Wall + Live checks and Windows evidence. No push/PR/merge/deploy by the helper.
 Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
 
 [Approval evidence](evidence/issue-213/owner-approval.md) supersedes owner-pending
+statements in earlier dated entries. Independent reviews remain recorded;
+native Windows/Linux and real-phone gates remain pending. For this internal
+documentation update, `git diff --check` passed and the staged additions were
+reviewed. Runtime, tests and public docs are unchanged; no new test run or
+hosted check success is claimed. Required GitHub checks still block merge.
 
 ### 2026-10-09: owner approved #255 design and implementation
 
 Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
 
 [Approval evidence](evidence/issue-255/owner-approval.md) supersedes owner-pending
-
-### 2026-10-09: owner approved #256 design and implementation
-
-Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
-
-[Approval evidence](evidence/issue-256/owner-approval.md) supersedes owner-pending
 statements in earlier dated entries. Independent reviews remain recorded;
 native Windows/Linux and real-phone gates remain pending. For this internal
 documentation update, `git diff --check` passed and the staged additions were
@@ -419,6 +418,17 @@ hosted check success is claimed. Required GitHub checks still block merge.
   security and feasibility reviews; implementation/tests/full rules 22/25
   docs/site build; native Windows/Linux verification; explicit owner approval.
   Hosted CI is explicitly denied; no enabling, bypass, merge or deployment.
+
+### 2026-10-09: owner approved #256 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-256/owner-approval.md) supersedes owner-pending
+statements in earlier dated entries. Independent reviews remain recorded;
+native Windows/Linux and real-phone gates remain pending. For this internal
+documentation update, `git diff --check` passed and the staged additions were
+reviewed. Runtime, tests and public docs are unchanged; no new test run or
+hosted check success is claimed. Required GitHub checks still block merge.
 
 ### 2026-10-09 — #256: independent reviews recorded, owner gate still open
 
@@ -3172,6 +3182,7 @@ Frozen Astro29-page build/link validation passed; independent review's
 desktop/protocol race rerun passed3.165s/4.965s. The reviewer caught a missing
 Next beta entry, which is now added; final docs rebuild after that change passed (29 pages and all links).
 
+
 ## Issue #222 — git write process ownership (2026-10-08)
 
 Branch `fix/issue-222`, baseline `08f0332`. Real pre-commit hook descendants
@@ -3237,6 +3248,7 @@ configuration were touched.
   hook fixture is POSIX-only), native Linux and 24-hour soak. No unrelated
   issue bundled. Accepted work retains its existing Git/rollback limits;
   shutdown has no new hard total deadline. No fresh database or pairing.
+
 
 ## 2026-10-08: issue #218, slow RPC isolation
 
@@ -3319,6 +3331,7 @@ Additional correction checks passed: `go vet ./internal/broker` and
 `go test -race -run '^Test(Settings|ProviderGet|ProviderUpdate)'
 ./internal/broker` (7.960 s).
 
+
 ## Issue #209 — create admission accounting (2026-10-08)
 
 Branch `fix/issue-209`, baseline `08f0332`. Reproduced all four cases:
@@ -3397,6 +3410,7 @@ required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
   passed29.965s/16.376s/2.070s/3.115s; vet and frozen Astro29-page/link build
   passed. No owner account or remote API action was used. Implementation is
   ready for owner review; hosted checks and #255/#256 fixes remain separate.
+
 
 ## 2026-10-08: issue #217, complete byte-limited History
 
@@ -3539,3 +3553,33 @@ and browser run after explicit nonempty guard also pass. No runtime edits.
   owner real-phone checks remain with the coordinator. CI remains disabled
   by explicit owner denial; no CI enablement or merge attempted. No real
   GitHub data, credential, provider or credit used.
+
+## 2026-10-10 — Review follow-ups after issue sweep 2
+
+- herdr docs quote "claude/codex is not available in herdr now." (site guide,
+  `docs/herdr-manage.md`). A stale **Close workspace** now documents its own
+  text (`CLOSE_CHANGED`) in the herdr guide and troubleshooting; "The list
+  changed. Look again, then try again." stays for **Remove worktree**.
+- Release notes: the GitHub uninstall bullet moved under "New features on
+  `main`"; "Desktop attach" merged into "Terminal screen bounds". README:
+  the snapshot row-range sentence moved to "Desktop attach".
+- Threat model and GitHub design: ADRs 0011/0012/0013 accepted by the owner
+  on 2026-10-09 (no "approval pending" or draft wording).
+- `scripts/e2e-multicomputer/README.md`: `H-closetab` and `H-stale` rows match
+  `herdr.mjs`.
+- New worktree limit message: "Termivoa reached a limit on this computer.
+  Wait for other actions to finish, or remove a worktree or session you no
+  longer need, then try again." `session.create` `limit_exceeded` schema
+  description names all three causes; `pnpm protocol:generate` changed
+  comments only.
+- GitHub guide: "min ago" and "h ago" rows in the push-age table.
+- "Checking available agents…": the `role="status"` region stays mounted
+  (visually hidden, empty) and only its text changes, in **New worktree**
+  and **New tab**; tests cover both states.
+- "Settings → Integrations" paths in `docs/herdr-provider.md` and
+  `docs/pending-work.md` now name the computer's page; `docs/ui-revamp.md`
+  section 6 follow-up marked done.
+- Checks: `pnpm install --frozen-lockfile`; `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check`; `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` (29 pages, all internal links valid).
+- Local branch `fix/sweep-review-followups` only; not pushed, no PR.

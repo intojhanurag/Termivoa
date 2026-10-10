@@ -2,11 +2,6 @@
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, read-only sessions, missing notifications, worktrees and failed git pushes.
 lastUpdated: 2026-10-10
-
-description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-08
-
-lastUpdated: 2026-10-10
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -559,7 +554,11 @@ If the app says "The agent started, but your first prompt was not sent.", the ag
 
 ### "The list changed. Look again, then try again."
 
-The workspace was renamed, closed, or herdr restarted after the phone read the list. Nothing was closed or removed. Look at the row again and repeat the action.
+The workspace was renamed, closed, or herdr restarted after the phone read the list. **Remove worktree** says this, and so does **Close workspace** when the workspace is gone. Nothing was closed or removed. Look at the row again and repeat the action.
+
+### "The list changed. Look again before closing."
+
+**Close workspace** says "The list changed. Look again before closing. Close its worktrees first; workspaces sharing the main folder must be closed in herdr on the computer." The workspace changed after the phone read the list: it was renamed or closed, herdr restarted, or a worktree opened in it. Nothing was closed. Look at the row again. Close its worktrees first. If two workspaces share the project's main folder, close them in herdr on that computer.
 
 ### "silver-meadow has changes that are not committed"
 
@@ -738,6 +737,7 @@ The Sessions list and authentication can still answer while actions wait.
 
 See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-another-session-while-create-waits).
 
+
 ## What if uninstall cannot confirm GitHub revocation?
 
 **Next beta, macOS and Linux:** Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
@@ -770,30 +770,6 @@ Do not grant everyone access or delete the database to hide a permission error.
 No new pairing or database is needed for a normal owned file. See [How are
 private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
 
-## Why does Termivoa not start after a backup hard-linked its files?
-
-**Next beta:** on macOS and Linux, Termivoa refuses a private file that has a
-second hard link. Some backup tools, such as rsnapshot or `cp -al`, make
-backups with hard links instead of copies. Then Termivoa's database or
-GitHub login is also reachable through the backup, so the broker stops at
-startup. The terminal or the log shows one of these errors:
-
-| Error text | File |
-| --- | --- |
-| `ipc: secure private file: private file must have exactly one hard link` | The database or the GitHub login |
-| `ipc: broker lock must have exactly one link` | The broker lock |
-
-To fix it, give each file its own copy again. Your backup keeps its copy.
-
-1. Run `pterm shutdown`.
-2. Open Termivoa's data folder (see [Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)) and list the files with more than one link: `find . -type f -links +1`.
-3. For each file, copy it and move the copy back over it: `cp -p FILE FILE.new && mv FILE.new FILE`. `-p` keeps its owner-only permissions.
-4. Exclude Termivoa's data folder from hard-link backups, or back it up with real copies.
-5. Run `pterm launch`.
-
-Do not delete the database or loosen its permissions to get past this error.
-No new pairing is needed.
-
 ## Why does History say unavailable?
 
 **Next beta:** Termivoa says **History unavailable right now. Return to live
@@ -820,3 +796,27 @@ See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
 ## Why does a GitHub repository have no push age?
 
 **Next beta:** Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
+
+## Why does Termivoa not start after a backup hard-linked its files?
+
+**Next beta:** on macOS and Linux, Termivoa refuses a private file that has a
+second hard link. Some backup tools, such as rsnapshot or `cp -al`, make
+backups with hard links instead of copies. Then Termivoa's database or
+GitHub login is also reachable through the backup, so the broker stops at
+startup. The terminal or the log shows one of these errors:
+
+| Error text | File |
+| --- | --- |
+| `ipc: secure private file: private file must have exactly one hard link` | The database or the GitHub login |
+| `ipc: broker lock must have exactly one link` | The broker lock |
+
+To fix it, give each file its own copy again. Your backup keeps its copy.
+
+1. Run `pterm shutdown`.
+2. Open Termivoa's data folder (see [Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)) and list the files with more than one link: `find . -type f -links +1`.
+3. For each file, copy it and move the copy back over it: `cp -p FILE FILE.new && mv FILE.new FILE`. `-p` keeps its owner-only permissions.
+4. Exclude Termivoa's data folder from hard-link backups, or back it up with real copies.
+5. Run `pterm launch`.
+
+Do not delete the database or loosen its permissions to get past this error.
+No new pairing is needed.

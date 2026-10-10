@@ -94,7 +94,7 @@ The client ID is public: anyone can copy it and show a login page that says "Ter
 - One row, one writer. Every use goes through one function that holds a lock, refreshes when less than 5 minutes are left, and **commits the new pair to the database before it returns it**. The old pair is dead from GitHub's answer on, so there is nothing to keep. The pair is lost when the broker stops between GitHub's answer and the commit, or when the answer does not arrive in the 10 s limit after GitHub already rotated; the broker then tries one time more with the same refresh token (a lab item: does GitHub accept it?), and after that the row says **Connect** again.
 - An expired refresh token (6 months) → the pair is deleted; "GitHub is not connected on mac now."
 - A `bad_refresh_token` that the broker does not expect (the token is not old) means that something else used it. It gets its own line: "Another program used this login. Revoke Termivoa on GitHub, then connect again." with the link. Connecting again does **not** cut off a thief; only the revoke on github.com does.
-- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then removes the stored pair's filename. Draft correction #256 (ADR 0013, owner approval pending) uses unlink-only removal instead of overwriting an inode that may be shared with another file. This does not securely erase copies or backups (section 17). When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
+- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then removes the stored pair's filename. The correction in #256 (ADR 0013, accepted by the owner on 2026-10-09) uses unlink-only removal instead of overwriting an inode that may be shared with another file. This does not securely erase copies or backups (section 17). When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
 - The tokens are a secret type that prints as `[redacted]` (as `internal/auth/secret.go` does), not a formatter rule. `pterm doctor` prints only "GitHub: connected as <login>".
 
 ### 6.3 The list
@@ -361,8 +361,8 @@ What the build does differently from sections 1–14, and why. Each line was che
 
 | Design | Build | Why |
 | --- | --- | --- |
-| One table `github_account` in the database (section 7) | One file `github.json` (mode 0600) in the broker's data folder, written with a 0600 temp file and a rename; draft #256 removes only the filename. A damaged file reads as "not connected" | The schema file is checksummed: a new table would have forced every computer to delete its database and pair the phone again. The file has the same exposure as the database (same user, same folder) |
-| `secure_delete` on the table (6.2) | Draft #256 uses unlink-only file removal (ADR 0013), not zero overwrite | Overwriting a hard-linked inode corrupts other names. Neither overwrite nor unlink guarantees erasure from COW storage, snapshots or backups; remote revocation remains separate |
+| One table `github_account` in the database (section 7) | One file `github.json` (mode 0600) in the broker's data folder, written with a 0600 temp file and a rename; #256 removes only the filename. A damaged file reads as "not connected" | The schema file is checksummed: a new table would have forced every computer to delete its database and pair the phone again. The file has the same exposure as the database (same user, same folder) |
+| `secure_delete` on the table (6.2) | #256 uses unlink-only file removal (ADR 0013), not zero overwrite | Overwriting a hard-linked inode corrupts other names. Neither overwrite nor unlink guarantees erasure from COW storage, snapshots or backups; remote revocation remains separate |
 | Six routes (section 7) | Three: `GET /api/v1/github`, `POST /api/v1/github` with `action` (connect, cancel, disconnect, setup, stop), `GET /api/v1/github/repos` | One action route is the pattern of herdr manage; fewer routes, the same limits for each action |
 | State `unavailable` | No GitHub field at all in the settings when the build has no app or the computer is not macOS or Linux; the phone shows no row | The phone cannot tell "no app" from "old Termivoa" anyway |
 | Problem word `githubUnreachable` | `gitHubDown`; connect problem `codeExpired`; set-up phase `finished` | The generated Go names of `expired`, `unreachable` and `done` clashed with existing protocol names |
@@ -382,7 +382,7 @@ Known limits found while building (in `docs/pending-work.md`):
 
 ### How does confirmed uninstall revoke the saved login? (#213)
 
-Proposed/implemented in the draft owner-review branch; see
+Accepted by the owner on 2026-10-09; see
 [ADR0011](decisions/0011-uninstall-github-revocation.md) and
 [uninstall-github.md](uninstall-github.md). After consent, unregister/stop and
 exclusive data ownership, the GitHub package reads its saved pair and makes
@@ -391,18 +391,19 @@ Git/sweeps clones/refreshes credentials. Parent cancellation preserves the
 saved pair; remote-only outage permits requested local deletion with the
 manual GitHub applications hint. The private directory and lock marker remain
 so a second broker cannot replace the lock during contents removal. No
-protocol, stored schema, scopes or pairing changes; owner approval is pending.
+protocol, stored schema, scopes or pairing changes.
 
 ## 18. Shared private-file repair (#255)
 
-The local implementation on `fix/issue-255` uses the shared IPC guard described
-in [private-file-permissions.md](private-file-permissions.md), ADR 0012. Token
+The shared IPC guard described in
+[private-file-permissions.md](private-file-permissions.md) (ADR 0012, accepted
+by the owner on 2026-10-09) protects token loading. Token
 loading refuses final symlinks and hard-linked token files before permission
 repair can change another object. Valid owned token files are tightened to
 0600 on the same open inode; the existing atomic save remains unchanged.
 The guard does not bind a later `os.ReadFile` reopen to its handle and is not
 a sandbox against a hostile process in the same account. No token format,
-network, OAuth scope or pairing change. **DO NOT MERGE without owner review.**
+network, OAuth scope or pairing change.
 
 ## How are old push timestamps formatted? (#215)
 

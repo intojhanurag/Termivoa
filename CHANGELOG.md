@@ -214,7 +214,6 @@ All notable changes are documented here. The format follows
   Phone: the limit message now explains waiting for another create or
   removing a finished worktree, rather than always claiming there are too
   many worktrees. No protocol, pairing or database change.
-
 - Host: slow session/worktree creation, termination, notification tests
   and herdr terminal opens use bounded independent
   exchanges, so they no longer hold up session lists or new Live
@@ -222,7 +221,6 @@ All notable changes are documented here. The format follows
   worktree create; excess simultaneous slow actions report a limit instead
   of claiming that the repository has too many worktrees. Authorization,
   request correlation and uncertain-delivery rules remain in place.
-
 - herdr agent choices before the first launch (#208). Phone: **New worktree**
   and **New tab** offer installed coding agents even when none runs in herdr,
   and keep an installed choice after its last agent stops. A removed choice
@@ -249,7 +247,6 @@ All notable changes are documented here. The format follows
   **Disconnect** uses this safer cleanup with its current confirmation and
   GitHub revocation warning. Local deletion does not securely erase copies
   or backups.
-
 - Phone: **History** reads all retained rows when styled output makes each
   page smaller, instead of skipping recent rows after 25 pages (#217).
   An incomplete or over-budget read shows **History unavailable right now**;
@@ -262,7 +259,6 @@ All notable changes are documented here. The format follows
   cleanup preserves focus deliberately moved elsewhere. Focus restoration
   is shared across sheets rather than duplicated in herdr menus.
   Host: no change; no input, protocol, pairing or database change.
-
 - **herdr agent choices and close guidance (#210).** Phone: **New worktree**
   and **New tab** show **Checking available agents…** and wait before starting
   an agent while their quiet settings read runs. **No agent** and **Shell**

@@ -8,7 +8,7 @@ import {
 import { checkAgain } from './allSessions';
 import type { ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
-import { droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
+import { CheckingAgents, droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
 import type { ProviderEntry, ProviderSource } from './providers';
 import { Sheet } from './Sheet';
 import { useAgentKinds, type ReadAgentKinds } from './useAgentKinds';
@@ -307,7 +307,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped,
               <button key={kind} type="button" aria-pressed={agent === kind} disabled={off} onClick={() => onAgent(kind)}><bdi>{kind}</bdi></button>
             ))}
           </div>
-          {checkingKinds && <p role="status" className="hint-text">Checking available agents…</p>}
+          <CheckingAgents checking={checkingKinds} />
           {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
           {agent !== undefined && <PromptField prompt={prompt} busy={off} onPrompt={onPrompt} />}
           <div className="row confirm-pair">

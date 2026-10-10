@@ -84,6 +84,11 @@ export const offeredAgent = (picked: string | undefined, kinds: ReadonlyArray<st
 export const droppedAgent = (picked: string | undefined, kinds: ReadonlyArray<string>, provider: string): string | undefined =>
   picked !== undefined && !kinds.includes(picked) ? `${picked} is not available in ${provider} now.` : undefined;
 
+/** A live region that stays mounted, so screen readers announce the check when its text appears. */
+export const CheckingAgents = ({ checking }: { readonly checking: boolean }) => (
+  <p role="status" className={checking ? 'hint-text' : 'visually-hidden'}>{checking ? 'Checking available agents…' : ''}</p>
+);
+
 /** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. `prompted`: a first prompt was sent with the request. */
 export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, prompted: boolean, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
   switch (answer.problem) {
@@ -218,7 +223,7 @@ export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, e
             ><bdi>{kind.label}</bdi></button>
           ))}
         </div>
-        {checkingKinds && <p role="status" className="hint-text">Checking available agents…</p>}
+        <CheckingAgents checking={checkingKinds} />
         {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
       </div>
       {agent !== undefined && <PromptField prompt={prompt} busy={busy} onPrompt={onPrompt} />}

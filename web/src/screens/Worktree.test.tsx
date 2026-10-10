@@ -151,7 +151,7 @@ describe('NewWorktreeSheet', () => {
 describe('createProblem', () => {
   it('does not confuse transport saturation with the repository worktree limit', () => {
     const text = createProblem(new ApiError(429, 'limit_exceeded', 'too many operations in progress; try again after one finishes'), 'a');
-    expect(text).toContain('Wait for pending actions to finish');
+    expect(text).toContain('Wait for other actions to finish');
     expect(text).not.toContain('This repository has too many');
     expect(createProblem(new ApiError(429, 'limit_exceeded', 'That computer could not do this.'), 'a')).toBe(text);
   });
@@ -163,7 +163,7 @@ describe('createProblem', () => {
       .toBe('This folder is not in a git repository. cd into a repo first.');
     for (const hostMessage of ['too many', 'another worktree is being created', 'private peer details']) {
       expect(createProblem(new ApiError(429, 'limit_exceeded', hostMessage), 'a'))
-        .toBe('Termivoa reached a limit on this computer. Wait for pending actions to finish, such as another worktree creation, or remove a finished worktree or session, then try again.');
+        .toBe('Termivoa reached a limit on this computer. Wait for other actions to finish, or remove a worktree or session you no longer need, then try again.');
     }
     expect(createProblem(new ApiError(422, 'worktree_failed', 'git worktree add failed: husky - post-checkout failed'), 'a'))
       .toBe('git worktree add failed: husky - post-checkout failed. Nothing was left behind, so you can try again.');
