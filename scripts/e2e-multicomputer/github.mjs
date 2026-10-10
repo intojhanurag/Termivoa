@@ -445,7 +445,7 @@ export async function githubSteps(ctx) {
       check('G10', 'After Disconnect and its confirmation: the row reads "not connected" with Connect; the fake\'s revoked list has the broker\'s access and refresh token; git pull in ~/pdf-editor exits non-zero and its stderr has "Termivoa is not connected to GitHub on this computer."',
         row.buttons.includes('Connect') && !!latest && revoked.includes(latest.access) && revoked.includes(latest.refresh)
           && pull.code !== 0 && pull.stderr.includes(NOT_CONNECTED) && status === 'GitHub: not connected'
-          && toBroker.code === 1 && toBroker.stdout === 'quit=1' && toBroker.stderr === NOT_CONNECTED.concat(' Connect in Settings → Integrations.'),
+          && toBroker.code === 1 && toBroker.stdout === 'quit=1' && toBroker.stderr === NOT_CONNECTED.concat(' In Termivoa, open Settings, tap this computer, then Connect.'),
         `row ${JSON.stringify(row)}; broker pairs ${pairs.length}, the last one revoked: access ${revoked.includes(latest?.access)}, refresh ${revoked.includes(latest?.refresh)}; pull exit ${pull.code}, stderr ${JSON.stringify(pull.stderr.trim().replaceAll(env.root, '<root>').slice(0, 300))}; pterm github status "${status}"; helper to the broker: exit ${toBroker.code}, stdout "${toBroker.stdout}", ${toBroker.ms} ms; helper to no broker: exit ${toNobody.code}, stdout "${toNobody.stdout}", ${toNobody.ms} ms; ${same ? 'the helper\'s answer is the same for both, so it alone cannot tell "not connected" from "broker unreachable"; the status line shows the broker answered' : `they differ: no broker gives stderr "${toNobody.stderr.replaceAll(env.root, '<root>')}"`}`);
       // The same in Live, as a person types it: git must not stop at a "Username for" prompt.
       try {
