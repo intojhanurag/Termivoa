@@ -49,7 +49,7 @@ describe('voice panel', () => {
         onMic={noop} onCancel={noop} onDone={noop}
       />,
     );
-    expect(html).toContain('LISTENING · 0:07');
+    expect(html).toContain('Listening · 0:07');
     expect(html).toContain('class="dot red"');
     expect(html).toContain('<p class="transcript">fix the login <span class="muted">bug</span></p>');
     expect(html).toContain('class="mic listening" aria-label="Stop listening"');
@@ -60,7 +60,7 @@ describe('voice panel', () => {
 
   it('asks for a tap when idle and shows the error text', () => {
     const idle = renderToStaticMarkup(<VoicePanel snapshot={IDLE_SPEECH} onMic={noop} onCancel={noop} onDone={noop} />);
-    expect(idle).toContain('TAP THE MIC');
+    expect(idle).toContain('Tap the mic');
     expect(idle).toContain('class="mic" aria-label="Start listening"');
 
     const failed = renderToStaticMarkup(
@@ -68,6 +68,6 @@ describe('voice panel', () => {
         onMic={noop} onCancel={noop} onDone={noop} />,
     );
     expect(failed).toContain('<p role="alert" class="error voice-status">No speech heard. Tap the mic and try again.</p>');
-    expect(failed).not.toContain('LISTENING');
+    expect(failed).not.toContain('Listening');
   });
 });

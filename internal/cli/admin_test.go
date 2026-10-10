@@ -1319,7 +1319,7 @@ func TestPairViaSuccessHintsAShortName(t *testing.T) {
 		}
 		want := "\nDone. " + self + " is in your Termivoa app on mac. Open the app and tap it.\n"
 		if tip {
-			want += "Tip: give it a short name in the app: Settings → Computers → Rename.\n"
+			want += "Tip: give it a short name in the app: Settings, tap the computer, then Rename.\n"
 		}
 		if !strings.HasSuffix(output.String(), want) {
 			t.Errorf("%s: output ends\n%s", self, output.String())

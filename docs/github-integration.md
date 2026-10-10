@@ -9,13 +9,13 @@
 >
 > "there is no sense of computer has installed or not gh … Be professional feature, not like bulky to user, every edge case should be cover"
 
-So: one **Connect** in **Settings → Integrations**, no terminal, no `gh`, then a list of repositories, and one tap puts a repository on the chosen computer. "Drop" is read as **skip**: Termivoa never deletes or overwrites a folder (section 8).
+So: one **Connect** in **Settings → (the computer) → GitHub**, no terminal, no `gh`, then a list of repositories, and one tap puts a repository on the chosen computer. "Drop" is read as **skip**: Termivoa never deletes or overwrites a folder (section 8).
 
 ## 2. What the user sees
 
 | Step | Screen | Picture |
 | --- | --- | --- |
-| 1 | **Settings → Integrations** has one row for each computer, "GitHub on mac", like "herdr on mac": **Connect**, or the account name with **Set up a repository** and **Disconnect**. It shows also on a computer with no herdr | [g1](evidence/github-integration/g1-settings-card.png) |
+| 1 | **Settings → (the computer)** has a GitHub block, "GitHub on mac", like the herdr block: **Connect**, or the account name with **Set up a repository** and **Disconnect**. It shows also on a computer with no herdr | [g1](evidence/github-integration/g1-settings-card.png) |
 | 2 | **Connect** shows a code and **Copy code and open GitHub**. GitHub opens; the user pastes the code and authorizes | [g2](evidence/github-integration/g2-connect-code.png) |
 | 3 | One time for each GitHub account: **Choose on GitHub** (all repositories, or only some) | [g4](evidence/github-integration/g4-choose-repositories.png) |
 | 4 | **Set up a repository**: a search box and the list. A repository that is already on that computer has the tag "on mac" | [g3](evidence/github-integration/g3-repository-list.png) |
@@ -149,7 +149,7 @@ credential.https://github.com/<owner>/<name>.git.helper = !<pterm> github-creden
 
 The first, empty line makes git forget the helpers from the user's system and global config **for this repository's address only**, so the 8-hour token is never sent to the macOS Keychain or to `~/.git-credentials`, and never goes stale there. The cost, stated in the docs: in a folder that Termivoa cloned, git uses Termivoa's login for that repository. That is why the app asks for read and write (section 5). A folder that was already there (`alreadyHere`) is **not** changed; it keeps the user's own login.
 
-After **Disconnect** the line stays. The helper then prints one line on stderr: "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations." and git fails with its own message.
+After **Disconnect** the line stays. The helper then prints one line on stderr: "Termivoa is not connected to GitHub on this computer. In Termivoa, open Settings, tap this computer, then Connect." (Since the UI revamp, 2026-10-10, Connect is on the computer's page in Settings; this helper text still names the old path.) and git fails with its own message.
 
 When that repository has no `user.name`, and the user has none in the global config, the broker sets the repository's own `user.name` to the login and `user.email` to GitHub's no-reply address for that account, so the first commit does not fail on a new computer.
 

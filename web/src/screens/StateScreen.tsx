@@ -44,7 +44,7 @@ export function LinkArt() {
         <circle cx="150" cy="49" r="17" fill="none" stroke="var(--amber)" strokeWidth="2" />
         <path d="M144 43l12 12M156 43l-12 12" stroke="var(--amber)" strokeWidth="2.5" strokeLinecap="round" />
       </svg>
-      <div className="link-art-labels"><span>PHONE</span><span>YOUR COMPUTER</span></div>
+      <div className="link-art-labels"><span>Phone</span><span>Your computer</span></div>
     </div>
   );
 }

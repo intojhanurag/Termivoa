@@ -48,6 +48,8 @@ const (
 	statusInterval = 10 * time.Millisecond
 )
 
+const childStatusFormat = "\x1b7\x1b[1;1H\x1b[2KS pid=%d seq=%d echo=%s t=%d !\x1b8"
+
 // ---------------------------------------------------------------------------
 // Helper subprocesses. Both are this test binary re-executed with a marker.
 
@@ -113,7 +115,7 @@ func runSoakChild(rate int) error {
 				written += n
 			}
 		}
-		fmt.Fprintf(out, "\x1b7\x1b[1;1H\x1b[2KS pid=%d seq=%d echo=%s t=%d\x1b8", pid, seq, echo, time.Now().UnixNano())
+		fmt.Fprintf(out, childStatusFormat, pid, seq, echo, time.Now().UnixNano())
 		if err := out.Flush(); err != nil {
 			return err // PTY hangup after broker death ends the child.
 		}
@@ -336,7 +338,7 @@ type hostSample struct {
 	cpu                   time.Duration
 	heapBytes, totalBytes int64
 	goroutines            int64
-	children              int
+	children              int // terminal fixtures only; excludes scanner helpers
 }
 
 func (h *soakHost) sample(start time.Time) hostSample {
@@ -350,7 +352,7 @@ func (h *soakHost) sample(start time.Time) hostSample {
 	s := hostSample{at: time.Since(start)}
 	s.rssKiB, _ = strconv.ParseInt(fields[0], 10, 64)
 	s.cpu = parsePSTime(fields[1])
-	s.children = len(childPIDs(h.broker.Process.Pid))
+	s.children = len(fixtureChildPIDs(h.t, h.broker.Process.Pid))
 	if data, err := os.ReadFile(h.metricsPath); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 		fmt.Sscanf(lines[len(lines)-1], "%d %d %d", &s.heapBytes, &s.totalBytes, &s.goroutines)
@@ -363,12 +365,38 @@ func (s hostSample) String() string {
 		s.at.Seconds(), float64(s.rssKiB)/1024, s.cpu.Seconds(), mib(s.heapBytes), mib(s.totalBytes), s.goroutines, s.children)
 }
 
-func childPIDs(parent int) []int {
-	out, _ := exec.Command("pgrep", "-P", strconv.Itoa(parent)).Output()
+// fixtureChildPIDs counts every direct terminal fixture, including unexpected
+// duplicates. Scanner helpers are not sessions. Read identity and ancestry in
+// one snapshot: querying each PID separately races helper exit and PID reuse.
+func fixtureChildPIDs(t testing.TB, parent int) []int {
+	t.Helper()
+	out, err := exec.Command("ps", "-ww", "-axo", "pid=,ppid=,args=").Output()
+	if err != nil {
+		t.Fatalf("ps terminal fixture census: %v", err)
+	}
+	return fixtureChildPIDsFromSnapshot(parent, string(out))
+}
+
+func fixtureChildPIDsFromSnapshot(parent int, snapshot string) []int {
 	var pids []int
-	for _, field := range strings.Fields(string(out)) {
-		if pid, err := strconv.Atoi(field); err == nil {
-			pids = append(pids, pid)
+	for _, line := range strings.Split(snapshot, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, parentErr := strconv.Atoi(fields[1])
+		if pidErr != nil || parentErr != nil || ppid != parent {
+			continue
+		}
+		// Match the fixture marker after the argument separator, not as a
+		// substring of a helper path. Count duplicates even with unexpected
+		// rate or trailing arguments; TestSoakChild accepts those too.
+		for i := 3; i+1 < len(fields); i++ {
+			if fields[i-1] == "--" && fields[i] == childMarker {
+				pids = append(pids, pid)
+				break
+			}
 		}
 	}
 	return pids
@@ -408,6 +436,8 @@ type viewer struct {
 	echo          string
 	echoWaiters   map[string]chan time.Time
 	outputLatency []time.Duration
+
+	lastStatusTimestamp int64
 
 	patches, snapshots, baseMismatches, bytes atomic.Int64
 	ready                                     chan struct{}
@@ -565,25 +595,47 @@ func (v *viewer) handle(envelope protocol.Envelope, received time.Time) error {
 	return nil
 }
 
-// observeStatus parses row 1 ("S pid=.. seq=.. echo=.. t=..").
+// observeStatus accepts one complete row-1 record per child write. The end
+// marker follows the timestamp, so a PTY/frame split cannot turn a timestamp
+// prefix into a latency sample. A paused child may keep the same seq while
+// its timestamp advances. No upper latency cutoff hides valid slow-link data.
 func (v *viewer) observeStatus(received time.Time) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if len(v.screen) == 0 {
 		return
 	}
-	fields := map[string]string{}
-	for _, field := range strings.Fields(v.screen[0]) {
-		if key, value, ok := strings.Cut(field, "="); ok {
-			fields[key] = value
+	fields := strings.Fields(v.screen[0])
+	if len(fields) != 6 || fields[0] != "S" || fields[5] != "!" {
+		return
+	}
+	var values [4]string
+	for i, name := range [...]string{"pid", "seq", "echo", "t"} {
+		key, value, ok := strings.Cut(fields[i+1], "=")
+		if !ok || key != name || value == "" {
+			return
 		}
+		values[i] = value
 	}
-	if ts, err := strconv.ParseInt(fields["t"], 10, 64); err == nil {
-		v.outputLatency = append(v.outputLatency, received.Sub(time.Unix(0, ts)))
+	var numbers [3]int64
+	for i, value := range [...]string{values[0], values[1], values[3]} {
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || strconv.FormatInt(n, 10) != value {
+			return
+		}
+		numbers[i] = n
 	}
-	v.pid, _ = strconv.ParseInt(fields["pid"], 10, 64)
-	v.seq, _ = strconv.ParseInt(fields["seq"], 10, 64)
-	if echo := fields["echo"]; echo != v.echo {
+	pid, seq, ts := numbers[0], numbers[1], numbers[2]
+	written := time.Unix(0, ts)
+	created, err := time.Parse(time.RFC3339Nano, v.session.CreatedAt)
+	if err != nil || pid <= 0 || seq < 0 || written.Before(created) || written.After(received) ||
+		ts <= v.lastStatusTimestamp || v.pid != 0 && (pid != v.pid || seq < v.seq) {
+		return
+	}
+	v.lastStatusTimestamp = ts
+	v.outputLatency = append(v.outputLatency, received.Sub(written))
+	v.pid, v.seq = pid, seq
+	if echo := values[2]; echo != v.echo {
 		v.echo = echo
 		if waiter := v.echoWaiters[echo]; waiter != nil {
 			waiter <- received

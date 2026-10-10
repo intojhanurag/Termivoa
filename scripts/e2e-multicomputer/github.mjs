@@ -5,7 +5,7 @@
 // with a demo or temp HOME and GIT_CONFIG_NOSYSTEM=1.
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Browser, api, click, pairDirect, run, sandboxed, setInput, sleep, terminalText, typeLine, until } from './lib.mjs';
+import { Browser, api, click, pairDirect, run, sandboxed, setInput, settingsComputer, sleep, terminalText, typeLine, until } from './lib.mjs';
 
 const APP = 'termivoa-e2e';
 const DEVICE_URL = 'https://github.com/login/device';
@@ -53,7 +53,7 @@ export async function githubSteps(ctx) {
   const LABEL = `const text = (e) => (e ? e.innerText.replace(/\\s+/g, ' ').trim() : '');
     const label = (b) => (b.querySelector('.btn-swap > span:not(.off)') ?? b).innerText.replace(/\\s+/g, ' ').trim() || b.getAttribute('aria-label') || '';
     const seen = (e) => e.offsetParent !== null || e.getClientRects().length > 0;`;
-  /** The Integrations row "GitHub on <name>"; innerText follows text-transform, so state is lower case. */
+  /** The row "GitHub on <name>" on that computer's Settings page; state in lower case. */
   const card = (name) => app.eval(`(() => { ${LABEL}
     const li = [...document.querySelectorAll('.computer-card')].find((e) => text(e.querySelector('.row-title')) === ${JSON.stringify(`GitHub on ${name}`)});
     if (!li) return null;
@@ -97,13 +97,21 @@ export async function githubSteps(ctx) {
       await sleep(300);
     }
   };
-  const integrations = async () => {
+  /** Settings → <name>: the computer's page with its GitHub row (docs/ui-revamp.md, section 5). */
+  const integrations = async (name = 'mac') => {
     await closeSheets();
-    await inApp('/settings');
-    await until(() => card('mac'), { what: 'the GitHub on mac row', timeout: 20000 });
-    await app.eval(`document.querySelector('#integrations-heading')?.scrollIntoView()`);
+    await settingsComputer(app, name);
+    await until(() => card(name), { what: `the GitHub on ${name} row`, timeout: 20000 });
   };
-  /** Integrations → Set up a repository → the list (a kept set-up result opens first: Close goes back to the list). */
+  /** The GitHub chip of each computer's card on the Settings main page: its text and tone. */
+  const chipsOnCards = async () => {
+    await inApp('/settings');
+    return until(() => app.eval(`(() => { const all = {}; for (const c of document.querySelectorAll('.sc-card')) {
+      const chip = [...c.querySelectorAll('.sc-chip')].find((x) => /GitHub|git missing/.test(x.innerText));
+      all[c.querySelector('.computer-name').innerText.trim()] = chip ? chip.innerText.trim() + ' (' + chip.className.replace('sc-chip', '').trim() + ')' : null; }
+      return Object.keys(all).length === 2 && Object.values(all).every(Boolean) && all; })()`), { what: 'the GitHub chips on the cards', timeout: 20000 });
+  };
+  /** Settings → mac → Set up a repository → the list (a kept set-up result opens first: Close goes back to the list). */
   const openList = async () => {
     await integrations();
     const before = (await state(mac))?.setup;
@@ -171,17 +179,23 @@ export async function githubSteps(ctx) {
         statSync(join(mac.home, 'notes')).isDirectory() && origin === repoUrl('octo-demo/shop-api') && harnessPair?.n > 0, `origin ${origin}; harness pair ${harnessPair?.n}`);
     });
 
-    await step('G1', 'Settings → Integrations shows "GitHub on mac" and "GitHub on vps", not connected, with Connect (no herdr on either)', async () => {
-      await integrations();
-      const rows = { mac: await card('mac'), vps: await until(() => card('vps'), { what: 'the GitHub on vps row' }) };
+    await step('G1', 'Settings → mac and Settings → vps show "GitHub on mac" and "GitHub on vps", not connected, with Connect (no herdr on either); the cards say Connect GitHub', async () => {
+      const chips = await chipsOnCards();
+      await shot('g1-cards');
+      await integrations('vps');
+      const vpsRow = await card('vps');
+      await integrations('mac');
+      const rows = { mac: await card('mac'), vps: vpsRow };
       await shot('g1-integrations');
-      const providers = [];
-      for (const stack of [mac, vps]) providers.push((await api(tool, `${stack.origin}/api/v1/settings`)).json?.providers?.[0]?.state);
+      // In a full run the H checks just removed the fake herdr; each broker drops it at its next lookup (at most 30 s).
+      const herdrStates = async () => Promise.all([mac, vps].map(async (stack) => (await api(tool, `${stack.origin}/api/v1/settings`)).json?.providers?.[0]?.state));
+      const providers = await until(async () => { const now = await herdrStates(); return now.every((p) => p !== 'ready') && now; }, { what: 'no herdr ready', timeout: 45000, every: 1000 }).catch(herdrStates);
       const api0 = { mac: await state(mac), vps: await state(vps) };
-      check('G1', 'Both rows read "not connected" with Connect; neither computer has herdr (the rows show without it); GET /api/v1/github says notConnected with app termivoa-e2e',
+      check('G1', 'Both rows read "not connected" with Connect; both cards on the Settings main page have the dashed chip "Connect GitHub"; neither computer has herdr (the rows show without it); GET /api/v1/github says notConnected with app termivoa-e2e',
         Object.values(rows).every((r) => r.state === 'not connected' && r.buttons.includes('Connect')) && providers.every((p) => p !== 'ready')
+          && chips.mac === 'Connect GitHub (dashed)' && chips.vps === 'Connect GitHub (dashed)'
           && Object.values(api0).every((s) => s?.state === 'notConnected' && s.app === APP && !s.connect),
-        `mac ${JSON.stringify(rows.mac)}; vps ${JSON.stringify(rows.vps)}; herdr ${JSON.stringify(providers)}; api ${JSON.stringify(api0)}`);
+        `cards ${JSON.stringify(chips)}; mac ${JSON.stringify(rows.mac)}; vps ${JSON.stringify(rows.vps)}; herdr ${JSON.stringify(providers)}; api ${JSON.stringify(api0)}`);
     });
 
     await step('G2', 'Connect on mac: the sheet shows the code, the link to github.com/login/device and "Waiting for GitHub…"; a second phone gets no code', async () => {
@@ -202,7 +216,7 @@ export async function githubSteps(ctx) {
         await pairDirect(page, mac, 'GitHub phone');
         await page.waitText('Sessions', 30000);
         other = (await api(page, `${mac.origin}/api/v1/github`)).json;
-        await page.eval(`history.pushState(null, '', '/settings'); dispatchEvent(new PopStateEvent('popstate'))`);
+        await settingsComputer(page, 'mac');
         otherText = await until(async () => { const t = await page.text(); return t.includes('GitHub on mac') && t; }, { what: 'the second phone\'s GitHub row', timeout: 20000 }).catch(() => '');
       } finally {
         await second.close();
@@ -214,7 +228,7 @@ export async function githubSteps(ctx) {
         `code ${code}; links ${JSON.stringify(s.links)}; this phone ${JSON.stringify(own)}; second phone ${JSON.stringify(other)}, "${squash(otherText).match(/GitHub on mac.{0,80}/)?.[0] ?? ''}"`);
     });
 
-    await step('G3', 'Authorize with no installation → "Choose" with the install link; one installation → the sheet moves on by itself, the row says CONNECTED with octo-demo', async () => {
+    await step('G3', 'Authorize with no installation → "Choose" with the install link; one installation → the sheet moves on by itself, the row says Connected with octo-demo', async () => {
       const code = (await state(mac))?.connect?.userCode ?? await shownCode();
       const authorized = await gh(`/_test/authorize?code=${code}`, 'POST');
       await watchVps('after mac authorized');
@@ -230,10 +244,12 @@ export async function githubSteps(ctx) {
       const row = await until(async () => { const c = await card('mac'); return c?.state === 'connected' && c; }, { what: 'CONNECTED', timeout: 10000 });
       await shot('g3-connected');
       const ready = await state(mac);
-      check('G3', 'needsInstall: the sheet "Choose repositories" says Signed in as octo-demo and links to https://github.com/apps/termivoa-e2e/installations/new; after the install the sheet moves on in under 10 s with no tap; the row reads CONNECTED, octo-demo, Set up a repository and Disconnect',
+      const chips = await until(async () => { const c = await chipsOnCards(); return c.mac === 'GitHub (green)' && c; }, { what: 'the green GitHub chip', timeout: 10000 }).catch(() => chipsOnCards());
+      check('G3', 'needsInstall: the sheet "Choose repositories" says Signed in as octo-demo and links to https://github.com/apps/termivoa-e2e/installations/new; after the install the sheet moves on in under 10 s with no tap; the row reads Connected, octo-demo, Set up a repository and Disconnect; mac\'s card has the green chip GitHub, vps\'s still Connect GitHub',
         authorized.status === 200 && needs?.state === 'needsInstall' && choose.text.includes('Choose repositories') && choose.text.includes('Signed in as octo-demo') && ms < 10000
-          && ready?.state === 'ready' && ready.login === 'octo-demo' && row.meta === 'octo-demo' && row.buttons.includes('Set up a repository') && row.buttons.includes('Disconnect'),
-        `choose "${choose.text.slice(0, 160)}"; state ${needs?.state} → ${ready?.state} ${ready?.login}; moved on after ${ms} ms to "${left.text.slice(0, 80)}"; row ${JSON.stringify(row)}`);
+          && ready?.state === 'ready' && ready.login === 'octo-demo' && row.meta === 'octo-demo' && row.buttons.includes('Set up a repository') && row.buttons.includes('Disconnect')
+          && chips.mac === 'GitHub (green)' && chips.vps === 'Connect GitHub (dashed)',
+        `cards ${JSON.stringify(chips)}; choose "${choose.text.slice(0, 160)}"; state ${needs?.state} → ${ready?.state} ${ready?.login}; moved on after ${ms} ms to "${left.text.slice(0, 80)}"; row ${JSON.stringify(row)}`);
     });
 
     await step('G4', 'Set up a repository: .ssh-keys is not offered, the large one shows its size, two installations and 120 more are all listed, "pdf" leaves one row', async () => {
@@ -373,6 +389,13 @@ export async function githubSteps(ctx) {
       await liveReady(/pdf-editor %\s*$/m);
     };
 
+    /**
+     * A session gets no PTERM_E2E_GITHUB (the broker gives sessions their own environment), so the helper that git runs
+     * there would not take the fake's 127.0.0.1 address as GitHub and git would ask "Username for". In production the
+     * host is always github.com. The shell gets the fake's address, as the e2e build's stand-in for that fixed host.
+     */
+    const fakeHost = () => typeLine(app, `export PTERM_E2E_GITHUB='${env.github}'`);
+
     await step('G9', 'git pull in ~/pdf-editor with mac\'s own environment works through the saved helper line', async () => {
       const authsBefore = (await gitAuths()).length;
       const started = Date.now();
@@ -392,6 +415,7 @@ export async function githubSteps(ctx) {
       // GIT_CONFIG_NOSYSTEM: the session's git never asks the owner's system helpers (Keychain) for anything.
       await typeLine(app, 'echo "E2E-ENV=${PTERM_E2E_GITHUB:-none}"');
       const sessionEnv = await until(async () => /E2E-ENV=(\S+)/.exec((await terminalText(app)).replace(/E2E-ENV=\$\{[^}]*\}/g, ''))?.[1], { what: 'E2E-ENV', timeout: 10000 }).catch(() => '?');
+      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL-EXIT=$?"');
       const exit = await until(async () => /PULL-EXIT=(\d+)/.exec(squash(await terminalText(app)))?.[1], { what: 'PULL-EXIT', timeout: 30000 });
       const screen = await terminalText(app);
@@ -399,7 +423,7 @@ export async function githubSteps(ctx) {
       const auths = (await gitAuths()).slice(authsBefore);
       check('G9-live', 'In Live: git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
         exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
-        `session PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'is the fake' : sessionEnv}; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
+        `the session had PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'the fake' : sessionEnv}, so the harness exported the fake's address; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
     });
 
     await step('G10', 'Disconnect: the row says not connected, both tokens are revoked at GitHub, git pull then fails with the helper\'s line', async () => {
@@ -435,6 +459,7 @@ export async function githubSteps(ctx) {
       try {
       if (!(await framesOk())) { skip('G10-live', 'git pull after Disconnect in a Live session', NO_FRAMES); return; }
       await pdfLive();
+      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL2-EXIT=$?"');
       const done = await until(async () => { const t = squash(await terminalText(app)); return (/PULL2-EXIT=\d+/.test(t) || /Username for/.test(t)) && t; }, { what: 'pull ends or prompts', timeout: 30000 }).catch(() => '');
       const prompted = /Username for/.test(done);
@@ -467,7 +492,7 @@ export async function githubSteps(ctx) {
 
     await step('G12', 'vps stayed "not connected" through all of it (each computer has its own login)', async () => {
       await watchVps('end');
-      await integrations();
+      await integrations('vps');
       const row = await card('vps');
       check('G12', 'GET /api/v1/github and the settings field on vps read notConnected at the start, after mac connected and at the end; the GitHub on vps row reads "not connected"',
         vpsStates.length >= 3 && vpsStates.every((s) => s.endsWith('notConnected / settings notConnected')) && row?.state === 'not connected',
