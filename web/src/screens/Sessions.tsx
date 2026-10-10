@@ -13,6 +13,7 @@ import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type Provide
 import { ProviderCreateSheet } from './ProviderCreate';
 import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
 import { ErrorBoundary, loadChunk } from './chunks';
+import { amberPill, ComputerHead, Drawer, DrawerBar, needsByComputer, stateLine } from './Drawer';
 import { NewSessionHelp } from './NewSession';
 import { ADD_FOLDER_COMMAND, providerState, providerTabs, startInstall, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
@@ -294,8 +295,8 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   );
 }
 
-/** "All", "Needs you 3" while something waits, the provider tabs ("herdr 2"), then one tab per computer; the pressed one shows one of them. */
-export function ComputerChips({ computers, chosen, all = true, disabled, onChoose, providers = [], provider, onProvider, needs, needsOpen = false, onNeeds }: {
+/** One chip per computer, after "All" unless `all` is false (New session picks one computer); none with a single computer. */
+export function ComputerChips({ computers, chosen, all = true, disabled, onChoose }: {
   readonly computers: ReadonlyArray<Computer>;
   readonly chosen: string | undefined;
   /** False to pick one computer (New session): no "All" chip. */
@@ -303,49 +304,57 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
   /** Computers that cannot be picked now. */
   readonly disabled?: (host: string) => boolean;
   readonly onChoose: (host: string | undefined) => void;
-  /** Provider tabs with their count of blocked and done terminals. */
-  readonly providers?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly count: number }>;
-  /** The provider tab that is pressed, if any. */
-  readonly provider?: string | undefined;
-  readonly onProvider?: (id: string) => void;
-  /** The "Needs you" tab with its count of what waits; undefined: no such tab. */
-  readonly needs?: number | undefined;
-  readonly needsOpen?: boolean;
-  readonly onNeeds?: () => void;
 }) {
-  const chips = (computers.length < 2 && (providers.length > 0 || needs !== undefined) && all ? [{ host: undefined, label: 'All' }] : chipsFor(computers))
-    .filter((chip) => all || chip.host !== undefined);
+  const chips = chipsFor(computers).filter((chip) => all || chip.host !== undefined);
   if (chips.length === 0) return null;
-  const [first, ...rest] = chips;
-  const chip = (item: (typeof chips)[number]) => (
-    <button
-      key={item.host ?? ''}
-      type="button"
-      className="chip"
-      aria-pressed={provider === undefined && !needsOpen && chosen === item.host}
-      disabled={item.host !== undefined && disabled?.(item.host) === true}
-      onClick={() => onChoose(item.host)}
-    >
-      {'color' in item && item.color !== undefined && <span className="dot" style={{ background: item.color }} aria-hidden="true" />}
-      {item.label}
-    </button>
-  );
   return (
-    <div className="chips" role="group" aria-label={providers.length > 0 || needs !== undefined ? 'Show' : 'Computers'}>
-      {first !== undefined && chip(first)}
-      {first?.host === undefined && needs !== undefined && (
+    <div className="chips" role="group" aria-label="Computers">
+      {chips.map((item) => (
+        <button
+          key={item.host ?? ''}
+          type="button"
+          className="chip"
+          aria-pressed={chosen === item.host}
+          disabled={item.host !== undefined && disabled?.(item.host) === true}
+          onClick={() => onChoose(item.host)}
+        >
+          {item.color !== undefined && <span className="dot" style={{ background: item.color }} aria-hidden="true" />}
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** "Sessions", the provider tabs ("herdr 2"), then "Needs you 3" while something waits; none while there is only Sessions. */
+export function ShowTabs({ providers, provider, needs, needsOpen, onSessions, onProvider, onNeeds }: {
+  /** Provider tabs with their count of blocked and done terminals. */
+  readonly providers: ReadonlyArray<{ readonly id: string; readonly name: string; readonly count: number }>;
+  /** The provider tab that is pressed, if any. */
+  readonly provider: string | undefined;
+  /** The "Needs you" tab with its count of what waits; undefined: no such tab. */
+  readonly needs: number | undefined;
+  readonly needsOpen: boolean;
+  readonly onSessions: () => void;
+  readonly onProvider: (id: string) => void;
+  readonly onNeeds: () => void;
+}) {
+  if (providers.length === 0 && needs === undefined) return null;
+  return (
+    <div className="chips" role="group" aria-label="Show">
+      <button type="button" className="chip" aria-pressed={provider === undefined && !needsOpen} onClick={onSessions}>Sessions</button>
+      {providers.map((tab) => (
+        <button key={`provider:${tab.id}`} type="button" className="chip" aria-pressed={provider === tab.id} onClick={() => onProvider(tab.id)}>
+          {tab.name}
+          {tab.count > 0 && <><span className="chip-count" aria-hidden="true">{tab.count}</span><span className="visually-hidden">, {tab.count} need you</span></>}
+        </button>
+      ))}
+      {needs !== undefined && (
         <button type="button" className="chip" aria-pressed={needsOpen} onClick={onNeeds}>
           Needs you
           {needs > 0 && <span className="chip-count">{needs}</span>}
         </button>
       )}
-      {first?.host === undefined && providers.map((tab) => (
-        <button key={`provider:${tab.id}`} type="button" className="chip" aria-pressed={provider === tab.id} onClick={() => onProvider?.(tab.id)}>
-          {tab.name}
-          {tab.count > 0 && <><span className="chip-count" aria-hidden="true">{tab.count}</span><span className="visually-hidden">, {tab.count} need you</span></>}
-        </button>
-      ))}
-      {rest.map(chip)}
     </div>
   );
 }
@@ -359,7 +368,7 @@ export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: Com
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onHomeScreenSteps, onReload, onRetry, onFailure, onUpdate,
-  providers = [], tab, inbox: startInbox = false, onOpenItem, onOpenTarget, onProviderRetry, onCreated, onTypeIn, onReadSettings,
+  providers = [], tab, inbox: startInbox = false, computer: startComputer, onComputer, onAddComputer, onOpenItem, onOpenTarget, onProviderRetry, onCreated, onTypeIn, onReadSettings,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -386,6 +395,12 @@ export function Sessions({
   readonly tab?: string | undefined;
   /** Open on the "Needs you" tab (the queue's last Next comes back here). */
   readonly inbox?: boolean | undefined;
+  /** The host of the computer chosen in the drawer; undefined: All computers. */
+  readonly computer?: string | undefined;
+  /** Tells the app the drawer's choice, so it stays when Sessions opens again. */
+  readonly onComputer?: ((host: string | undefined) => void) | undefined;
+  /** + Add a computer in the drawer. Absent: it opens Settings. */
+  readonly onAddComputer?: (() => void) | undefined;
   /** A tap on a "Needs you" row: open it and start the queue. Absent: no "Needs you" tab. */
   readonly onOpenItem?: ((item: InboxItem) => void) | undefined;
   readonly onOpenTarget?: (tap: ProviderTap) => void;
@@ -404,7 +419,14 @@ export function Sessions({
   // From GitHub: the repository list of that provider's computer.
   const [github, setGitHub] = useState<ProviderEntry>();
   const [error, setError] = useState<string | undefined>(message);
-  const tabs = providerTabs(providers);
+  const [chosen, setChosen] = useState<string | undefined>(startComputer);
+  const [drawer, setDrawer] = useState(false);
+  const computers = entries.map((entry) => entry.computer);
+  const multi = computers.length > 1;
+  // A computer that left the list shows All computers.
+  const chip = multi && computers.some((computer) => computer.host === chosen) ? chosen : undefined;
+  const choose = (host: string | undefined) => { setChosen(host); onComputer?.(host); };
+  const tabs = providerTabs(byChip(providers, chip));
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
   const [inboxChosen, setInbox] = useState(startInbox);
   const inbox = inboxChosen && onOpenItem !== undefined;
@@ -412,9 +434,6 @@ export function Sessions({
   const [busy, setBusy] = useState(false);
   const [offerPush, setOfferPush] = useState(false);
   const [hintClosed, setHintClosed] = useState(false);
-  const [chip, setChip] = useState<string>();
-  const computers = entries.map((entry) => entry.computer);
-  const multi = computers.length > 1;
   const shown = byChip(entries, chip);
   const answered = shown.filter((entry) => entry.status.kind === 'ok');
   const loading = answered.length === 0 && shown.some((entry) => entry.status.kind === 'loading');
@@ -427,16 +446,23 @@ export function Sessions({
   }] as const] : [])));
   const viewed = readViewed();
   const now = Date.now();
-  // Every computer's, whatever tab or computer is chosen: the count is the same everywhere.
-  const needsYou = inboxItems(sessions, providers, viewed);
+  // Every computer's for the drawer; the tab counts and lists only the chosen computer's.
+  const everyNeed = inboxItems(sessions, providers, viewed);
+  const counts = needsByComputer(everyNeed);
+  const needsYou = byChip(everyNeed, chip);
   const needs = waitingCount(needsYou);
-  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting');
-  const shownProviders = provider === undefined ? byChip(providers, chip) : providers.filter((entry) => entry.info.id === provider);
+  const answers = (entry: ComputerEntry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting';
+  const reachable = entries.every(answers);
+  const shownProviders = byChip(providers, chip).filter((entry) => provider === undefined || entry.info.id === provider);
+  // All computers: each computer's part of the list under its own header.
+  const headers = multi && chip === undefined;
+  const line = (entry: ComputerEntry) => stateLine(entry, providers);
+  const chosenComputer = computers.find((computer) => computer.host === chip);
   // The provider tab says its own counts; the sessions line never depends on a provider.
   const summary = inbox && needs > 0 ? needsYouText(needs) : provider !== undefined
     ? wordSummary(shownProviders) ?? `${tabs.find((item) => item.id === provider)?.name ?? provider} · nothing running`
     : multi
-      ? hostSummary(sessions, `${computers.length} computers`)
+      ? hostSummary(list, chosenComputer?.label ?? `${computers.length} computers`)
       : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';
   const blocked = provider === undefined ? undefined : firstBlocked(shownProviders);
   const openTarget = onOpenTarget ?? (() => undefined);
@@ -473,8 +499,35 @@ export function Sessions({
     setBusy(false);
   }
 
+  const sessionRows = (rows: ReadonlyArray<HostedSession>) => rows.map((session) => {
+    const name = names.get(session.computer.origin);
+    return (
+      <SessionRow
+        key={`${keyOf(session)}/${session.generation}`}
+        session={session}
+        project={name?.project.get(session.projectId) ?? 'Unknown project'}
+        shell={name?.shell.get(session.shellProfileId) ?? 'Unknown shell'}
+        fresh={!ended(session) && hasNewOutput(session, viewed)}
+        now={now}
+        onOpen={onOpen}
+      />
+    );
+  });
+  const problems = (list: ReadonlyArray<ComputerEntry>) => list.map((entry) => (
+    <ComputerProblem key={entry.computer.origin} entry={entry} now={now} onRetry={onRetry} onSettings={onSettings} />
+  ));
+
   return (
     <main className="page screen">
+      {multi && (
+        <DrawerBar
+          chosen={chosenComputer}
+          open={drawer}
+          amber={amberPill(computers, counts, chip)}
+          onOpen={() => setDrawer(true)}
+          onChoose={choose}
+        />
+      )}
       <header className="screen-header sessions-header">
         <div>
           <h1 className="display">Sessions</h1>
@@ -506,22 +559,21 @@ export function Sessions({
       </header>
       {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
 
-      <ComputerChips
-        computers={computers}
-        chosen={chip}
-        onChoose={(host) => { setInbox(false); setProvider(undefined); setChip(host); }}
+      <ShowTabs
         providers={tabs}
         provider={provider}
-        onProvider={(id) => { setInbox(false); setChip(undefined); setProvider(id); }}
         needs={onOpenItem !== undefined && inboxTabShown(needs, inbox) ? needs : undefined}
         needsOpen={inbox}
-        onNeeds={() => { setChip(undefined); setInbox(true); }}
+        onSessions={() => { setInbox(false); setProvider(undefined); }}
+        onProvider={(id) => { setInbox(false); setProvider(id); }}
+        onNeeds={() => setInbox(true)}
       />
 
-      {inbox && onOpenItem !== undefined && <InboxList items={needsYou} multi={multi} now={now} partial={!reachable || providers.some((entry) => entry.status.kind === 'unreachable')} loading={entries.some((entry) => entry.status.kind !== 'ok') || providers.some((entry) => entry.status.kind === 'loading')} onOpen={onOpenItem} />}
+      {inbox && onOpenItem !== undefined && <InboxList items={needsYou} multi={headers} now={now} partial={!shown.every(answers) || byChip(providers, chip).some((entry) => entry.status.kind === 'unreachable')} loading={shown.some((entry) => entry.status.kind !== 'ok') || byChip(providers, chip).some((entry) => entry.status.kind === 'loading')} onOpen={onOpenItem} />}
 
       {provider !== undefined && (
-        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
+        <ProviderTree entries={shownProviders} multi={multi} now={now}
+          head={headers ? (entry) => { const one = entries.find((item) => item.computer.host === entry.computer.host); return one === undefined ? null : <ComputerHead entry={one} line={line(one)} />; } : undefined} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
           manage={onCreated === undefined ? undefined : { onMenu: (entry, group, item) => setMenu({ entry, group, item }), onWorkspace: openWorkspace, onOpened: (entry, tap) => onCreated(tap, undefined, entry.key), onFailure }}
         />
       )}
@@ -538,33 +590,33 @@ export function Sessions({
         <HomeScreenHint onSteps={onHomeScreenSteps} onClose={() => setHintClosed(true)} />
       )}
 
-      {!inbox && provider === undefined && <ProviderSection entries={shownProviders} multi={multi} now={now} onOpen={openTarget} />}
+      {!inbox && provider === undefined && !headers && <ProviderSection entries={shownProviders} multi={false} now={now} onOpen={openTarget} />}
 
       {!inbox && provider === undefined && (
       <section aria-label="Your sessions">
-        {sectionParts(shownProviders).length > 0 && list.length > 0 && <h2 className="caps list-label">Termivoa sessions</h2>}
+        {!headers && sectionParts(shownProviders).length > 0 && list.length > 0 && <h2 className="caps list-label">Termivoa sessions</h2>}
         {loading && <p role="status" className="muted">Loading…</p>}
         {!loading && answered.length > 0 && list.length === 0 && <p className="muted">No sessions yet.</p>}
-        <ul className="rows">
-          {list.map((session) => {
-            const name = names.get(session.computer.origin);
-            return (
-              <SessionRow
-                key={`${keyOf(session)}/${session.generation}`}
-                session={session}
-                computer={multi ? session.computer : undefined}
-                project={name?.project.get(session.projectId) ?? 'Unknown project'}
-                shell={name?.shell.get(session.shellProfileId) ?? 'Unknown shell'}
-                fresh={!ended(session) && hasNewOutput(session, viewed)}
-                now={now}
-                onOpen={onOpen}
-              />
-            );
-          })}
-          {multi && shown.map((entry) => (
-            <ComputerProblem key={entry.computer.origin} entry={entry} now={now} onRetry={onRetry} onSettings={onSettings} />
-          ))}
-        </ul>
+        {headers ? shown.map((entry) => {
+          const mine = shownProviders.filter((one) => one.computer.host === entry.computer.host);
+          const rows = list.filter((session) => session.computer.host === entry.computer.host);
+          return (
+            <section key={entry.computer.origin} aria-label={entry.computer.label}>
+              <ComputerHead entry={entry} line={line(entry)} />
+              <ProviderSection entries={mine} multi={false} now={now} onOpen={openTarget} />
+              {sectionParts(mine).length > 0 && rows.length > 0 && <h3 className="caps list-label">Termivoa sessions</h3>}
+              <ul className="rows">
+                {sessionRows(rows)}
+                {problems([entry])}
+              </ul>
+            </section>
+          );
+        }) : (
+          <ul className="rows">
+            {sessionRows(list)}
+            {multi && problems(shown)}
+          </ul>
+        )}
       </section>
       )}
 
@@ -636,6 +688,22 @@ export function Sessions({
             />
           </Suspense>
         </ErrorBoundary>
+      )}
+
+      {drawer && (
+        <Drawer
+          entries={entries}
+          chosen={chip}
+          counts={counts}
+          needs={onOpenItem === undefined ? undefined : waitingCount(everyNeed)}
+          line={line}
+          onChoose={choose}
+          onNeeds={() => { choose(undefined); setProvider(undefined); setInbox(true); }}
+          onWall={onWall}
+          onSettings={onSettings}
+          onAddComputer={onAddComputer ?? onSettings}
+          onClose={() => setDrawer(false)}
+        />
       )}
 
       {provider === undefined && canCreate && (

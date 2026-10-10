@@ -83,7 +83,7 @@ type View =
    */
   | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: number; readonly notice?: string }
   /** `section`: scroll to it once (the Home Screen hint on Sessions). */
-  | { readonly name: 'settings'; readonly section?: 'notifications' }
+  | { readonly name: 'settings'; readonly section?: 'notifications' | 'add-computer' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
 
@@ -609,6 +609,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const [preview] = useState(() => homePreview(setPreviewAt));
   const viewRef = useRef(view);
   viewRef.current = view;
+  // The computer chosen in the Sessions drawer (its host), kept while the app runs; undefined: All computers.
+  const [chosenComputer, setChosenComputer] = useState<string>();
   const adding = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
   // The "Needs you" queue: the items this run already showed; undefined while no queue runs. Set by a tap on an
   // inbox row or a confirmed notification tap, never by an address.
@@ -1097,6 +1099,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           providers={providers.entries}
           tab={view.tab}
           inbox={view.inbox}
+          computer={chosenComputer}
+          onComputer={setChosenComputer}
+          onAddComputer={() => navigate({ name: 'settings', section: 'add-computer' })}
           onOpenItem={(item) => { movedAt.current = Date.now(); setVisited(new Set([item.key])); openItem(item); }}
           onOpenTarget={openTarget}
           onCreated={(tap, notice, key) => {

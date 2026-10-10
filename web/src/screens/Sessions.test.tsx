@@ -232,19 +232,48 @@ describe('Sessions first use', () => {
     const html = renderSessions([entry(mac, ok(settings, [working]))]);
     expect(html).not.toContain('class="chips"');
     expect(html).not.toContain('computer-tag');
+    expect(html).not.toContain('Computers and menu');
+    expect(html).not.toContain('drawer');
+    expect(html).not.toContain('computer-group');
   });
 });
 
 describe('Sessions across computers', () => {
   const ready = { ...settings, projects: [{ id: base.projectId, name: 'site' }] };
 
-  it('merges every computer, waiting first, each row with its colour dot and label', () => {
+  it('in All computers, lists each computer under its own header (label and state), in the computers\' order', () => {
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, ok(ready, [waiting], vps))]);
     expect(html).toContain('2 computers · 1 waiting · 1 working');
-    expect(html.indexOf('status-pill amber')).toBeLessThan(html.indexOf('status-pill accent'));
-    expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</span>');
-    expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#64D8E8" aria-hidden="true"></span>mac</span>');
+    expect(html).toContain('<h2 class="computer-group is-ok"><span class="dot" style="background:#64D8E8" aria-hidden="true"></span><bdi>mac</bdi><span class="computer-group-state"><span class="visually-hidden"> · </span>1 session · 1 working</span></h2>');
+    expect(html.indexOf('<bdi>mac</bdi><span class="computer-group-state">')).toBeLessThan(html.indexOf('status-pill accent'));
+    expect(html.indexOf('status-pill accent')).toBeLessThan(html.indexOf('<bdi>vps</bdi><span class="computer-group-state">'));
+    expect(html.indexOf('<bdi>vps</bdi><span class="computer-group-state">')).toBeLessThan(html.indexOf('status-pill amber'));
+    expect(html).not.toContain('computer-tag');
     expect(html).toContain('new session on…</button>');
+  });
+
+  it('with a computer chosen, shows only its sessions, no headers, and its name on the pill and the status line', () => {
+    const html = renderToStaticMarkup(
+      <Sessions
+        entries={[entry(mac, ok(ready, [working])), entry(vps, ok(ready, [waiting], vps))]} sessions={waitingFirst([hosted(working, mac), hosted(waiting, vps)])}
+        computer={vps.host} offerPush={false} onOpen={() => undefined} onNew={() => undefined} onWall={() => undefined} onSettings={() => undefined}
+        onReload={async () => undefined} onRetry={() => Promise.resolve()} onFailure={() => ''}
+      />,
+    );
+    expect(html).toContain('vps · 1 waiting');
+    expect(html).toContain('status-pill amber');
+    expect(html).not.toContain('status-pill accent');
+    expect(html).not.toContain('computer-group');
+    expect(html).toContain('<button type="button" class="drawer-pill" aria-haspopup="dialog" aria-expanded="false"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span><bdi>vps</bdi>');
+  });
+
+  it('has the drawer button and the All computers pill, no computer chips; Wall and Settings stay in the bar', () => {
+    const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, ok(ready, [], vps))]);
+    expect(html).toContain('aria-label="Computers and menu"');
+    expect(html).toContain('All computers<span class="drawer-caret" aria-hidden="true">▾</span>');
+    expect(html).not.toContain('aria-label="Computers"');
+    expect(html).toContain('aria-label="Wall"');
+    expect(html).toContain('aria-label="Settings"');
   });
 
   it('keeps sessions with the same id on two computers apart', () => {

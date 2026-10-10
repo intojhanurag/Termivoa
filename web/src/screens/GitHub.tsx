@@ -250,7 +250,7 @@ export function GitHubRowView({
       : state === 'noGit' ? `git is not on ${label}`
         : mine === true ? 'Connecting…' : 'Connecting from another phone…';
   const word = state === 'ready' ? { text: 'Connected', tone: 'green' }
-    : state === 'noGit' ? { text: 'Git missing', tone: 'amber' }
+    : state === 'noGit' ? { text: 'git missing', tone: 'amber' }
       : state === 'needsInstall' ? { text: 'Signed in', tone: 'amber' } : undefined;
   const off = busy !== undefined;
   const name = setup === undefined ? '' : repoName(setup.repo);
