@@ -8,7 +8,9 @@ The latest Termivoa release is `v0.1.0-beta.4` (2026-10-10), the first free and 
 
 ## Next beta (not released yet)
 
-New features on `main` show here until the next beta ships. There are none yet.
+New features on `main` show here until the next beta ships.
+
+- **Touch gestures on the terminal.** Hold and slide for arrow keys, tap to move the cursor, swipe on the line under the tabs to switch session, pinch for text size, and tap with two fingers for Esc. Turn them off in **Settings → This phone → Terminal gestures**. See [Which touch gestures does the terminal take?](/docs/guides/live-terminal/#which-touch-gestures-does-the-terminal-take)
 
 ## v0.1.0-beta.4 (2026-10-10) — open-source beta
 

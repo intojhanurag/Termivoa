@@ -144,6 +144,8 @@ describe('This phone', () => {
       entries={[okEntry(mac)]}
       fontSize={14}
       onFontSize={noop}
+      gestures
+      onGestures={noop}
       onBack={noop}
       onRenamed={noop}
       onFailure={() => ''}
@@ -153,7 +155,7 @@ describe('This phone', () => {
     />,
   );
 
-  it('has Name, Notifications, Terminal text size, Build and Log out', () => {
+  it('has Name, Notifications, Terminal text size, Terminal gestures, Build and Log out', () => {
     const html = render(settings);
     expect(html).toContain('<h2 id="phone-heading" class="caps">This phone</h2>');
     expect(html).toContain('<span>Name</span><span class="sc-value">phone ›</span>');
@@ -163,6 +165,8 @@ describe('This phone', () => {
     expect(html).toContain('aria-label="Smaller text"');
     expect(html).toContain('<output aria-live="polite" class="font-size">14 px</output>');
     expect(html).toContain('aria-label="Larger text"');
+    // Terminal gestures: a switch, on by default.
+    expect(html).toMatch(/<span id="gestures-label">Terminal gestures<\/span><button type="button" role="switch" class="switch" aria-checked="true" aria-labelledby="gestures-label">/u);
     expect(html).toContain('<dt>Web build</dt>');
     expect(html).toContain('<dt>Host build</dt><dd>host-1</dd>');
     expect(html).toContain('<h2 id="logout-heading" class="caps">Log out</h2>');

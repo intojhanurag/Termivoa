@@ -70,6 +70,8 @@ describe('Settings log out', () => {
       settings={settings}
       fontSize={14}
       onFontSize={() => undefined}
+      gestures
+      onGestures={() => undefined}
       onBack={() => undefined}
       onRenamed={() => undefined}
       onFailure={() => ''}

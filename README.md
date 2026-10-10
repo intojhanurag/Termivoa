@@ -60,6 +60,8 @@ without opening a port or trusting a cloud service.
   repository onto it with one tap. No `gh` needed.
 - **Phone-first keys.** Agent keys (Esc, Ctrl+C, Shift+Tab, `y`, Enter), a
   composer for long text, snippets, project buttons and launch presets.
+- **Touch gestures.** Hold and slide for arrow keys, tap to move the cursor,
+  swipe to switch session, pinch for text size, two-finger tap for Esc.
 - **Preview, photo and voice.** Open the session's dev server, send a photo
   without location data, or dictate a prompt.
 - **Desktop attach.** `pterm attach` opens the same session in any desktop

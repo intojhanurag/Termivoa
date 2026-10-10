@@ -7,7 +7,8 @@ import {
   canSendWith, Connection, initialStatus, noSubscribe, type BranchesView, type ChangesView, type TasksView, type WorktreeRemoval,
 } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
-import { InputController } from '../terminal/InputController';
+import { TouchGestures, sessionSwipe, tapArrows, type GestureHost } from '../terminal/gestures';
+import { InputController, NO_MODIFIERS } from '../terminal/InputController';
 import { tapTarget, type PathLink } from '../terminal/pathLinks';
 import { runFirstCommand } from '../terminal/runFirst';
 import { scheduler } from '../terminal/scheduler';
@@ -168,6 +169,9 @@ export function areaClick(linkTook: boolean, sheet: boolean, canSend: boolean): 
   return canSend ? 'focus' : 'none';
 }
 
+/** A click this soon after a gesture took its touch belongs to that touch. */
+const TOOK_TAP_MS = 600;
+
 /** The session ended for good. New session stays busy until the new one opens (or fails), so one tap starts one session. */
 export function SessionLost({ title, where, onSessions, onStartNew }: {
   readonly title: string;
@@ -238,8 +242,8 @@ export function ProviderEnded({ onOpenAgain, onSessions }: { readonly onOpenAgai
 }
 
 export function Live({
-  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider, queue,
-  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
+  session, sessions, settings, multi = false, fontSize, gestures, runFirst, openComposer, provider, queue,
+  onFontSize, onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
   readonly session: HostedSession;
   /** Every computer's sessions, for the tabs. */
@@ -249,6 +253,10 @@ export function Live({
   /** The phone uses more than one computer: name this one in the status line. */
   readonly multi?: boolean;
   readonly fontSize: number;
+  /** The Settings switch "Terminal gestures" (docs/gestures.md). */
+  readonly gestures: boolean;
+  /** A pinch sets the text size, once on lift. */
+  readonly onFontSize: (size: number) => void;
   readonly runFirst?: RunFirstRequest;
   /** Open the composer once the terminal is ready (from the preview's "Tell agent"). */
   readonly openComposer?: boolean;
@@ -295,6 +303,11 @@ export function Live({
   // An add-computer link tapped in the terminal: confirmed in a sheet outside it.
   const [addLink, setAddLink] = useState<AddComputerLink>();
   const linkTapped = useRef(false);
+  // When a touch gesture last took its touch, and its pill ("← → ↑ ↓", "16 px"); the gesture itself lives in refs.
+  const gestureTook = useRef(-Infinity);
+  const [pill, setPill] = useState<string>();
+  const gestureHost = useRef<GestureHost>(undefined);
+  const swipe = useRef<{ readonly x: number; readonly y: number; readonly at: number }>(undefined);
   // PTY rows measured without the keyboard. The keyboard never shrinks the
   // PTY, so full-screen programs do not redraw each time it opens or closes.
   const restRows = useRef<number | undefined>(undefined);
@@ -624,6 +637,40 @@ export function Live({
     setPanel('composer');
   }
 
+  // Touch gestures: native listeners, so a held or pinching touch can prevent scroll and page zoom.
+  useEffect(() => {
+    const element = area.current;
+    if (element === null) return undefined;
+    const machine = new TouchGestures(() => gestureHost.current as GestureHost);
+    const points = (list: TouchList) => Array.from(list, (touch) => ({ id: touch.identifier, x: touch.clientX, y: touch.clientY }));
+    const start = (event: TouchEvent) => machine.start(points(event.touches));
+    const move = (event: TouchEvent) => { if (machine.move(points(event.touches)) && event.cancelable) event.preventDefault(); };
+    const end = (event: TouchEvent) => { if (machine.end(points(event.touches)) && event.cancelable) event.preventDefault(); };
+    const cancel = () => machine.cancel();
+    // Safari's own pinch zoom: off on the terminal while gestures are on.
+    const zoom = (event: Event) => { if (gestureHost.current?.enabled() === true) event.preventDefault(); };
+    const hidden = () => { if (document.visibilityState === 'hidden') machine.cancel(); };
+    // Only move and end may prevent their default; start and cancel never do.
+    const options = { passive: false };
+    element.addEventListener('touchstart', start, { passive: true });
+    element.addEventListener('touchmove', move, options);
+    element.addEventListener('touchend', end, options);
+    element.addEventListener('touchcancel', cancel, { passive: true });
+    element.addEventListener('gesturestart', zoom, options);
+    element.addEventListener('gesturechange', zoom, options);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      element.removeEventListener('touchstart', start);
+      element.removeEventListener('touchmove', move);
+      element.removeEventListener('touchend', end);
+      element.removeEventListener('touchcancel', cancel);
+      element.removeEventListener('gesturestart', zoom);
+      element.removeEventListener('gesturechange', zoom);
+      document.removeEventListener('visibilitychange', hidden);
+      machine.cancel();
+    };
+  }, []);
+
   const normalBuffer = status.buffer === 'normal';
   // Full-screen apps (Claude Code, vim, less) scroll themselves: a swipe or
   // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
@@ -641,6 +688,53 @@ export function Live({
   const question = panel === 'none' ? openQuestion(status) : undefined;
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
+  const canInput = canSend && !sheet && !cardOpen && !fullPanel;
+  gestureHost.current = {
+    enabled: () => gestures,
+    canInput: () => canInput,
+    cell: () => runtime?.view.cellSize(),
+    send: (key) => runtime?.connection.sendKey(key, NO_MODIFIERS) ?? false,
+    drag: (phase, y) => {
+      if (phase === 'start') {
+        touchStart.current = y;
+        touchLast.current = y;
+        wheelCarry.current = 0;
+        return;
+      }
+      if (appScroll) {
+        const last = touchLast.current;
+        touchLast.current = y;
+        if (last !== undefined) scrollApp(y - last);
+        return;
+      }
+      const start = touchStart.current;
+      if (start !== undefined && y - start > 48 && normalBuffer && area.current?.scrollTop === 0) {
+        touchStart.current = undefined;
+        openHistory();
+      }
+    },
+    fontSize: () => fontSize,
+    setFontSize: onFontSize,
+    pill: setPill,
+    tookTap: () => { gestureTook.current = performance.now(); },
+    now: () => performance.now(),
+    later: (run, ms) => {
+      const timer = setTimeout(run, ms);
+      return () => clearTimeout(timer);
+    },
+  };
+
+  /** Tap to place the cursor: arrows along the cursor's row, only where they surely land (tapArrows). */
+  function placeCursor(x: number, y: number) {
+    const cell = runtime?.view.cellAt(x, y);
+    const cursor = runtime?.connection.cursor();
+    if (runtime === undefined || cell === undefined || cursor === undefined) return;
+    const arrows = tapArrows({ buffer: status.buffer, cursor }, cell, runtime.view.rowCells(cell.row));
+    for (let step = 0; step < Math.abs(arrows); step++) {
+      if (!runtime.connection.sendKey(arrows > 0 ? 'arrow-right' : 'arrow-left', NO_MODIFIERS)) return;
+    }
+  }
+
   // A tapped path inside the files root opens in Files at its line. Any other
   // tap, and any tap on a dimmed terminal (a sheet or question card on top),
   // acts as before.
@@ -697,7 +791,26 @@ export function Live({
               onMenu={() => setPanel('menu')}
             />
           ) : provider.chips}
-          <div className="status-line" role="status">
+          <div
+            className="status-line"
+            role="status"
+            onTouchStart={(event) => {
+              const touch = event.touches[0];
+              swipe.current = event.touches.length === 1 && touch !== undefined ? { x: touch.clientX, y: touch.clientY, at: performance.now() } : undefined;
+            }}
+            onTouchEnd={(event) => {
+              const from = swipe.current;
+              const touch = event.changedTouches[0];
+              swipe.current = undefined;
+              // Provider chips are not session tabs.
+              if (!gestures || provider !== undefined || from === undefined || touch === undefined) return;
+              const step = sessionSwipe(touch.clientX - from.x, touch.clientY - from.y, performance.now() - from.at, from.x, window.innerWidth);
+              const tabs = liveTabs(sessions, session);
+              const at = tabs.findIndex((tab) => sameSession(tab, session));
+              const next = step === 0 || at < 0 ? undefined : tabs[at + step];
+              if (next !== undefined) onOpen(next);
+            }}
+          >
             <span className="place">
               <span className={status.link === 'live' ? 'dot accent' : 'dot amber'} aria-hidden="true" />
               {multi && <span className="place-computer"><ComputerTag computer={session.computer} /> · </span>}
@@ -749,36 +862,23 @@ export function Live({
 
       <div
         ref={area}
-        className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}`}
+        className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}${gestures ? ' gestures' : ''}`}
         hidden={fullPanel}
-        onClick={() => {
-          const action = areaClick(linkTapped.current, sheet, canSend);
+        onClick={(event) => {
+          // A gesture (trackpad, pinch, two-finger tap) takes its click as a link does.
+          const action = areaClick(linkTapped.current || performance.now() - gestureTook.current < TOOK_TAP_MS, sheet, canSend);
           linkTapped.current = false;
+          gestureTook.current = -Infinity;
           if (action === 'close') setPanel('none');
-          else if (action === 'focus') input.current?.focus();
+          else if (action === 'focus') {
+            // Only with the keyboard already up: the first tap raises it, and moves nothing.
+            if (gestures && keyboardRef.current && canInput && status.link === 'live') placeCursor(event.clientX, event.clientY);
+            input.current?.focus();
+          }
         }}
         onWheel={(event) => {
           if (appScroll) scrollApp(-event.deltaY);
           else if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory();
-        }}
-        onTouchStart={(event) => {
-          touchStart.current = event.touches[0]?.clientY;
-          touchLast.current = touchStart.current;
-          wheelCarry.current = 0;
-        }}
-        onTouchMove={(event) => {
-          const start = touchStart.current;
-          const now = event.touches[0]?.clientY;
-          if (appScroll) {
-            const last = touchLast.current;
-            touchLast.current = now;
-            if (last !== undefined && now !== undefined) scrollApp(now - last);
-            return;
-          }
-          if (start !== undefined && now !== undefined && now - start > 48 && normalBuffer && area.current?.scrollTop === 0) {
-            touchStart.current = undefined;
-            openHistory();
-          }
         }}
       >
         <div ref={host} className="terminal-host" aria-label="Terminal display" />
@@ -796,6 +896,7 @@ export function Live({
           rows={1}
         />
       </div>
+      {pill !== undefined && !fullPanel && <div className="gesture-pill" aria-hidden="true">{pill}</div>}
 
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />

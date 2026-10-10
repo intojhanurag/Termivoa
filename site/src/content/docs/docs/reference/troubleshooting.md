@@ -87,6 +87,24 @@ Run `pterm pair` and [pair your phone](/docs/pair-your-phone/) again. The phone 
 
 Tap **Take control**. Another device has control, or the phone reconnected and now only watches.
 
+## A tap did not move the cursor
+
+Tap to place the cursor (**Next beta**) works only when it is sure where the arrow keys land. Check these:
+
+| Check | Why |
+| --- | --- |
+| The keyboard was already open | The first tap only opens the keyboard. |
+| You have control (**● Control**) | A read-only phone sends no keys. |
+| You tapped the line with the cursor | The cursor never moves up or down from a tap. |
+| The text is plain letters you typed | Wide characters, emoji, grey suggested text and empty space after the line do not move it. |
+| It is a normal shell, not a full-screen app | Apps such as `vim` keep their own cursor. |
+
+Use the `←` and `→` keys, or hold and slide, instead.
+
+## Stray arrow keys or Esc while touching the terminal
+
+A held finger that slides sends arrow keys, and a two-finger tap sends Esc (**Next beta**). If that gets in your way, open **Settings** and, under **This phone**, turn off **Terminal gestures**.
+
 ## "Delivery uncertain"
 
 Check the terminal before you send again. The connection broke while you typed; Termivoa never resends input itself.

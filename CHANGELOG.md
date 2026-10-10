@@ -6,6 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Touch gestures on the Live terminal.** Phone: hold a finger still on
+  the terminal, then slide to send arrow keys; with the keyboard up, tap a
+  letter on the command line to move the cursor there; swipe sideways on the
+  status line to switch session; pinch to change the text size; tap with two
+  fingers for Esc. Turn them off in **Settings → This phone → Terminal
+  gestures** (on by default). Host: no change; the phone sends the same keys
+  as the dock buttons, only with control, and never queues them.
+
 ### Fixed
 
 - **`pterm` no longer calls itself a private build.** Host: `pterm` and

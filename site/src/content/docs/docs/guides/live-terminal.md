@@ -1,6 +1,6 @@
 ---
 title: Live terminal
-description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
+description: Read and type in a Termivoa session from your phone, with control, agent keys, touch gestures, snippets, history and a desktop attach.
 lastUpdated: 2026-10-10
 ---
 
@@ -63,6 +63,28 @@ With the phone keyboard open, all keys fold into one scrolling row, and the term
 
 ![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode (⇧⇥), ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
 
+## Which touch gestures does the terminal take?
+
+:::note[Next beta]
+Touch gestures are on `main` and come with the next beta.
+:::
+
+Termivoa's terminal takes five touch gestures. Each one also has a button, so you never need them.
+
+| Gesture | What it does | Needs control |
+| --- | --- | --- |
+| Hold one finger still until **← → ↑ ↓** shows, then slide | Sends arrow keys: about one per letter sideways, one per line and a half up or down. It keeps the first direction until you lift. | Yes |
+| With the keyboard open, tap a letter on the line you type | Moves the cursor there with arrow keys. | Yes |
+| Swipe sideways on the line under the tabs | Opens the session to the left or right in the tabs. | No |
+| Pinch the terminal | Changes the text size. The size shows while you pinch and applies when you lift. | No |
+| Tap with two fingers at once | Sends Esc, the same as `esc`. | Yes |
+
+A tap moves the cursor only when the keys surely land there: on the cursor's own line, over plain one-column letters, and to the right only over text in the same style as the letter before the cursor. A tap on grey suggested text, a right-side prompt or empty space just opens the keyboard. In full-screen apps such as `vim` a tap does not move the cursor.
+
+### How do I turn the gestures off?
+
+Open **Settings**, and under **This phone** turn off **Terminal gestures**. Touches then work as before: a swipe scrolls, and you can zoom the page. The setting is for this phone only.
+
 ## Write longer text with compose
 
 Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with more than one line asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
@@ -117,7 +139,9 @@ rather than joining an incomplete history to the current screen.
 
 ## Change the text size
 
-In the session menu (**⋯**), open **Settings** and tap **A−** or **A+** under **Terminal text size**.
+In the session menu (**⋯**), open **Settings** and tap **A−** or **A+** under **Terminal text size**. Sizes go from 10 px to 24 px.
+
+**Next beta:** you can also pinch the terminal. The new size shows as, for example, **16 px** while you pinch, and applies when you lift your fingers.
 
 ## Move between desktop and phone
 

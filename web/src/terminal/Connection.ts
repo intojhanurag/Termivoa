@@ -444,6 +444,11 @@ export class Connection {
     return this.options.generation;
   }
 
+  /** The cursor of the latest frame (0-based), or undefined before the first one. Metadata, not terminal bytes. */
+  cursor(): { readonly row: number; readonly column: number; readonly visible: boolean } | undefined {
+    return this.screen?.cursor;
+  }
+
   canSend(): boolean {
     return canSendWith(this.status) && this.sender !== undefined;
   }
