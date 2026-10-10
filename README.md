@@ -102,6 +102,7 @@ the old working name "Phone Terminal" so existing installs keep working (see
   terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
 - **Watching busy terminals.** Next beta reduces CPU and temporary memory
   used on the computer while Live or Wall shows changing output.
+  **Next beta:** invalid snapshot row ranges request a fresh screen safely.
 - **Sessions survive the phone.** Close the app or lose signal; the session
   keeps running on the computer. Input is never queued or resent on its own.
 - **Pairing you can check.** Scan a QR code, compare a short code on both

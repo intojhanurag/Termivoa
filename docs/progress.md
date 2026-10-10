@@ -2916,3 +2916,16 @@ Coordinator review for #260 reran all10teardown tests (14.627s, zero skips),
 including actual installedChromium immediate profile removal. Full helper
 diff reviewed with no blocker; frozen site install/Astro29pages+links pass.
 No shipped runtime or public docs change. Hosted CI remains disabled by owner.
+
+## 2026-10-08: desktop snapshot row bounds (#247)
+
+Direct API baseline panicked at MaxInt64+1 row; subtraction-based height
+checks now reject/reset before indexing. Eight invalid boundaries plus valid
+last-row recovery pass. `go test -race ./internal/desktop ./internal/protocol
+-count=1` and vet pass; evidence under docs/evidence/issue-247. Protocol/valid
+render behavior unchanged. Native platforms and hosted checks remain pending;
+owner asked to keep CI disabled. Frozen docs validation follows.
+
+Frozen Astro29-page build/link validation passed; independent review's
+desktop/protocol race rerun passed3.165s/4.965s. The reviewer caught a missing
+Next beta entry, which is now added; final docs rebuild after that change passed (29 pages and all links).

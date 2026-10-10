@@ -407,3 +407,11 @@ are assessed in [dependencies.md](dependencies.md). Root audit thresholds are
 unchanged. The site stays static and uses the passthrough image service; these
 reviewed dispositions do not apply to a Node runtime, external patterns or
 shared HTTP response caches. Reassess them when those facts change.
+
+### How does desktop attach reject invalid snapshot ranges?
+
+The direct `internal/desktop.FrameClient` row assembler checks start and count
+against declared height without overflowing addition. Invalid chunks reset
+assembly and request resync before indexing or painting. Strict transport
+validation remains separate; valid frame/protocol behavior is unchanged.
+[Desktop frame client](desktop-frame-client.md), issue #247.

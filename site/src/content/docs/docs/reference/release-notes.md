@@ -8,6 +8,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 ## Next beta (not released yet)
 
+- **Desktop attach:** Termivoa rejects invalid screen row ranges safely and asks for a fresh screen. Phone behavior is unchanged.
+
 New features on `main` show here until the next beta ships.
 
 - **Terminal screen bounds.** The computer rejects malformed row positions

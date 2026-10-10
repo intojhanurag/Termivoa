@@ -39,6 +39,8 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 The pairing link and QR code are secret. Do not share them.
 
+**Next beta:** Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
+
 ## Use several computers
 
 See [Use several computers](/docs/guides/computers/).
