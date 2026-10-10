@@ -1,0 +1,53 @@
+/* Settings by computer (docs/ui-revamp.md, section 5). Fonts come from global.css's variables. */
+
+/* Main page: one card per computer. */
+.settings-screen .sc-cards { gap: 10px; }
+.settings-screen .computer-card.sc-card { gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.settings-screen .computer-card.sc-card.dashed { border-style: dashed; background: none; }
+.sc-open {
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: 100%;
+  min-height: 56px; padding: 14px 16px; border: 0; border-radius: 14px; text-align: left; font-weight: 400;
+}
+.sc-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sc-card-head .computer-name { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.sc-card.dashed .computer-name { color: var(--soft); }
+.sc-card-head .sc-word { margin-left: auto; }
+.sc-card-head .sc-word::before { display: none; }
+.sc-chevron { margin-left: auto; color: var(--muted); font-size: 20px; line-height: 22px; }
+.sc-word + .sc-chevron { margin-left: 0; }
+.sc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sc-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 13px; background: var(--raised); color: var(--soft); font-size: 13px; line-height: 18px; }
+.sc-chip.dashed { border: 1px dashed var(--line-strong); background: none; color: var(--accent); font-weight: 600; }
+.sc-chip.amber { color: var(--amber); }
+.sc-open > .row-meta { white-space: normal; overflow-wrap: anywhere; }
+.sc-card-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 16px 14px; }
+
+/* Grouped rows: This phone, This computer. */
+.sc-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.sc-list > li + li { border-top: 1px solid var(--line); }
+.sc-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  min-height: 50px; padding: 0 16px; border: 0; border-radius: 0; background: none; color: var(--text);
+  text-align: left; font-size: 16px; font-weight: 400;
+}
+button.sc-row:active:not(:disabled) { background: var(--raised); }
+button.sc-row.danger-text { color: var(--red); }
+.sc-value { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.sc-value.green { color: var(--green); }
+.sc-item > .field-note:not(:empty) { padding: 0 16px 12px; }
+.sc-inline { padding: 4px 16px 16px; }
+.sc-item > .confirm.sc-inline { padding: 14px 16px; border-radius: 0; }
+.sc-row .font-row { gap: 8px; }
+.sc-row .font-row .key { flex: 0 0 44px; height: 36px; min-height: 36px; }
+.sc-row .font-size { min-width: 3.5rem; }
+.sc-facts { padding: 10px 0; }
+.sc-facts dd { text-align: right; }
+
+/* A computer's page. */
+.sc-page-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 16px; }
+.sc-page-head .row-meta { white-space: normal; overflow-wrap: anywhere; }
+button.link.sc-back { min-height: 44px; margin-left: -4px; padding: 0 4px; }
+.sc-title { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 4px; }
+.sc-title h1:focus, .settings-screen h1:focus { outline: none; }
+.settings-screen .sc-block { padding: 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.settings-screen .sc-block > .computer-card { border-bottom: 0; }

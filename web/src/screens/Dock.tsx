@@ -161,10 +161,10 @@ export function controllerLine(status: ConnectionStatus): { readonly text: strin
 
 /** The short label at the right of the status line. */
 export function controlBadge(status: ConnectionStatus): { readonly text: string; readonly tone: 'accent' | 'amber' | 'muted' } {
-  if (shellEnded(status)) return { text: 'EXITED', tone: 'muted' };
-  if (status.control === 'controller') return { text: '● CONTROL', tone: 'accent' };
-  if (status.control === 'acquiring') return { text: 'TAKING CONTROL…', tone: 'muted' };
-  return { text: 'READ-ONLY', tone: 'amber' };
+  if (shellEnded(status)) return { text: 'Exited', tone: 'muted' };
+  if (status.control === 'controller') return { text: '● Control', tone: 'accent' };
+  if (status.control === 'acquiring') return { text: 'Taking control…', tone: 'muted' };
+  return { text: 'Read-only', tone: 'amber' };
 }
 
 export function canTakeControl(status: ConnectionStatus): boolean {

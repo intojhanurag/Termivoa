@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-08
+Last updated: 2026-10-10
 
 ## Start here
 
@@ -14,6 +14,96 @@ Last updated: 2026-10-08
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### UI revamp: side drawer, Settings by computer, Geist (2026-10-10, branch `feat/ui-revamp`; not merged)
+
+- **Why.** With two or more computers, the computer chips crowded Sessions
+  and Settings was one long page. The owner approved the designs on
+  2026-10-10 ([ui-revamp.md](ui-revamp.md); pictures in
+  [`evidence/ui-revamp/`](evidence/ui-revamp/)). Not critical under rule 24:
+  no change to authentication, pairing, trust, network surface, protocol or
+  stored secrets.
+- **What.** Phone only (commit b737be0): the side drawer (`Drawer.tsx`) with
+  All computers, each computer's state and count, Needs you, Wall, Settings,
+  + Add a computer; the amber pill; tabs Sessions · herdr · Needs you; a
+  header per computer in All computers. Settings by computer
+  (`SettingsComputer.tsx`, `Settings.tsx`, `Computers.tsx`): Computers cards
+  with chips, This phone, and one page per computer (herdr, GitHub, This
+  computer). Geist and Geist Mono bundled (`fonts.css`). Texts: "Can't
+  reach", "See Sessions.", sentence case for state words. Host: no change.
+- **Docs.** Every "Settings → Integrations", "Settings → Computers", "This
+  device", "All" tab and upper-case label in the docs site, README,
+  CHANGELOG (Unreleased), `architecture.md`, `pending-work.md` and the design
+  documents now names the new screens; `guides/computers.md` has "How do I
+  switch between computers?" and "Where are a computer's settings?";
+  release notes have a Next beta bullet. Screenshots retaken with
+  `scripts/docs-screenshots/` (demo data).
+- **Commands and evidence.** `pnpm typecheck`; `pnpm test:web` (1080
+  pass); `GOTOOLCHAIN=go1.27.1 sh scripts/check` (pass); e2e
+  `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build`
+  161 PASS, 0 FAIL, 0 SKIP (new checks U1-U9: drawer, filter, amber pill,
+  Settings levels and Back, Add a computer, Geist from the app's origin,
+  drawer close paths, New session on the chosen computer, the queue on the
+  chosen computer) and `phase-a.mjs` 32 PASS, 0 FAIL; screenshots with
+  `scripts/docs-screenshots/` (demo data); `cd site && npx astro build`
+  (pass, links valid). Design pictures in `docs/evidence/ui-revamp/`.
+- **Reviews.** One independent review (verdict: merge after fixes; no lost
+  control): the queue and the status line now follow the chosen computer,
+  the drawer is a native modal `<dialog>`, New session opens on the chosen
+  computer, the choice clears on a new pairing; small fixes in Settings.
+  The e2e run then found two host texts that named the old page
+  (`cmd/pterm/github.go`, `internal/cli/admin.go`); both now say "Settings,
+  tap the computer". Issues filed from the run: #269, #270.
+- **Open.** Not tested on a real phone. Follow-ups in
+  [pending-work.md](pending-work.md) (Polish next, item 7).
+
+### Website: termivoa.com and visitor counting (2026-10-10, branch `chore/site-domain-analytics`)
+
+- **What.** The owner bought `termivoa.com` (Cloudflare Registrar; DNS at
+  Cloudflare, records "DNS only"; Vercel serves the site, `www` redirects
+  with 308). Every `termivoa.vercel.app` link in the repository and the
+  site now uses `https://termivoa.com` (Astro `site`, canonical, Open Graph,
+  `robots.txt`, sitemaps, README, install docs); `termivoa.vercel.app` keeps
+  working. History entries keep the old address.
+- **Visitor counting.** Vercel Web Analytics on the landing page and the
+  docs: one script from the site's own origin (`/_vercel/insights/script.js`),
+  no cookies. The landing page's CSP now allows `script-src 'self'` and
+  `connect-src 'self'`. The security page says so (Common questions). The
+  app and the computers send nothing.
+- **Owner steps.** Enable Web Analytics in the Vercel project; change the
+  GitHub App's Homepage URL and Setup URL to `https://termivoa.com` and
+  `https://termivoa.com/docs/guides/github/`.
+
+### Patched source-map build dependency (2026-10-08, #226)
+
+- Confirmed the root high-severity dependency gate fails for
+  `source-map-js` 1.2.1, also present in the independent website lockfile.
+- Both lockfiles now resolve the compatible patched 1.2.2. The root workspace
+  has a narrow override for versions below that release. No runtime or
+  protocol change, and no audit threshold change.
+- Passed with Node 24.11.0/pnpm 10.33.0: frozen root install,
+  `pnpm protocol:check`, `pnpm typecheck`, all 1,048 web tests,
+  `pnpm build:web`, and `pnpm audit --audit-level high` (exit 0).
+  Frozen independent website install, Astro build and all internal links
+  also passed. The independent website audit still fails for two high
+  advisories outside this issue; root retains two moderate advisories.
+- Evidence: [issue-226](evidence/issue-226/README.md). Independent PR review,
+  hosted required checks and merge remain pending. Separate dependency
+  remediation is tracked by #227 and #228.
+
+### Patched protocol-generator dependency (2026-10-08, #227)
+
+- Confirmed `quicktype` 26.0.0 pins vulnerable `stream-json` 3.5.0.
+  A parent-scoped override resolves that edge to patched 3.6.0. No shipped
+  Node runtime, protocol/schema change or audit exclusion was introduced.
+- With Node 24.11.0/pnpm 10.33.0, frozen install and the full `scripts/check`
+  passed: generation drift, Go vet/tests including vendored modules,
+  TypeScript, all 1,048 web tests and production build. Generated files
+  are unchanged. `pnpm audit --json` now reports zero moderate advisories;
+  its exit remains 1 for the unrelated source-map high advisory (#226).
+- Evidence: [issue-227](evidence/issue-227/README.md). Independent review,
+  required hosted checks and merge remain pending; physical-phone and
+  native Windows/Linux gates remain open.
 
 ### Fake GitHub fixture race (#216, 2026-10-08)
 
@@ -2626,3 +2716,32 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08: separate docs audit (#228)
+
+- Baseline independent site audit reproduced three high/one moderate findings;
+  root workspace auditing omitted the separate lockfile.
+- Stacked on #226; patched only the site postcss-nested/parser edge to 7.1.6.
+  Frozen install and `npx astro build` passed all 29 pages and link validation.
+  All eight emitted CSS files have unchanged SHA-256 digests.
+- Raw audit still exits 1 with two high/zero moderate. Read the primary
+  advisories and locked source; neither remaining unpatched input path is
+  demonstrated reachable from visitors in this static trusted-source build.
+  Exact versions/paths/status and re-review triggers are recorded in
+  `docs/dependencies.md`; no claim that the upstream vulnerabilities are fixed.
+- Added independent site build/audit to the existing vulnerability CI job.
+  Root threshold unchanged. `node --test scripts/audit-site.test.mjs` passed
+  six fail-closed regressions; `node scripts/audit-site.mjs` passed while
+  printing both retained unpatched findings. New findings, paths, versions,
+  available patches, audit errors or report drift block the new gate.
+- Evidence: `docs/evidence/issue-228/README.md`. Independent review, hosted
+  required checks, CI-minutes permission and merge remain pending. No runtime,
+  credentials, public deployment or private/public repository setting changed.
+
+- Independent #228 review reproduced two unsupported report shapes accepted by
+  the initial checker. Explicit object/severity validation and a fifth
+  regression now reject them; final reviewer verification remains pending.
+
+Independent nested-report review also reproduced array-like findings/path
+objects that could hide a new path. Explicit array/entry validation and the
+sixth regression now reject both; valid live audit output still passes.

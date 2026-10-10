@@ -109,6 +109,29 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Phone: a side menu for computers, Settings by computer, and the Geist
+  font (`docs/ui-revamp.md`; docs: `guides/computers.md`). With two or more
+  computers, a menu button ("Computers and menu") and a computer pill ("All
+  computers" or "● mac") at the top of Sessions open a side menu: All
+  computers, one row for each computer (its state, such as "2 sessions · 1
+  working" or "can't reach", and an amber count of what needs you there),
+  then Needs you, Wall, Settings and + Add a computer. A chosen computer
+  filters Sessions, herdr and Needs you; an amber pill names another
+  computer that needs you. The computer chips are gone; the tabs are
+  Sessions · herdr · Needs you ("All" is now "Sessions"). In All computers,
+  the lists have a header for each computer (the "on mac" tag on herdr
+  projects is gone). One computer: no side menu. Settings has a main page
+  (Computers: one card for each computer with herdr, GitHub and project
+  chips; Found on your network; + Add a computer; This phone: Name,
+  Notifications, Terminal text size, Build, Log out) and a page for each
+  computer (herdr, GitHub, and This computer: Projects, Check again, Rename,
+  Remove). "Settings → Integrations" and "This device" are gone. Texts:
+  "Can't reach" for a computer that does not answer; Needs you says "Some
+  computers did not answer. See Sessions."; sentence case for state words
+  ("● Control", "Read-only", "Taking control…", "Exited", "Listening ·",
+  "Tap the mic", "git missing", "Connected"). Geist and Geist Mono (SIL Open
+  Font License 1.1) come with the app; nothing loads from the internet. No
+  protocol or stored-data change. Host: no change.
 - Phone, UI consistency (no feature removed; less text): every
   confirmation of a destructive or multi-line action (Terminate session,
   Send N lines, Paste N lines, Remove worktree, Remove anyway, Remove a

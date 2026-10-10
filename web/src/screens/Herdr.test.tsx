@@ -59,18 +59,25 @@ describe('the herdr tab (H3)', () => {
     expect(page).not.toContain('aria-expanded');
   });
 
-  it('keeps a project name and its small labels in one wrapping title, so the labels move under a long name', () => {
+  it('keeps a project name and its small label in one wrapping title, with no "on mac" (the computer header or the drawer pill names it)', () => {
     const quiet = group('g2', 'storefront-redesign', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
     expect(html([ready(mac, [quiet])], true)).toContain(
-      '<span class="group-title"><span class="group-name"><bdi>storefront-redesign</bdi></span><span class="group-where">on mac</span><span class="group-where">2 worktrees</span></span>',
+      '<span class="group-title"><span class="group-name"><bdi>storefront-redesign</bdi></span><span class="group-where">2 worktrees</span></span>',
     );
+  });
+
+  it('puts the head of each computer over its projects', () => {
+    const page = renderToStaticMarkup(<ProviderTree entries={[ready(mac), ready(vps, [])]} multi head={(entry) => <h2>head {entry.computer.label}</h2>} now={now} onOpen={noop} onRetry={retry} />);
+    expect(page.indexOf('head mac')).toBeLessThan(page.indexOf('shop'));
+    expect(page.indexOf('shop')).toBeLessThan(page.indexOf('head vps'));
   });
 
   it('folds a quiet multi-worktree project and says how many worktrees', () => {
     const quiet = group('g2', 'blog', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
     const page = html([ready(mac, [quiet])], true);
     expect(page).toContain('aria-expanded="false"');
-    expect(page).toContain('<span class="group-where">on mac</span><span class="group-where">2 worktrees</span>');
+    expect(page).toContain('<span class="group-where">2 worktrees</span>');
+    expect(page).not.toContain('on mac');
     expect(page).not.toContain('row-title');
   });
 
@@ -265,18 +272,18 @@ describe('Sessions with a provider', () => {
 
   it('adds a herdr tab with its count, and on it the blocked button', () => {
     const page = renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac), okEntry(vps)]} providers={[ready(mac)]} tab="herdr" />);
-    expect(page).toMatch(/>All<\/button><button type="button" class="chip" aria-pressed="true">herdr<span class="chip-count" aria-hidden="true">2<\/span>/u);
+    expect(page).toMatch(/>Sessions<\/button><button type="button" class="chip" aria-pressed="true">herdr<span class="chip-count" aria-hidden="true">2<\/span>/u);
     expect(page).toContain('1 blocked · 1 done · 2 working');
     expect(page).toContain('Open the blocked agent');
     expect(page).not.toContain('new session');
   });
 
-  it('opens on the herdr tab when asked (the way back from a herdr terminal), and on All when not', () => {
+  it('opens on the herdr tab when asked (the way back from a herdr terminal), and on Sessions when not', () => {
     const on = (tab?: string) => renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac)]} providers={[ready(mac)]} {...(tab === undefined ? {} : { tab })} />);
     expect(on('herdr')).toContain('class="provider-tree"');
     expect(on('herdr')).toMatch(/aria-pressed="true">herdr</u);
     expect(on()).not.toContain('class="provider-tree"');
-    expect(on()).toMatch(/aria-pressed="true">All</u);
+    expect(on()).toMatch(/aria-pressed="true">Sessions</u);
   });
 
   it('keeps the sessions line when the provider cannot be read', () => {
