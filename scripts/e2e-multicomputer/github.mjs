@@ -389,13 +389,6 @@ export async function githubSteps(ctx) {
       await liveReady(/pdf-editor %\s*$/m);
     };
 
-    /**
-     * A session gets no PTERM_E2E_GITHUB (the broker gives sessions their own environment), so the helper that git runs
-     * there would not take the fake's 127.0.0.1 address as GitHub and git would ask "Username for". In production the
-     * host is always github.com. The shell gets the fake's address, as the e2e build's stand-in for that fixed host.
-     */
-    const fakeHost = () => typeLine(app, `export PTERM_E2E_GITHUB='${env.github}'`);
-
     await step('G9', 'git pull in ~/pdf-editor with mac\'s own environment works through the saved helper line', async () => {
       const authsBefore = (await gitAuths()).length;
       const started = Date.now();
@@ -415,15 +408,14 @@ export async function githubSteps(ctx) {
       // GIT_CONFIG_NOSYSTEM: the session's git never asks the owner's system helpers (Keychain) for anything.
       await typeLine(app, 'echo "E2E-ENV=${PTERM_E2E_GITHUB:-none}"');
       const sessionEnv = await until(async () => /E2E-ENV=(\S+)/.exec((await terminalText(app)).replace(/E2E-ENV=\$\{[^}]*\}/g, ''))?.[1], { what: 'E2E-ENV', timeout: 10000 }).catch(() => '?');
-      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL-EXIT=$?"');
       const exit = await until(async () => /PULL-EXIT=(\d+)/.exec(squash(await terminalText(app)))?.[1], { what: 'PULL-EXIT', timeout: 30000 });
       const screen = await terminalText(app);
       const ours = (await brokerPairs()).map((p) => p.n);
       const auths = (await gitAuths()).slice(authsBefore);
-      check('G9-live', 'In Live: git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
-        exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
-        `the session had PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'the fake' : sessionEnv}, so the harness exported the fake's address; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
+      check('G9-live', 'In Live: the session inherited PTERM_E2E_GITHUB from the broker (e2e build); git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
+        sessionEnv === env.github && exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
+        `the session had PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'the fake' : sessionEnv}, as the broker gave it; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
     });
 
     await step('G10', 'Disconnect: the row says not connected, both tokens are revoked at GitHub, git pull then fails with the helper\'s line', async () => {
@@ -453,13 +445,12 @@ export async function githubSteps(ctx) {
       check('G10', 'After Disconnect and its confirmation: the row reads "not connected" with Connect; the fake\'s revoked list has the broker\'s access and refresh token; git pull in ~/pdf-editor exits non-zero and its stderr has "Termivoa is not connected to GitHub on this computer."',
         row.buttons.includes('Connect') && !!latest && revoked.includes(latest.access) && revoked.includes(latest.refresh)
           && pull.code !== 0 && pull.stderr.includes(NOT_CONNECTED) && status === 'GitHub: not connected'
-          && toBroker.code === 1 && toBroker.stdout === 'quit=1' && toBroker.stderr === NOT_CONNECTED.concat(' Connect in Settings → Integrations.'),
+          && toBroker.code === 1 && toBroker.stdout === 'quit=1' && toBroker.stderr === NOT_CONNECTED.concat(' In Termivoa, open Settings, tap this computer, then Connect.'),
         `row ${JSON.stringify(row)}; broker pairs ${pairs.length}, the last one revoked: access ${revoked.includes(latest?.access)}, refresh ${revoked.includes(latest?.refresh)}; pull exit ${pull.code}, stderr ${JSON.stringify(pull.stderr.trim().replaceAll(env.root, '<root>').slice(0, 300))}; pterm github status "${status}"; helper to the broker: exit ${toBroker.code}, stdout "${toBroker.stdout}", ${toBroker.ms} ms; helper to no broker: exit ${toNobody.code}, stdout "${toNobody.stdout}", ${toNobody.ms} ms; ${same ? 'the helper\'s answer is the same for both, so it alone cannot tell "not connected" from "broker unreachable"; the status line shows the broker answered' : `they differ: no broker gives stderr "${toNobody.stderr.replaceAll(env.root, '<root>')}"`}`);
       // The same in Live, as a person types it: git must not stop at a "Username for" prompt.
       try {
       if (!(await framesOk())) { skip('G10-live', 'git pull after Disconnect in a Live session', NO_FRAMES); return; }
       await pdfLive();
-      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL2-EXIT=$?"');
       const done = await until(async () => { const t = squash(await terminalText(app)); return (/PULL2-EXIT=\d+/.test(t) || /Username for/.test(t)) && t; }, { what: 'pull ends or prompts', timeout: 30000 }).catch(() => '');
       const prompted = /Username for/.test(done);
