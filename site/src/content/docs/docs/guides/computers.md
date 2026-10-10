@@ -227,7 +227,7 @@ Open **Settings**, then tap the computer's card. Its page shows the Termivoa ver
 | You see | Meaning |
 | --- | --- |
 | **Home** next to a name | This computer is home. Under the **Computers** heading the app says **Home serves this app to your phone.** |
-| **Termivoa 0.1.0-beta.3+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
+| **Termivoa 0.1.0-beta.4+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
 | **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | vps does not answer now. The phone keeps the time of its last answer until you close the app. The question shows only when nothing answered at all. |
 | **Check again** | Asks that one computer now. The button says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
 
