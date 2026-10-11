@@ -5,9 +5,6 @@ import type {
   ChangesPatchPayload,
   ChangesPushedPayload,
   ChangesSummaryPayload,
-  ChatChangedPayload,
-  ChatPagePayload,
-  ChatStatePayload,
   ControlChangedPayload,
   ErrorPayload,
   FilesContentPayload,
@@ -50,9 +47,6 @@ type HostPayloads = {
   readonly 'files.listed': FilesListedPayload;
   readonly 'files.content': FilesContentPayload;
   readonly 'files.found': FilesFoundPayload;
-  readonly 'chat.state': ChatStatePayload;
-  readonly 'chat.changed': ChatChangedPayload;
-  readonly 'chat.page': ChatPagePayload;
   readonly 'control.changed': ControlChangedPayload;
   readonly 'input.accepted': InputAcceptedPayload;
   readonly 'input.rejected': InputRejectedPayload;
@@ -90,9 +84,6 @@ const hostTypes = new Set<keyof HostPayloads>([
   'files.listed',
   'files.content',
   'files.found',
-  'chat.state',
-  'chat.changed',
-  'chat.page',
   'control.changed',
   'input.accepted',
   'input.rejected',

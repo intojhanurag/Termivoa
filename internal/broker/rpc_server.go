@@ -30,7 +30,6 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/tailnet"
-	"github.com/intojhanurag/phone-terminal/internal/transcript"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -80,10 +79,6 @@ type ManagementServerConfig struct {
 	// Nil, or a build without the GitHub app, means no feature: no settings
 	// field, and every GitHub route is refused.
 	GitHub *github.Config
-	// Chat names the agent folders the Chat view reads (docs/chat-view.md).
-	// Nil, as on Windows and in most tests, means Chat is not supported:
-	// no settings field and every chat.open answers unsupported.
-	Chat *transcript.Config
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -129,8 +124,6 @@ type ManagementServer struct {
 	// github is the GitHub service (github.go); nil when the feature is off.
 	github       githubService
 	githubLimits providerLimits
-	// chat is the Chat view (chat.go); never nil.
-	chat *chatHub
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -191,11 +184,6 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.GitHub != nil {
 		server.newGitHub(*config.GitHub)
 	}
-	chat, err := newChatHub(context.Background(), server, config.Chat)
-	if err != nil {
-		return nil, err
-	}
-	server.chat = chat
 	if server.config.Tailnet == nil {
 		var lastRefused string
 		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{

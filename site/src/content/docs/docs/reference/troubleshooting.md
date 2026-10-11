@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, read-only sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-10
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -105,25 +105,6 @@ Use the `←` and `→` keys, or hold and slide, instead.
 ## Stray arrow keys or Esc while touching the terminal
 
 A held finger that slides sends arrow keys, and a two-finger tap sends Esc (**Next beta**). If that gets in your way, open **Settings** and, under **This phone**, turn off **Terminal gestures**.
-
-## Chat isn't available for this session
-
-**Next beta.** [Chat](/docs/guides/chat/) shows nothing rather than a guess when it is not sure which conversation belongs to the session. Tap **Why?** on that screen for the reason, or **Show terminal**: the terminal always has everything.
-
-| Reason on the phone | What to do |
-| --- | --- |
-| Chat is off on this computer | Run `pterm chat on` on the computer. A phone cannot turn Chat on. |
-| This agent's conversation can't be read | Chat works with Claude Code only today. Use the terminal for other agents. |
-| The agent started a new conversation | After `/clear`, Termivoa cannot be sure which file is the new one. Use the terminal for this conversation. |
-| More than one agent runs in this session | Run one agent per session. |
-| The agent keeps its conversations in a moved folder | Chat does not read a custom folder (`CLAUDE_CONFIG_DIR`) yet. |
-| Termivoa can't find exactly one conversation file | Wait until the agent writes its first reply, then open Chat again. |
-| The file is in a format Termivoa does not read yet | Update Termivoa on the computer. |
-| The conversation file failed a safety check | Termivoa reads only a plain file that belongs to you and that others cannot change: not a link, not a file with a second name. |
-| This computer already follows the most chats it allows | A computer follows at most 8 chats at a time. Leave Chat on another session. |
-| Chat could not load | Check the connection and tap **Try again**. |
-
-No **Chat | Terminal** switch at all? Chat is off on that computer (run `pterm chat on` there, then open the session again), the computer runs an older Termivoa or Windows, or Chat already said it cannot read this session's agent.
 
 ## "Delivery uncertain"
 
@@ -287,10 +268,6 @@ Decide if you trust what runs there as much as Termivoa. If not, move it to anot
 ```
 
 A handler on another port is a different origin, so it cannot use the Termivoa app. But when the phone opens it, the browser sends it the Termivoa cookie, and it could act as that phone. This is a warning, not a problem: setup does not refuse it, because many people serve their own tools on other ports. Termivoa's own preview port 8443 is not listed; Termivoa removes the cookie there.
-
-## `pterm doctor` says the agent's transcript format changed
-
-**Next beta.** The line `! Chat view: …; the agent's transcript format changed, so Chat shows the terminal instead` means that more than 1 in 5 of the last lines in Claude Code's conversation file were in a form Termivoa does not read. A new Claude Code version can do this. Chat then stops for that session and the terminal stays as it is. Update Termivoa when a new beta is out. Run `pterm chat off` if you do not want Chat to try again.
 
 ## `pterm doctor` says Termivoa will not run tailscale
 

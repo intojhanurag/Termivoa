@@ -1,6 +1,6 @@
 # ADR 0014: Chat view, read from the agent's own transcript
 
-- Status: **accepted** (2026-10-10). Critical under AGENTS.md rule 24. The owner approved the design and the recommended answers to all questions in section 13 of the design in writing ("Go shipppp").
+- Status: **withdrawn** (2026-10-11). The owner reverted the feature after trying it ("that is stale and not working! I am reverting my idea"). The implementation (#298 host, #297 phone) was reverted; this record stays as history. It was accepted on 2026-10-10.
 - Date: 2026-10-10
 - Design: [`docs/chat-view.md`](../chat-view.md)
 - Issue: [#285](https://github.com/intojhanurag/Termivoa/issues/285)

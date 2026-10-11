@@ -1,6 +1,5 @@
 import type {
   BrokerRPCSessionRecord,
-  HTTPChatInfo,
   HTTPComputer,
   HTTPComputerAddResponse,
   HTTPComputerFoundResponse,
@@ -67,7 +66,6 @@ export interface HttpBodies {
   readonly githubResponse: HTTPGitHubResponse;
   readonly githubReposResponse: HTTPGitHubReposResponse;
   readonly githubRepo: HTTPGitHubRepo;
-  readonly chatInfo: HTTPChatInfo;
 }
 
 export type HttpSchema = keyof HttpBodies;

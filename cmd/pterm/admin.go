@@ -38,9 +38,6 @@ var adminUsages = map[string]string{
 	"config origin":     "pterm config origin " + adminProfileFlags + " [<https-origin>]",
 	"github status":     "pterm github status " + adminProfileFlags,
 	"github disconnect": "pterm github disconnect " + adminProfileFlags,
-	"chat on":           "pterm chat on " + adminProfileFlags,
-	"chat off":          "pterm chat off " + adminProfileFlags,
-	"chat status":       "pterm chat status " + adminProfileFlags,
 }
 
 var adminSubcommands = map[string][]string{
@@ -48,7 +45,6 @@ var adminSubcommands = map[string][]string{
 	"profile": {"list", "detect"},
 	"config":  {"origin"},
 	"github":  {"status", "disconnect"},
-	"chat":    {"on", "off", "status"},
 }
 
 type adminCommandConfig struct {
@@ -361,8 +357,6 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 			return err
 		}
 		return writeGitHubDisconnect(status, output)
-	case "chat on", "chat off", "chat status":
-		return runChat(ctx, client, config.action, input, output)
 	default:
 		return errors.New("unsupported administration command")
 	}

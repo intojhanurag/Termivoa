@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-10
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -82,7 +82,6 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `! herdr: <path> <version> (protocol <n>) is too old or unreadable; update herdr (0.8.2 or later)` | Update herdr. See [Update herdr on mac](/docs/reference/troubleshooting/#update-herdr-on-mac). |
 | `! herdr: config.toml sets a prefix key other than ctrl+b; …` | Termivoa doubles only `ctrl+b`, so a phone can send that other prefix key to a herdr terminal it opened. At worst it detaches the phone. Set herdr's prefix key back to `ctrl+b`. |
 | `! herdr at <path>: <reason>; Termivoa will not run it` | It shows before the herdr line, or alone when no other herdr is found. Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
-| `Chat view: off (turn it on with pterm chat on)` or `Chat view: on, <n> of 8 chats open` | **Next beta.** Whether Chat view is on for this computer. `! Chat view: …; the agent's transcript format changed …` is a warning: see [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-the-agents-transcript-format-changed). Never a problem. |
 | `GitHub: connected as <login>` or `GitHub: not connected` | Whether this computer is connected to GitHub. It shows only when the broker runs and the build has GitHub, and is never a problem. See [Set up a GitHub repository](/docs/guides/github/). |
 | `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale). |
 
@@ -115,13 +114,3 @@ See [Set up a GitHub repository](/docs/guides/github/). You connect a computer i
 | `pterm github status` | Prints one line, for example `GitHub: connected as octo-demo`, `GitHub: not connected`, `GitHub: connecting`, `GitHub: git is not installed on this computer` or `GitHub: not available in this build`. |
 | `pterm github disconnect` | Removes this computer's GitHub login at GitHub and on the computer, then prints `GitHub: disconnected` and the address of GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) page, where you can check that Termivoa is gone. |
 | `pterm github-credential` | Used by git in a folder that Termivoa cloned, to get the GitHub login. Do not run it yourself. |
-
-## Chat view
-
-**Next beta.** Chat view lets a phone read the coding agent's conversation of a session as a chat, read-only. See [Chat view](/docs/guides/chat/). It is off on every computer until you turn it on at that computer. See [What does Chat view send to the phone?](/docs/reference/security/#what-does-chat-view-send-to-the-phone)
-
-| Command | What it does |
-| --- | --- |
-| `pterm chat on` | Explains what Chat view shares, asks `[y/N]`, then turns it on for this computer. It is the only way to turn it on. |
-| `pterm chat off` | Turns it off and closes every open chat at once. A paired phone can also turn it off. |
-| `pterm chat status` | Prints one line, for example `Chat view: off (turn it on with pterm chat on)`, `Chat view: on, 1 of 8 chats open` or `Chat view: not supported on this computer` (Windows). |

@@ -15,14 +15,9 @@ Last updated: 2026-10-10
 
 ## Log
 
-### Chat view M1a, host side (2026-10-11, branch `feat/chat-view-host`; not merged)
+### Chat view reverted (2026-10-11, branch `revert/chat-view`)
 
-- Scope: [chat-view.md](chat-view.md) section 14 (approved design) and the new section 15 "Build notes". Protocol revision 8 (`chat`) first, committed alone (`393bd0b`) for the phone side (M1b).
-- Built: `internal/transcript` (bind, tail, Claude parser, masking, guard), `internal/broker/chat.go` (hub, pull flow, switch), `ptyhost.TreeProcesses`, `pterm chat on|off|status`, the doctor line, `PATCH /api/v1/chat` (off only), `scripts/fakeagent`, `scripts/chat-capture.sh` with `scripts/chatcapture` (owner only; not run).
-- Safety: synthetic fixtures only; no file under the real `~/.claude`, `~/.codex` or `~/.config` was opened; no agent was started; `guard.go` panics on a test folder outside temp.
-- Checks: `GOTOOLCHAIN=go1.27.1 sh scripts/check`; `go test -race ./...`; `go vet` for darwin, `GOOS=linux` and `GOOS=windows` (`CGO_ENABLED=0`); `pnpm protocol:check`; `FuzzClaudeLine` and `FuzzTail` 90 s each; `cd site && npx astro build`. Numbers: [evidence/chat-view/m1a-bench.md](evidence/chat-view/m1a-bench.md).
-- Blocked on the owner: the scripted capture with a real Claude Code (credits, rule 12) and owner review (rule 24). The phone screen is M1b.
-- Review fixes (2026-10-11): two independent reviews of PR #298, no blockers. Fixed S-1 (no tail after off), S-2 (no page after off), S-3 (revocation before the first state), S-4 (clean before mask, prefix rule), S-5 (invalid result IDs dropped), S-6 (tick overflow), S-7 (folder limit fails closed), S-8/low (pages do not feed drift), S-9 (threat model), C-1 (long lines read once, pages always move), C-2 (`cleared` only with evidence of our agent), C-3 (rewinds to unread messages), C-4 (2 s start jitter), and the low items (live never mid-line, long prompts open turns, no bind after off, goroutine-leak checks, warm-cache note). New tests fail on the old code. Checks: `sh scripts/check`, `go test -race ./...`, vet linux/windows, both fuzz targets 60 s (`FuzzClaudeLine` 15.3 M execs): pass.
+- The owner tried the chat view and withdrew the idea ("that is stale and not working! I am reverting my idea"). Reverted #297 (phone) and #298 (host) with `git revert`; the tree matches main before #298 except the design record. ADR 0014 and `docs/chat-view.md` are marked withdrawn and kept as history. Protocol is back to revision 7. Issue #285 closed as not planned.
 
 ### Chat view design (2026-10-10, branch `docs/chat-view-design`; owner approved 2026-10-10)
 
@@ -3730,29 +3725,3 @@ and browser run after explicit nonempty guard also pass. No runtime edits.
   scripts/check`; `cd site && pnpm install --frozen-lockfile
   --ignore-workspace && npx astro build` (29 pages, all internal links valid).
 - Local branch `fix/sweep-review-followups` only; not pushed, no PR.
-
-## 2026-10-10 — Chat view, phone side (M1b, #285, ADR 0014)
-
-- Built on the final protocol (revision 8, `393bd0b`): the pull-model
-  `ChatStore` in `web/src/terminal/chat.ts` (owned by `Connection`), the lazy
-  Chat screen (`Chat.tsx`, `chatText.ts`, `chat.css`) for Paper screens 1–4,
-  the **Chat | Terminal** switch in Live, and the **Chat view** row on a
-  computer's page in Settings (off only, S1). Build notes and the
-  differences from the Paper screens: `docs/chat-view.md`, section 15.
-- Checks: `pnpm install --frozen-lockfile`; `GOTOOLCHAIN=go1.27.1 sh
-  scripts/check` (includes `pnpm typecheck`, `pnpm test:web`, `pnpm
-  build:web`); `cd site && pnpm install --frozen-lockfile --ignore-workspace
-  && npx astro build` (30 pages, all internal links valid).
-- Rebased on `feat/chat-view-host` (M1a, PR #298). E2E with the real host:
-  `PW=<playwright-core> node scripts/e2e-multicomputer/chat.mjs` (one mac dev
-  stack, `scripts/fakeagent` in a temp HOME, no real agent): 9 of 9 checks
-  pass (CH1–CH9). Write-to-phone latency over 40 stamped turns: p50 62 ms,
-  p95 84 ms (budget 400/750 ms). Evidence:
-  [m1b-e2e.md](evidence/chat-view/m1b-e2e.md). The e2e showed that agent
-  state counts a plain shell as working, so the switch now shows when Chat
-  is on for the computer and hides after the host says `unsupported`.
-- Bundle: new lazy `Chat` chunk about 20 KB (6.5 KB gzip) plus CSS 5.9 KB
-  (1.6 KB gzip); Live grew by about 2.1 KB (0.75 KB gzip); the entry chunk did
-  not grow.
-- No real transcript, agent, credential or provider credit used. Branch
-  `feat/chat-view-phone`, PR #297 on top of PR #298 (M1a).

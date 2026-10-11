@@ -1,18 +1,11 @@
 package ptyhost
 
-import (
-	"time"
-
-	"golang.org/x/sys/unix"
-)
+import "golang.org/x/sys/unix"
 
 // sZomb is the Darwin p_stat value of an exited, unreaped process.
 const sZomb = 5
 
-type processInfo struct {
-	pid, parent, session int
-	start                time.Time
-}
+type processInfo struct{ pid, parent, session int }
 
 // liveProcesses lists every process that is not a zombie, from one
 // kern.proc.all snapshot. Zombies cannot be signaled, must not extend the
@@ -33,9 +26,7 @@ func liveProcesses() ([]processInfo, error) {
 		if err != nil {
 			sid = -1
 		}
-		started := process.Proc.P_starttime
-		live = append(live, processInfo{pid: pid, parent: int(process.Eproc.Ppid), session: sid,
-			start: time.Unix(int64(started.Sec), int64(started.Usec)*1000)})
+		live = append(live, processInfo{pid: pid, parent: int(process.Eproc.Ppid), session: sid})
 	}
 	return live, nil
 }

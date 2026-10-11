@@ -41,9 +41,6 @@ opening a port or trusting a cloud service.
   with tabs. Sessions keep running when the phone sleeps or loses signal.
 - **Agent status and answer cards.** See **Working**, **Waiting** or **Your
   turn**, and answer Claude Code and Codex questions with one tap.
-- **Chat view** (next beta). Read a Claude Code session as a chat: your
-  messages, the agent's replies, tool steps and edits. Off until you run
-  `pterm chat on` on the computer; nothing is stored.
 - **Needs you**. One list of every agent that waits for you,
   with **Next** to go from one to the next.
 - **Notifications.** A buzz when an agent waits or finishes. Only the session
@@ -61,8 +58,6 @@ opening a port or trusting a cloud service.
   [herdr](https://herdr.dev), on the phone.
 - **GitHub**. Connect a computer to GitHub and clone a
   repository onto it with one tap. No `gh` needed.
-- **Chat view (next beta, computer side only).** Turn it on with
-  `pterm chat on`; the phone screen comes in a later beta.
 - **Phone-first keys.** Agent keys (Esc, Ctrl+C, Shift+Tab, `y`, Enter), a
   composer for long text, snippets, project buttons and launch presets.
 - **Touch gestures.** Hold and slide for arrow keys, tap to move the cursor,

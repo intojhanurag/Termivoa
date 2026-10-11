@@ -112,21 +112,8 @@
           "description": "Terminal workspace providers found on this computer (for example herdr). Absent or empty when none is installed; the app shows a provider tab only for a computer that lists one.",
           "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/providerInfo" }
         },
-        "github": { "description": "Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no client ID) or on Windows: the app shows no GitHub row for this computer.", "$ref": "#/$defs/githubInfo" },
-        "chat": { "description": "Revision 8 (docs/chat-view.md). The Chat view switch of this computer. Absent on Windows (Chat is not supported there).", "$ref": "#/$defs/chatInfo" }
+        "github": { "description": "Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no client ID) or on Windows: the app shows no GitHub row for this computer.", "$ref": "#/$defs/githubInfo" }
       }
-    },
-    "chatInfo": {
-      "title": "HTTPChatInfo",
-      "description": "Revision 8. enabled: Chat view is on for this computer (all devices). Only pterm chat on, at the computer, turns it on; any paired device can turn it off with PATCH /api/v1/chat.",
-      "type": "object", "additionalProperties": false, "required": ["enabled"],
-      "properties": { "enabled": { "type": "boolean" } }
-    },
-    "chatUpdateRequest": {
-      "title": "HTTPChatUpdateRequest",
-      "description": "PATCH /api/v1/chat (revision 8): turns Chat view off on this computer and closes every open chat at once. Turning it on is refused here (the schema allows only false): it happens only at the computer with pterm chat on.",
-      "type": "object", "additionalProperties": false, "required": ["enabled"],
-      "properties": { "enabled": { "type": "boolean", "const": false } }
     },
     "providerState": {
       "title": "HTTPProviderState",

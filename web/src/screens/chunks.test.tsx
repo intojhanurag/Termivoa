@@ -59,17 +59,6 @@ describe('first-load split', () => {
   });
 });
 
-describe('the Chat chunk', () => {
-  it('keeps the Chat screen, its text parser and its CSS out of the entry and Live chunks', () => {
-    for (const entry of ['main.tsx', 'screens/Live.tsx']) {
-      const reachable = [...staticImports(resolve(src, entry))];
-      expect(reachable).not.toContain(resolve(src, 'screens/Chat.tsx'));
-      expect(reachable).not.toContain(resolve(src, 'screens/chatText.ts'));
-    }
-    expect(readFileSync(resolve(src, 'screens/Live.tsx'), 'utf8')).toMatch(/import\('\.\/Chat'\)/u);
-  });
-});
-
 describe('chunk load failures', () => {
   it('turns a failed dynamic import into ChunkLoadError and passes success through', async () => {
     const missing = new TypeError('Failed to fetch dynamically imported module: /assets/Live-old.js');

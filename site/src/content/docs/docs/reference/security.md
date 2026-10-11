@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-10
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted, and a computer that you connect to GitHub talks to GitHub.
@@ -137,26 +137,6 @@ Confirmed `pterm uninstall --delete-data` on macOS and Linux tries to revoke thi
 
 When Termivoa removes its saved GitHub login, it deletes only its own file name. It does not overwrite the contents. If another file is a hard link to the same contents, that file stays and still holds the login. Local deletion is not secure erasure: copies and backups can keep the login. Use GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) to end access for a copied login.
 
-## What does Chat view send to the phone?
-
-**Next beta.** Termivoa's Chat view reads the coding agent's own conversation file on the computer and sends short, read-only parts of it to a phone that has Chat open. It is off on every computer until you run `pterm chat on` there. See [Chat view](/docs/guides/chat/).
-
-| Question | Answer |
-| --- | --- |
-| Who turns it on? | Only you, at the computer, with `pterm chat on` and a `[y/N]` answer. A phone can only turn it off (**Settings** → the computer → **Chat view**). |
-| Which agents? | Claude Code in a Termivoa session, on macOS and Linux. |
-| What does a phone get? | Your prompts, the agent's answers, each tool's name and one summary line, a short preview of tool output (up to 2 KiB and 40 lines), and for an edit the line counts and up to 40 changed lines. |
-| What never leaves the computer? | Thinking text, images, attachments, sub-agent conversations, system prompts, token counts, the file's path, process IDs and the agent's session ID. |
-| Is it stored? | No. The computer and the phone keep it in memory only, while Chat is open. |
-| Who can read it? | Any paired phone that can watch the session, the same as the terminal and **Files**. A small preview in the session list cannot. |
-| Are secrets hidden? | Common key shapes (private key blocks, GitHub, OpenAI, Anthropic, AWS, Slack and Google keys, web tokens and `Authorization: Bearer` values) show as `[secret]`. This is not a guarantee: other secrets show as they are. |
-
-- **What is new to the phone.** The terminal shows only part of the conversation. Chat can also show older turns and the start of output that the terminal had folded, including files the agent read outside the project.
-- **The computer checks the file first.** It links a session only to the conversation file that the agent itself names, in the agent's own folder, and refuses a link, a file with a second name, a file of another user and a file that others can write.
-- **Turn it off** with `pterm chat off`, or from any paired phone. Every open chat closes at once.
-- **Shown as text only.** Text in a conversation can come from web pages and files, so Chat shows no pictures and no web page code, removes hidden direction characters, and opens a link only after **Open this link?** shows the full address.
-
-
 ## Who can see changes, commit and push?
 
 - Changes only **reads** git: uncommitted changes and untracked files that git does not ignore.
@@ -174,7 +154,7 @@ When Termivoa removes its saved GitHub login, it deletes only its own file name.
 | Notification subscriptions | Your typing |
 | The private key that signs notifications to the push service, in the database | Pairing links and phone sign-in cookies in clear text (only a one-way hash is kept) |
 | Logs | The GitHub login on the phone or in a log |
-| The GitHub login of that computer, if you connected one, in a file that only your user account can read. It is not encrypted. | Chat view messages (memory only, on the computer and the phone) |
+| The GitHub login of that computer, if you connected one, in a file that only your user account can read. It is not encrypted. | |
 
 Home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
 

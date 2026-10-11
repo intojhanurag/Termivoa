@@ -295,14 +295,6 @@ func (broker *fakeBroker) Provider(_ context.Context, credential, provider strin
 	return protocol.HTTPProviderSnapshotResponse{Provider: provider, State: protocol.HTTPProviderStateReady, Groups: []protocol.HTTPProviderGroup{}}, broker.opErr
 }
 
-func (broker *fakeBroker) UpdateChat(_ context.Context, credential string, request protocol.HTTPChatUpdateRequest) (protocol.HTTPChatInfo, error) {
-	broker.record("chat-update")
-	if err := broker.authorize(credential); err != nil {
-		return protocol.HTTPChatInfo{}, err
-	}
-	return protocol.HTTPChatInfo{Enabled: request.Enabled}, broker.opErr
-}
-
 func (broker *fakeBroker) UpdateProvider(_ context.Context, credential, provider string, _ protocol.HTTPProviderUpdateRequest) (protocol.HTTPProviderInfo, error) {
 	broker.record("provider-update:" + provider)
 	if err := broker.authorize(credential); err != nil {
