@@ -15,6 +15,10 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Chat view reverted (2026-10-11, branch `revert/chat-view`)
+
+- The owner tried the chat view and withdrew the idea ("that is stale and not working! I am reverting my idea"). Reverted #297 (phone) and #298 (host) with `git revert`; the tree matches main before #298 except the design record. ADR 0014 and `docs/chat-view.md` are marked withdrawn and kept as history. Protocol is back to revision 7. Issue #285 closed as not planned.
+
 ### Chat view design (2026-10-10, branch `docs/chat-view-design`; owner approved 2026-10-10)
 
 - Issue #285. Design `docs/chat-view.md`, ADR 0014 (accepted), Paper screens in `docs/evidence/chat-view/`. Critical under rule 24 (changes what data reaches the phone).
