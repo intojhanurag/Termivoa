@@ -41,9 +41,6 @@ opening a port or trusting a cloud service.
   with tabs. Sessions keep running when the phone sleeps or loses signal.
 - **Agent status and answer cards.** See **Working**, **Waiting** or **Your
   turn**, and answer Claude Code and Codex questions with one tap.
-- **Chat view** (next beta). Read a Claude Code session as a chat: your
-  messages, the agent's replies, tool steps and edits. Off until you run
-  `pterm chat on` on the computer; nothing is stored.
 - **Needs you**. One list of every agent that waits for you,
   with **Next** to go from one to the next.
 - **Notifications.** A buzz when an agent waits or finishes. Only the session

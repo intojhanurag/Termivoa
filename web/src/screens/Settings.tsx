@@ -1,10 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, client, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
-import {
-  FEATURE_REVISION,
-  type HTTPChatInfo,
-  type HTTPDeviceSummary, type HTTPProviderInfo, type HTTPProviderNotifyState, type HTTPProviderUpdateRequest, type HTTPSessionCreateRequest,
-  type HTTPSessionMutationResponse, type HTTPSettingsResponse,
+import type {
+  HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSessionCreateRequest, HTTPSessionMutationResponse,
+  HTTPSettingsResponse,
 } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush, type PushSupport } from '../push';
 import { storedComputers, type Computer } from '../computers';
@@ -398,65 +396,6 @@ export function IntegrationRow({
   );
 }
 
-/** The Chat view switch of a computer: in its settings from revision 8 (absent on Windows). */
-export const chatInfo = (settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'chat'> | undefined): HTTPChatInfo | undefined =>
-  settings !== undefined && settings.protocolRevision >= FEATURE_REVISION.chat ? settings.chat : undefined;
-
-/**
- * Chat view on one computer (docs/chat-view.md, S1): On or Off for every device. Any device can turn it off here;
- * only the computer itself turns it on (`pterm chat on`), so Off has no switch.
- */
-export function ChatViewRow({ computer, info, onFailure, onSaved, save = () => client(computer.origin).chatOff() }: {
-  readonly computer: Computer;
-  readonly info: HTTPChatInfo;
-  readonly onFailure: (error: unknown, from: Computer) => string;
-  /** Reads that computer's settings again; never rejects. */
-  readonly onSaved?: () => Promise<void>;
-  readonly save?: () => Promise<HTTPChatInfo>;
-}) {
-  const [saved, setSaved] = useState<HTTPChatInfo>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const on = (saved ?? info).enabled;
-  const id = `chat-${computer.host}`.replace(/[^A-Za-z0-9_-]/gu, '-');
-  function off() {
-    setBusy(true);
-    setError(undefined);
-    save().then((result) => {
-      setSaved(result);
-      void onSaved?.();
-    }, (failure: unknown) => setError(onFailure(failure, computer))).finally(() => setBusy(false));
-  }
-  return (
-    <li className="computer-card">
-      <div className="spread">
-        <span id={`${id}-label`}>Chat view</span>
-        {on ? (
-          <button
-            type="button"
-            role="switch"
-            className="switch"
-            aria-checked
-            aria-labelledby={`${id}-label`}
-            aria-describedby={`${id}-line`}
-            {...(busy ? { 'aria-busy': true } : {})}
-            disabled={busy}
-            onClick={off}
-          ><span className="switch-track" aria-hidden="true" /></button>
-        ) : <span className="computer-state muted">Off</span>}
-      </div>
-      <p id={`${id}-line`} className="hint-text">
-        {on
-          ? <>On. Phones can read this computer’s agent conversations in Chat. Turning it off closes every open chat.</>
-          : <>Turn it on at the computer: <code>pterm chat on</code></>}
-      </p>
-      <div role="status" className="field-note">
-        {error !== undefined ? <Notice tone="danger" title={error} /> : <span className="muted">{busy ? 'Saving…' : ''}</span>}
-      </div>
-    </li>
-  );
-}
-
 /**
  * One computer's page (docs/ui-revamp.md, section 5): each provider it lists (herdr) with its switches, GitHub where
  * it offers it, and This computer. Back goes to the main page.
@@ -485,7 +424,6 @@ export function ComputerPage({
   const keptGitHub = useRef(new Map<string, GitHubSource>());
   const [sheetOpen, setSheetOpen] = useState(false);
   const github = githubSources([entry], keptGitHub.current, sheetOpen ? new Set([origin]) : new Set());
-  const chat = chatInfo(settings);
   return (
     <>
       <ComputerHead entry={entry} now={Date.now()} onBack={onBack} />
@@ -532,14 +470,6 @@ export function ComputerPage({
           </ul>
         </section>
       ))}
-      {chat !== undefined && (
-        <section className="group stack" aria-label="Chat view">
-          <h2 className="caps">Chat view</h2>
-          <ul className="computer-list sc-block">
-            <ChatViewRow computer={entry.computer} info={chat} onFailure={onFailure} onSaved={() => onCheck(origin).catch(() => undefined)} />
-          </ul>
-        </section>
-      )}
       <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading…</p>}>
           <ComputerActions entry={entry} projects={settings?.projects.length} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} onRemoved={onRemoved} />

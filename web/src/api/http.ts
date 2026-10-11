@@ -1,6 +1,5 @@
 import type {
   ErrorCode,
-  HTTPChatInfo,
   HTTPDeviceRenameRequest,
   HTTPDeviceSummary,
   HTTPGitHubReposResponse,
@@ -240,8 +239,6 @@ export interface Client {
   githubAction(body: HTTPGitHubRequest): Promise<HTTPGitHubResponse>;
   /** The repositories that computer's login can read; waits up to GITHUB_REPOS_TIMEOUT_MS. */
   githubRepos(): Promise<HTTPGitHubReposResponse>;
-  /** Turns Chat view off on that computer, for every device (protocolRevision 8 and later). Only `pterm chat on` turns it on. */
-  chatOff(): Promise<HTTPChatInfo>;
 }
 
 function createClient(origin: string, home: boolean): Client {
@@ -363,7 +360,6 @@ function createClient(origin: string, home: boolean): Client {
     github: () => request('GET', '/api/v1/github', 'githubResponse', read),
     githubAction: (body) => request('POST', '/api/v1/github', 'githubResponse', send(body)),
     githubRepos: () => request('GET', '/api/v1/github/repos', 'githubReposResponse', { timeoutMs: GITHUB_REPOS_TIMEOUT_MS }),
-    chatOff: () => request('PATCH', '/api/v1/chat', 'chatInfo', send({ enabled: false })),
   };
 }
 

@@ -4,7 +4,7 @@ import type { HTTPGitHubState } from '../generated/protocol';
 import type { ComputerEntry } from './allSessions';
 import { ComputersSection } from './Computers';
 import { info, mac, okEntry, providerEntry, settingsWith, snapshot, vps } from './providerFixtures';
-import { ChatViewRow, chatInfo, ComputerPage, pushWord, Settings } from './Settings';
+import { ComputerPage, pushWord, Settings } from './Settings';
 import {
   cardChips, ComputerCard, ComputerHead, initialPage, MAIN_PAGE, PAGE_KEY, pageFromHistory, shownPage, statusDot,
 } from './SettingsComputer';
@@ -203,32 +203,5 @@ describe('This phone', () => {
     expect(pushWord({ support: 'available', enabled: true, missing: [] })).toBe('On');
     expect(pushWord({ support: 'available', enabled: false, missing: [] })).toBe('Off');
     expect(pushWord({ support: 'needs-home-screen', enabled: undefined, missing: [] })).toBe('Off');
-  });
-});
-
-describe('the Chat view row on a computer\'s page', () => {
-  const failure = () => 'failed';
-
-  it('shows On with a switch to turn it off, and Off with the command and no switch (only the computer turns it on)', () => {
-    const onRow = renderToStaticMarkup(<ul><ChatViewRow computer={mac} info={{ enabled: true }} onFailure={failure} /></ul>);
-    expect(onRow).toContain('Chat view');
-    expect(onRow).toMatch(/<button type="button" role="switch" class="switch" aria-checked="true" aria-labelledby="chat-[^"]+-label"/u);
-    expect(onRow).toContain('Turning it off closes every open chat.');
-    const offRow = renderToStaticMarkup(<ul><ChatViewRow computer={mac} info={{ enabled: false }} onFailure={failure} /></ul>);
-    expect(offRow).not.toContain('role="switch"');
-    expect(offRow).toContain('Off');
-    expect(offRow).toContain('Turn it on at the computer: <code>pterm chat on</code>');
-  });
-
-  it('is there only for a computer at revision 8 that reports Chat', () => {
-    expect(chatInfo({ protocolRevision: 8, chat: { enabled: false } })).toEqual({ enabled: false });
-    expect(chatInfo({ protocolRevision: 7, chat: { enabled: true } })).toBeUndefined();
-    expect(chatInfo({ protocolRevision: 8 })).toBeUndefined();
-    expect(chatInfo(undefined)).toBeUndefined();
-    const page = (extra: object) => renderToStaticMarkup(
-      <ComputerPage entry={okEntry(mac, extra)} onBack={noop} onFailure={() => ''} onCheck={() => Promise.resolve()} onComputersChanged={noop} onRemoved={noop} />,
-    );
-    expect(page({ protocolRevision: 8, chat: { enabled: true } })).toContain('aria-label="Chat view"');
-    expect(page({ protocolRevision: 8 })).not.toContain('aria-label="Chat view"');
   });
 });

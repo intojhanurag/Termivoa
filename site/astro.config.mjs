@@ -66,7 +66,6 @@ export default defineConfig({
 						{ label: 'Live terminal and history', slug: 'docs/guides/live-terminal' },
 						'docs/guides/project-buttons',
 						'docs/guides/answer-cards',
-						'docs/guides/chat',
 						'docs/guides/needs-you',
 						'docs/guides/changes',
 						'docs/guides/files',
