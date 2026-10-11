@@ -161,7 +161,6 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/providers/{provider}/create", handler.providerCreate)
 		mux.HandleFunc("/api/v1/providers/{provider}/manage", handler.providerManage)
 		mux.HandleFunc("/api/v1/github", handler.github)
-		mux.HandleFunc("/api/v1/chat", handler.chat)
 		mux.HandleFunc("/api/v1/github/repos", handler.githubRepos)
 	}
 	handler.mux = mux

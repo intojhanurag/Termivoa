@@ -82,9 +82,6 @@ func decode(data []byte, client bool) (Envelope, error) {
 	if err := validatePayload(envelope); err != nil {
 		return Envelope{}, fmt.Errorf("protocol: %s payload: %w", envelope.Type, err)
 	}
-	if envelope.Type == ChatPage && len(data) > MaxChatPageBytes {
-		return Envelope{}, fmt.Errorf("protocol: chat.page is %d bytes, above %d", len(data), MaxChatPageBytes)
-	}
 	return envelope, nil
 }
 
@@ -130,7 +127,6 @@ var clientMessageTypes = map[MessageType]bool{
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
 	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, TasksList: true,
 	BranchesList: true, WorktreeRemove: true, FilesList: true, FilesRead: true, FilesSearch: true, SessionDetach: true,
-	ChatOpen: true, ChatRead: true, ChatClose: true,
 }
 
 var hostMessageTypes = map[MessageType]bool{
@@ -140,7 +136,6 @@ var hostMessageTypes = map[MessageType]bool{
 	BranchesListed: true, WorktreeRemoved: true, FilesListed: true, FilesContent: true, FilesFound: true,
 	ControlChanged: true, InputAccepted: true, InputRejected: true,
 	SessionState: true, AccessRevoked: true, Error: true,
-	ChatState: true, ChatChanged: true, ChatPage: true,
 }
 
 var sessionMessageTypes = map[MessageType]bool{
@@ -153,7 +148,6 @@ var sessionMessageTypes = map[MessageType]bool{
 	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true, TasksListed: true,
 	BranchesListed: true, WorktreeRemoved: true, FilesListed: true, FilesContent: true, FilesFound: true, MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
 	InputRejected: true, SessionState: true,
-	ChatOpen: true, ChatRead: true, ChatClose: true, ChatState: true, ChatChanged: true, ChatPage: true,
 }
 
 func validatePayload(envelope Envelope) error { //nolint:gocyclo
@@ -175,7 +169,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return ValidateSessionAttach(payload)
-	case ControlAcquire, SessionDetach, ChatClose:
+	case ControlAcquire, SessionDetach:
 		_, err := strictPayload[EmptyPayload](envelope)
 		return err
 	case ScreenResync:
@@ -431,36 +425,6 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateFilesFound(payload)
-	case ChatOpen:
-		payload, err := strictPayload[ChatOpenPayload](envelope)
-		if err != nil {
-			return err
-		}
-		return validateChatOpen(payload)
-	case ChatRead:
-		payload, err := strictPayload[ChatReadPayload](envelope)
-		if err != nil {
-			return err
-		}
-		return validateChatRead(payload)
-	case ChatState:
-		payload, err := strictPayload[ChatStatePayload](envelope)
-		if err != nil {
-			return err
-		}
-		return validateChatState(payload)
-	case ChatChanged:
-		payload, err := strictPayload[ChatChangedPayload](envelope)
-		if err != nil {
-			return err
-		}
-		return validateChatChanged(payload)
-	case ChatPage:
-		payload, err := strictPayload[ChatPagePayload](envelope)
-		if err != nil {
-			return err
-		}
-		return validateChatPage(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {

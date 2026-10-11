@@ -58,8 +58,6 @@ opening a port or trusting a cloud service.
   [herdr](https://herdr.dev), on the phone.
 - **GitHub**. Connect a computer to GitHub and clone a
   repository onto it with one tap. No `gh` needed.
-- **Chat view (next beta, computer side only).** Turn it on with
-  `pterm chat on`; the phone screen comes in a later beta.
 - **Phone-first keys.** Agent keys (Esc, Ctrl+C, Shift+Tab, `y`, Enter), a
   composer for long text, snippets, project buttons and launch presets.
 - **Touch gestures.** Hold and slide for arrow keys, tap to move the cursor,

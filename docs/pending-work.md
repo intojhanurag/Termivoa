@@ -6,12 +6,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
-- Chat view M1a, host side ([chat-view.md](chat-view.md), section 15; ADR
-  0014; branch `feat/chat-view-host`): protocol revision 8, `internal/transcript`
-  (Claude Code), the broker hub, `pterm chat on|off|status`, the doctor line,
-  fuzz tests and benchmarks. Not merged: waits for owner review (rule 24)
-  and the owner's capture with a real Claude Code (`scripts/chat-capture.sh`).
-
 - Touch gestures on the Live terminal ([gestures.md](gestures.md), next
   beta): hold and slide for arrow keys, tap to place the cursor, swipe on the
   status line to switch session, pinch for text size, two-finger tap for Esc,
@@ -196,14 +190,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 ## Next
 
 In this order.
-
-0. **Chat view.** (a) The owner runs `scripts/chat-capture.sh` once (credits)
-   and reviews the sanitized fixture; M1a merges after that and owner review.
-   (b) M1b: the phone Chat screen and **Chat | Terminal** switch, the read-only
-   switch row in **Settings → (computer)**, the docs-site guide and
-   troubleshooting for each `none` reason. (c) M1.5 (owner decision): an
-   opt-in `SessionStart` hook for an exact link after `/clear`. (d) M2 Codex,
-   M3 herdr panes.
 
 Security repair #255 has a local implementation after its architecture-first draft:
 [ADR 0012](decisions/0012-private-file-permission-repair.md) and

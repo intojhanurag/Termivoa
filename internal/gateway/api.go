@@ -485,28 +485,6 @@ func (handler *gatewayHandler) provider(response http.ResponseWriter, request *h
 	handler.respond(response, request, result, err)
 }
 
-// chat turns Chat view off on this computer (PATCH, revision 8). Only
-// {"enabled": false} passes; turning it on happens at the computer.
-func (handler *gatewayHandler) chat(response http.ResponseWriter, request *http.Request) {
-	if !allowMethod(response, request, http.MethodPatch) {
-		return
-	}
-	var body protocol.HTTPChatUpdateRequest
-	if !handler.mutation(response, request, &body) {
-		return
-	}
-	credential, ok := handler.credential(response, request)
-	if !ok {
-		return
-	}
-	if body.Enabled {
-		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "Chat view can be turned on only at the computer")
-		return
-	}
-	result, err := handler.api.UpdateChat(request.Context(), credential, body)
-	handler.respond(response, request, result, err)
-}
-
 // providerOpen opens or reuses the in-memory session of one provider terminal.
 func (handler *gatewayHandler) providerOpen(response http.ResponseWriter, request *http.Request) {
 	if !allowMethod(response, request, http.MethodPost) {

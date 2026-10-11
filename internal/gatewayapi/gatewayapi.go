@@ -98,9 +98,6 @@ type Broker interface {
 	// ManageProvider closes or removes an item, makes a tab or a workspace,
 	// or starts the provider's server (docs/herdr-manage.md).
 	ManageProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderManageRequest) (protocol.HTTPProviderManageResponse, error)
-	// UpdateChat turns Chat view off on this computer (docs/chat-view.md);
-	// the broker refuses on.
-	UpdateChat(ctx context.Context, credential string, request protocol.HTTPChatUpdateRequest) (protocol.HTTPChatInfo, error)
 	// GitHub (docs/github-integration.md). GitHub answers with this
 	// computer's GitHub state. GitHubAction connects, cancels, disconnects,
 	// sets up or stops a repository; it can take up to 15 s, so it runs on

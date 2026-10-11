@@ -68,7 +68,6 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayProvidersManage: GatewayProvidersManageResult,
 	GatewayGithubGet:       GatewayGithubGetResult, GatewayGithubAction: GatewayGithubActionResult,
 	GatewayGithubRepos: GatewayGithubReposResult,
-	GatewayChatUpdate:  GatewayChatUpdateResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -84,7 +83,6 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminPairOffer: AdminPairOfferResult, AdminPairOfferEnd: AdminPairOfferEndResult,
 	AdminGithubStatus: AdminGithubStatusResult, AdminGithubDisconnect: AdminGithubDisconnectResult,
 	AdminGithubCredential: AdminGithubCredentialResult,
-	AdminChatStatus:       AdminChatStatusResult, AdminChatSet: AdminChatSetResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
@@ -413,8 +411,6 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 	case GatewayGithubGet, GatewayGithubAction, GatewayGithubRepos,
 		GatewayGithubGetResult, GatewayGithubActionResult, GatewayGithubReposResult:
 		return validateGatewayGitHubPayload(envelope)
-	case GatewayChatUpdate, GatewayChatUpdateResult:
-		return validateGatewayChatPayload(envelope)
 	default:
 		return validateGatewayUploadPayload(envelope)
 	}
@@ -692,8 +688,6 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 	case AdminGithubStatus, AdminGithubDisconnect, AdminGithubCredential,
 		AdminGithubStatusResult, AdminGithubDisconnectResult, AdminGithubCredentialResult:
 		return validateAdminGitHubPayload(envelope)
-	case AdminChatStatus, AdminChatSet, AdminChatStatusResult, AdminChatSetResult:
-		return validateAdminChatPayload(envelope)
 	case AdminError:
 		return validateRPCError[AdminRPCMessageType](envelope)
 	default:

@@ -88,7 +88,7 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runAttachCommand(ctx, args[1:], input, output)
 	case "new":
 		return runNewCommand(ctx, args[1:], input, output)
-	case "pair", "devices", "revoke", "computers", "project", "profile", "config", "github", "chat":
+	case "pair", "devices", "revoke", "computers", "project", "profile", "config", "github":
 		return runAdminCommand(ctx, args[0], args[1:], input, output)
 	case "setup":
 		return runSetupCommand(ctx, args[1:], input, output)
@@ -215,7 +215,7 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 	}
 	return host.BrokerConfig{
 		DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: profile,
-		Herdr: herdrConfig(), GitHub: githubConfig(), Chat: chatConfig(),
+		Herdr: herdrConfig(), GitHub: githubConfig(),
 	}, nil
 }
 

@@ -211,19 +211,6 @@ func (client *AdminClient) Shutdown(ctx context.Context) (protocol.AdminRPCShutd
 		protocol.BrokerRPCEmptyPayload{}, true, nil)
 }
 
-// ChatStatus reads this computer's Chat view switch and follow state.
-func (client *AdminClient) ChatStatus(ctx context.Context) (protocol.AdminRPCChatStatusPayload, error) {
-	return adminCall[protocol.AdminRPCChatStatusPayload](ctx, client, protocol.AdminChatStatus,
-		protocol.BrokerRPCEmptyPayload{}, false, nil)
-}
-
-// ChatSet turns Chat view on or off for this computer. Only pterm chat on,
-// after a y/N answer, turns it on.
-func (client *AdminClient) ChatSet(ctx context.Context, enabled bool) (protocol.AdminRPCChatStatusPayload, error) {
-	return adminCall[protocol.AdminRPCChatStatusPayload](ctx, client, protocol.AdminChatSet,
-		protocol.AdminRPCChatSetPayload{Enabled: enabled}, true, nil)
-}
-
 // GitHubStatus reads this computer's GitHub state and login. State is nil
 // when this build has no GitHub feature.
 func (client *AdminClient) GitHubStatus(ctx context.Context) (protocol.AdminRPCGitHubStatusPayload, error) {

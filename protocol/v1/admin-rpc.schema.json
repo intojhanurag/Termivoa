@@ -34,8 +34,6 @@
     { "$ref": "#/$defs/githubStatusMessage" },
     { "$ref": "#/$defs/githubDisconnectMessage" },
     { "$ref": "#/$defs/githubCredentialMessage" },
-    { "$ref": "#/$defs/chatStatusMessage" },
-    { "$ref": "#/$defs/chatSetMessage" },
     { "$ref": "#/$defs/pairGrantResultMessage" },
     { "$ref": "#/$defs/pairPendingResultMessage" },
     { "$ref": "#/$defs/pairApproveResultMessage" },
@@ -57,8 +55,6 @@
     { "$ref": "#/$defs/githubStatusResultMessage" },
     { "$ref": "#/$defs/githubDisconnectResultMessage" },
     { "$ref": "#/$defs/githubCredentialResultMessage" },
-    { "$ref": "#/$defs/chatStatusResultMessage" },
-    { "$ref": "#/$defs/chatSetResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -72,15 +68,13 @@
         "admin.device.revoke.via", "admin.computers.list", "admin.computers.remove",
         "admin.pair.offer", "admin.pair.offer.end",
         "admin.github.status", "admin.github.disconnect", "admin.github.credential",
-        "admin.chat.status", "admin.chat.set",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
         "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result",
         "admin.device.rename.result", "admin.device.revoke.via.result", "admin.computers.list.result",
         "admin.computers.remove.result", "admin.pair.offer.result", "admin.pair.offer.end.result",
-        "admin.github.status.result", "admin.github.disconnect.result", "admin.github.credential.result",
-        "admin.chat.status.result", "admin.chat.set.result", "admin.error"
+        "admin.github.status.result", "admin.github.disconnect.result", "admin.github.credential.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -394,24 +388,6 @@
       "required": ["terminatedSessions"],
       "properties": { "terminatedSessions": { "type": "integer", "minimum": 0, "maximum": 64 } }
     },
-    "chatSetPayload": {
-      "title": "AdminRPCChatSetPayload",
-      "description": "pterm chat on|off (revision 8, docs/chat-view.md). Only the local administration channel can turn Chat view on; pterm asks y/N first. Off closes every open chat at once.",
-      "type": "object", "additionalProperties": false, "required": ["enabled"],
-      "properties": { "enabled": { "type": "boolean" } }
-    },
-    "chatStatusPayload": {
-      "title": "AdminRPCChatStatusPayload",
-      "description": "Chat view on this computer, for pterm chat and pterm doctor. supported is false on Windows. tails: transcripts followed now (at most 8). versions: the agent versions seen in the last transcripts read (memory only, at most 8). unknownPercent: the share of transcript lines the parser did not know in the last transcript read, 0 to 100.",
-      "type": "object", "additionalProperties": false, "required": ["enabled", "supported", "tails", "versions", "unknownPercent"],
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "supported": { "type": "boolean" },
-        "tails": { "type": "integer", "minimum": 0, "maximum": 8 },
-        "versions": { "type": "array", "maxItems": 8, "items": { "type": "string", "pattern": "^[0-9A-Za-z._+-]{1,32}$" } },
-        "unknownPercent": { "type": "integer", "minimum": 0, "maximum": 100 }
-      }
-    },
     "githubStatusPayload": {
       "title": "AdminRPCGitHubStatusPayload",
       "description": "pterm github status and disconnect (docs/github-integration.md). state is absent when this build has no GitHub app.",
@@ -471,10 +447,6 @@
     "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove.result" }, "payload": { "$ref": "#/$defs/computerRemoveResultPayload" } } },
     "pairOfferResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.result" }, "payload": { "$ref": "#/$defs/pairOfferResultPayload" } } },
     "pairOfferEndResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.end.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
-    "chatStatusMessage": { "type": "object", "properties": { "type": { "const": "admin.chat.status" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
-    "chatSetMessage": { "type": "object", "properties": { "type": { "const": "admin.chat.set" }, "payload": { "$ref": "#/$defs/chatSetPayload" } } },
-    "chatStatusResultMessage": { "type": "object", "properties": { "type": { "const": "admin.chat.status.result" }, "payload": { "$ref": "#/$defs/chatStatusPayload" } } },
-    "chatSetResultMessage": { "type": "object", "properties": { "type": { "const": "admin.chat.set.result" }, "payload": { "$ref": "#/$defs/chatStatusPayload" } } },
     "githubStatusMessage": { "type": "object", "properties": { "type": { "const": "admin.github.status" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "githubDisconnectMessage": { "type": "object", "properties": { "type": { "const": "admin.github.disconnect" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "githubCredentialMessage": { "type": "object", "properties": { "type": { "const": "admin.github.credential" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
