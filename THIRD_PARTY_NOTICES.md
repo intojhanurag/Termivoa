@@ -35,6 +35,7 @@ This file is a preparatory dependency inventory for private development. Direct 
 | Newsreader | SIL Open Font License 1.1 | `site/public/fonts/OFL-newsreader.txt` |
 | Caveat | SIL Open Font License 1.1 | `site/public/fonts/OFL-caveat.txt` |
 | JetBrains Mono | SIL Open Font License 1.1 | `site/public/fonts/OFL-jetbrainsmono.txt` |
+| Space Grotesk | SIL Open Font License 1.1 | `site/public/fonts/OFL-spacegrotesk.txt` |
 
 The herdr logo on the website (`site/public/assets/herdr.png`) belongs to the
 herdr project and is used only to link to its guide.
