@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Termivoa · your terminal, on your phone</title>
   <meta name="description" content="Control the terminals and coding agents on your computer from your phone, over a private Tailscale network. No cloud, no account, no open port.">
-  <meta name="theme-color" content="#07090C">
+  <meta name="theme-color" content="#000000">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Termivoa · your terminal, on your phone">
   <meta property="og:description" content="Answer Claude Code and Codex from your phone. Private by design: your phone talks only to your computer.">
@@ -17,284 +17,309 @@
   <link rel="alternate" type="text/plain" href="/llms.txt" title="Termivoa docs for AI tools (llms.txt)">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Termivoa","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Linux, Windows 11","description":"Use the terminals and coding agents (Claude Code, Codex) on your computer from your phone, privately over Tailscale. No cloud service, no account.","url":"https://termivoa.com/","softwareVersion":"0.1.0-beta.4","isAccessibleForFree":true,"license":"https://www.apache.org/licenses/LICENSE-2.0"}</script>
   <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
-  <link rel="preload" href="/fonts/newsreader-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/fonts.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="preload" href="/fonts/spacegrotesk-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/home.css">
   <!-- Vercel Web Analytics: page views, no cookies; served from this site. -->
   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-  <header class="wrap nav">
-    <a class="wordmark" href="/" aria-label="Termivoa home">
-      <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="currentColor" stroke-width="2"/><path d="M9 11l5 4-5 4" stroke="var(--signal)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-      <span>Termivoa</span>
-    </a>
-    <nav aria-label="Main">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#setup">Setup</a>
-      <a href="#providers">Providers</a>
-      <a class="nav-docs" href="/docs/">Docs</a>
-      <a class="nav-beta" href="/docs/quick-start/">Install free</a>
-      <a class="nav-star" href="https://github.com/intojhanurag/Termivoa" aria-label="Termivoa on GitHub"><svg class="gh-icon" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
-    </nav>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap inner">
+      <a class="wordmark" href="/" aria-label="Termivoa home">
+        <svg width="34" height="34" viewBox="0 0 30 30" fill="none" aria-hidden="true"><rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="currentColor" stroke-width="2"/><path d="M9 11l5 4-5 4" stroke="#FF6B1A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span>termivoa</span>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#setup">Setup</a>
+        <a href="#providers">Providers</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+      <div class="nav-actions">
+        <span class="oss"><i></i>free and open source</span>
+        <a class="nav-gh" href="https://github.com/intojhanurag/Termivoa" aria-label="Termivoa on GitHub"><svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+        <a class="nav-cta" href="/docs/quick-start/"><b>$</b>Install free</a>
+      </div>
+    </div>
   </header>
 
-  <main>
+  <main id="main">
     <section class="wrap hero">
-      <div class="definition">
-        <h1><span class="word">termivoa</span>
-          <svg class="underline" viewBox="0 0 330 14" fill="none" aria-hidden="true"><path d="M3 9c60-6 150-8 230-4 35 2 65 3 94 1" stroke="var(--signal)" stroke-width="4" stroke-linecap="round"/></svg>
-        </h1>
-        <p class="phonetic">/tɜːr·mɪ·ˈvoʊ·ə/ · noun</p>
-        <ol class="senses">
-          <li>your computer's terminal, on your phone, over a private network only you can reach.</li>
-          <li>the way to answer your coding agent when it asks, from anywhere.</li>
-        </ol>
-        <div class="cta">
-          <a class="button" href="/docs/quick-start/">Install free</a>
-          <span class="then"><span class="hand">then just</span> <code>pterm setup</code></span>
-        </div>
-      </div>
-      <figure class="hero-phone">
-        <p class="hand note-hero" aria-hidden="true">your agent is waiting.<br>answer it here.
-          <svg width="120" height="46" viewBox="0 0 120 46" fill="none"><path d="M6 6c30 4 64 14 100 30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M96 38l12-1-6-11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </p>
-        <div class="device tilt-right">
-          <img src="/assets/answer.webp" width="390" height="844" alt="Termivoa on a phone: the agent in acme-web asks “Run the test suite?” and the answer card offers three buttons: Yes; Yes, and don't ask again; No, tell the agent what to do.">
-        </div>
-      </figure>
-    </section>
-
-    <section class="wrap how" id="how">
-      <div class="section-head">
-        <h2>Your phone talks only to your computer.</h2>
-        <p class="lead">Termivoa runs on your Mac or Linux box and is reached only through your own Tailscale network. There is no Termivoa server, no account and no open port.</p>
-      </div>
-      <div class="diagram" role="img" aria-label="Your phone connects to your computer through your private Tailscale network, with a lock in the middle.">
-        <div class="node node-phone">
-          <div class="mini-phone">
-            <span class="mini-title">Sessions</span>
-            <span class="mini-row"><b>claude</b><i class="amber-text">Waiting</i></span>
-            <span class="mini-row"><b>dev</b><i class="cyan-text">Working</i></span>
-            <span class="mini-row"><b>codex</b><i>No one</i></span>
-          </div>
-          <span class="hand label">your phone</span>
-        </div>
-        <span class="wire wire-cyan" aria-hidden="true"></span>
-        <div class="node node-lock">
-          <div class="lock">
-            <svg width="28" height="34" viewBox="0 0 28 34" fill="none" aria-hidden="true"><path d="M7 15V10a7 7 0 0 1 14 0v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="2" y="15" width="24" height="17" rx="4" stroke="currentColor" stroke-width="2"/><circle cx="14" cy="23.5" r="2" fill="var(--signal)"/></svg>
-          </div>
-          <div class="lock-notes">
-            <span class="caps">your tailnet · https</span>
-            <span class="hand amber-text notes">no open port.<br>no cloud relay.<br>no account with us.</span>
-          </div>
-        </div>
-        <span class="wire" aria-hidden="true"></span>
-        <div class="node node-computer">
-          <div class="window">
-            <div class="window-bar"><i></i><i></i><i></i></div>
-<pre>$ pterm doctor
-broker    ✓ 3 sessions
-gateway   ✓ 127.0.0.1:8787
-tailscale ✓ serve · tailnet only
-funnel    ✗ off (never)</pre>
-          </div>
-          <span class="hand label">your computer</span>
-        </div>
+      <span class="pill"><i></i>No cloud · no account · no open port</span>
+      <h1><span>Your terminal,</span><span>on your phone<span class="cursor" aria-hidden="true">_</span></span></h1>
+      <p class="lead">Answer Claude Code and Codex from your phone. Private by design: your phone talks only to your computer.</p>
+      <div class="hero-cta">
+        <a class="btn" href="/docs/quick-start/">Install free</a>
+        <span class="then">then just <code>pterm setup</code></span>
       </div>
     </section>
 
-    <section class="screens" aria-labelledby="screens-title">
-      <div class="wrap screens-head">
-        <p class="caps">What your phone sees</p>
-        <h2 id="screens-title">Alerts, sessions <em>and previews.</em></h2>
-      </div>
-      <div class="fan">
-        <div class="device fan-left">
-          <img src="/assets/lock.webp" width="390" height="844" loading="lazy" alt="Lock screen with two Termivoa notifications: acme-web is waiting for you, acme-web · tap to answer; and billing-api is done · your turn, Worked for 12 min.">
+    <section class="hub" aria-label="Your computers and agents connect to Termivoa on your phone. The agent in acme-web asks: Run the test suite?">
+      <div class="stage" aria-hidden="true">
+        <div class="dome"></div>
+        <svg class="dots" width="1440" height="640" viewBox="0 0 1440 640" fill="none"><path stroke="#F5F3EE" stroke-opacity=".22" stroke-width="2.6" stroke-linecap="round" d="M766 86h0M798 86h0M830 86h0M846 86h0M766 102h0M798 102h0M846 102h0M862 102h0M894 102h0M910 102h0M750 118h0M766 118h0M782 118h0M798 118h0M830 118h0M846 118h0M894 118h0M910 118h0M942 118h0M862 134h0M878 134h0M894 134h0M942 134h0M958 134h0M974 134h0M430 150h0M862 150h0M878 150h0M894 150h0M910 150h0M926 150h0M942 150h0M958 150h0M974 150h0M990 150h0M1006 150h0M398 166h0M414 166h0M878 166h0M894 166h0M926 166h0M958 166h0M974 166h0M990 166h0M1006 166h0M1022 166h0M1038 166h0M382 182h0M398 182h0M862 182h0M878 182h0M894 182h0M910 182h0M926 182h0M958 182h0M974 182h0M990 182h0M1006 182h0M1022 182h0M1038 182h0M1054 182h0M862 198h0M926 198h0M958 198h0M974 198h0M990 198h0M1022 198h0M1038 198h0M1054 198h0M1070 198h0M1086 198h0M862 214h0M878 214h0M894 214h0M910 214h0M926 214h0M974 214h0M990 214h0M1006 214h0M1022 214h0M1038 214h0M1070 214h0M1086 214h0M1102 214h0M862 230h0M878 230h0M894 230h0M910 230h0M926 230h0M958 230h0M974 230h0M990 230h0M1006 230h0M1022 230h0M1038 230h0M1070 230h0M1118 230h0M862 246h0M942 246h0M974 246h0M990 246h0M1022 246h0M1038 246h0M1054 246h0M1086 246h0M1102 246h0M1118 246h0M1134 246h0M574 262h0M862 262h0M878 262h0M926 262h0M942 262h0M974 262h0M1006 262h0M1022 262h0M1038 262h0M1054 262h0M1070 262h0M1086 262h0M1118 262h0M1134 262h0M1150 262h0M526 278h0M542 278h0M558 278h0M574 278h0M862 278h0M878 278h0M894 278h0M910 278h0M926 278h0M942 278h0M958 278h0M1006 278h0M1022 278h0M1038 278h0M1054 278h0M1070 278h0M1086 278h0M1102 278h0M1118 278h0M1134 278h0M1150 278h0M1166 278h0M542 294h0M558 294h0M574 294h0M862 294h0M878 294h0M894 294h0M910 294h0M942 294h0M958 294h0M974 294h0M990 294h0M1006 294h0M1038 294h0M1054 294h0M1070 294h0M1086 294h0M1102 294h0M1118 294h0M1134 294h0M1150 294h0M542 310h0M558 310h0M862 310h0M878 310h0M894 310h0M910 310h0M926 310h0M974 310h0M990 310h0M1006 310h0M1022 310h0M1038 310h0M1054 310h0M1070 310h0M1086 310h0M1102 310h0M1118 310h0M1134 310h0M1150 310h0M510 326h0M526 326h0M558 326h0M574 326h0M862 326h0M878 326h0M894 326h0M910 326h0M926 326h0M942 326h0M958 326h0M974 326h0M1006 326h0M1054 326h0M1086 326h0M1102 326h0M1118 326h0M1134 326h0M510 342h0M526 342h0M542 342h0M574 342h0M862 342h0M878 342h0M894 342h0M910 342h0M926 342h0M942 342h0M958 342h0M974 342h0M990 342h0M1006 342h0M1022 342h0M1038 342h0M1054 342h0M1070 342h0M1086 342h0M1102 342h0M1118 342h0M510 358h0M526 358h0M542 358h0M558 358h0M574 358h0M862 358h0M910 358h0M942 358h0M974 358h0M990 358h0M1006 358h0M1038 358h0M1054 358h0M526 374h0M542 374h0M558 374h0M574 374h0M862 374h0M878 374h0M894 374h0M910 374h0M942 374h0M958 374h0M974 374h0M478 390h0M494 390h0M526 390h0M542 390h0M574 390h0M862 390h0M878 390h0M910 390h0M926 390h0M942 390h0M974 390h0M382 406h0M398 406h0M430 406h0M446 406h0M462 406h0M478 406h0M510 406h0M526 406h0M542 406h0M862 406h0M878 406h0M910 406h0M926 406h0M942 406h0M318 422h0M350 422h0M366 422h0M382 422h0M398 422h0M414 422h0M430 422h0M462 422h0M478 422h0M542 422h0M558 422h0M574 422h0M862 422h0M878 422h0M894 422h0M926 422h0M958 422h0M334 438h0M350 438h0M382 438h0M398 438h0M430 438h0M446 438h0M462 438h0M478 438h0M494 438h0M510 438h0M526 438h0M542 438h0M558 438h0M574 438h0M862 438h0M878 438h0M894 438h0M910 438h0M302 454h0M318 454h0M366 454h0M382 454h0M398 454h0M414 454h0M430 454h0M446 454h0M462 454h0M494 454h0M510 454h0M526 454h0M542 454h0M558 454h0M574 454h0M862 454h0M878 454h0M894 454h0M926 454h0M942 454h0M1246 454h0M1262 454h0M302 470h0M334 470h0M366 470h0M414 470h0M430 470h0M446 470h0M462 470h0M478 470h0M494 470h0M510 470h0M526 470h0M542 470h0M558 470h0M574 470h0M878 470h0M894 470h0M926 470h0M942 470h0M1246 470h0M1262 470h0M1278 470h0M318 486h0M334 486h0M350 486h0M366 486h0M382 486h0M398 486h0M414 486h0M430 486h0M446 486h0M462 486h0M510 486h0M542 486h0M558 486h0M574 486h0M862 486h0M878 486h0M894 486h0M926 486h0M1246 486h0M1262 486h0M1278 486h0M318 502h0M350 502h0M366 502h0M398 502h0M414 502h0M430 502h0M446 502h0M462 502h0M478 502h0M494 502h0M510 502h0M526 502h0M542 502h0M558 502h0M574 502h0M894 502h0M910 502h0M1246 502h0M1262 502h0M366 518h0M382 518h0M398 518h0M414 518h0M430 518h0M446 518h0M462 518h0M478 518h0M510 518h0M542 518h0M558 518h0M862 518h0M1246 518h0M1262 518h0M1278 518h0M366 534h0M382 534h0M398 534h0M414 534h0M430 534h0M462 534h0M478 534h0M510 534h0M526 534h0M542 534h0M558 534h0M574 534h0M590 534h0M606 534h0M654 534h0M670 534h0M686 534h0M718 534h0M734 534h0M750 534h0M782 534h0M798 534h0M1278 534h0M1294 534h0M398 550h0M414 550h0M430 550h0M446 550h0M462 550h0M478 550h0M494 550h0M510 550h0M526 550h0M574 550h0M590 550h0M606 550h0M622 550h0M638 550h0M654 550h0M686 550h0M702 550h0M718 550h0M734 550h0M750 550h0M766 550h0M1278 550h0M1294 550h0M414 566h0M446 566h0M462 566h0M478 566h0M494 566h0M510 566h0M542 566h0M574 566h0M590 566h0M606 566h0M622 566h0M638 566h0M654 566h0M670 566h0M686 566h0M702 566h0M718 566h0M1070 566h0M1086 566h0M1102 566h0M1118 566h0M1134 566h0M1150 566h0M1166 566h0M142 582h0M174 582h0M190 582h0M414 582h0M430 582h0M446 582h0M462 582h0M478 582h0M494 582h0M510 582h0M526 582h0M558 582h0M574 582h0M606 582h0M622 582h0M638 582h0M654 582h0M670 582h0M686 582h0M702 582h0M718 582h0M734 582h0M1038 582h0M1054 582h0M1102 582h0M1118 582h0M1134 582h0M1150 582h0M1182 582h0M1198 582h0M1214 582h0M1230 582h0M142 598h0M158 598h0M206 598h0M414 598h0M430 598h0M446 598h0M462 598h0M478 598h0M494 598h0M510 598h0M542 598h0M558 598h0M574 598h0M590 598h0M606 598h0M638 598h0M654 598h0M670 598h0M718 598h0M734 598h0M1038 598h0M1054 598h0M1070 598h0M1102 598h0M1118 598h0M1134 598h0M1150 598h0M1166 598h0M1182 598h0M1198 598h0M1214 598h0M1230 598h0M1246 598h0M142 614h0M174 614h0M190 614h0M206 614h0M222 614h0M398 614h0M414 614h0M430 614h0M462 614h0M478 614h0M494 614h0M526 614h0M542 614h0M558 614h0M574 614h0M590 614h0M606 614h0M622 614h0M638 614h0M654 614h0M670 614h0M686 614h0M702 614h0M718 614h0M1038 614h0M1054 614h0M1070 614h0M1086 614h0M1118 614h0M1134 614h0M1150 614h0M1214 614h0M1230 614h0M1246 614h0M1262 614h0M1278 614h0M1294 614h0M142 630h0M174 630h0M190 630h0M222 630h0M238 630h0M366 630h0M382 630h0M430 630h0M446 630h0M462 630h0M494 630h0M510 630h0M526 630h0M542 630h0M558 630h0M574 630h0M606 630h0M622 630h0M638 630h0M670 630h0M686 630h0M718 630h0M1038 630h0M1054 630h0M1118 630h0M1134 630h0M1150 630h0M1166 630h0M1182 630h0M1198 630h0M1214 630h0M1230 630h0M1246 630h0M1262 630h0M1278 630h0M1294 630h0"/></svg>
+        <div class="fade"></div>
+        <svg class="wires" width="1440" height="640" viewBox="0 0 1440 640" fill="none">
+          <g class="base">
+            <path d="M360 150H470C580 150 560 267 635 267"/><path d="M360 270H470C580 270 560 309 635 309"/><path d="M360 390H470C580 390 560 351 635 351"/><path d="M360 510H470C580 510 560 393 635 393"/>
+            <path d="M460 210H500C590 210 570 288 635 288"/><path d="M460 330H635"/><path d="M460 450H500C590 450 570 372 635 372"/>
+            <path d="M1080 150H970C860 150 880 267 805 267"/><path d="M1080 270H970C860 270 880 309 805 309"/><path d="M1080 390H970C860 390 880 351 805 351"/><path d="M1080 510H970C860 510 880 393 805 393"/>
+            <path d="M980 330H805"/><path d="M980 450H940C850 450 870 372 805 372"/>
+          </g>
+          <path class="streak s-white" d="M360 150H470C580 150 560 267 635 267"/>
+          <path class="streak s-hot flow-1" d="M360 270H470C580 270 560 309 635 309"/>
+          <path class="streak s-go flow-2" d="M460 450H500C590 450 570 372 635 372"/>
+          <path class="streak s-white flow-3" d="M360 510H470C580 510 560 393 635 393"/>
+          <path class="streak s-white flow-4" d="M460 330H635"/>
+          <path class="streak s-white flow-5" d="M1080 150H970C860 150 880 267 805 267"/>
+          <path class="streak s-go flow-6" d="M1080 390H970C860 390 880 351 805 351"/>
+          <path class="streak s-white flow-7" d="M980 450H940C850 450 870 372 805 372"/>
+          <path class="hot-glow" d="M980 210H940C850 210 870 270 805 270"/>
+          <path class="hot-line" d="M980 210H940C850 210 870 270 805 270"/>
+          <path class="hot-pulse" d="M980 210H940C850 210 870 270 805 270"/>
+          <circle class="ring" cx="720" cy="330" r="200"/>
+          <circle class="ring-dash" cx="720" cy="330" r="240"/>
+        </svg>
+
+        <p class="hub-label l at-300-52"><b>01</b>Your computers</p>
+        <p class="hub-label r at-920-52"><b>02</b>Your agent is waiting</p>
+
+        <span class="tile at-300-120"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></span>
+        <span class="tile at-300-240"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/></svg></span>
+        <span class="tile at-300-360"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 9a4.5 4.5 0 0 1 .5 9z"/></svg></span>
+        <span class="tile at-300-480"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg></span>
+        <span class="tile-label l at-100-142">mac · zsh</span>
+        <span class="tile-label l at-100-262">linux</span>
+        <span class="tile-label l at-100-382">vps</span>
+        <span class="tile-label l at-100-502">windows</span>
+
+        <span class="tile at-400-180"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l4 4-4 4" stroke="#FF6B1A"/><path d="M12 17h7" stroke="currentColor"/></svg></span>
+        <span class="tile at-400-300"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2" stroke="#4ADE80"/><path d="M6 7v10M18 10c0 4-6 3-11.5 7.5"/></svg></span>
+        <span class="tile at-400-420"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M12 12h9"/></svg></span>
+
+        <span class="tile hot at-980-180"><svg viewBox="0 0 24 24" fill="none" stroke="#FF6B1A" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></svg></span>
+        <span class="tile at-980-300"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"/><path d="M9 10l-2 2 2 2M15 10l2 2-2 2" stroke="#4ADE80" stroke-linecap="round"/></svg></span>
+        <span class="tile at-980-420"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="17" r="2.5" stroke="#4ADE80"/><path d="M8.5 10l2.3 4.6M15.5 10l-2.3 4.6"/></svg></span>
+
+        <span class="tile at-1080-120"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V9a3 3 0 0 0-3-3h-4"/><path d="M13 4l-2 2 2 2"/></svg></span>
+        <span class="tile at-1080-240"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/><circle cx="18" cy="5" r="2.2" fill="#FF6B1A" stroke="none"/></svg></span>
+        <span class="tile at-1080-360"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M8 4v8M4 8h8" stroke="#FF6B1A"/><path d="M13 18h7" stroke="currentColor"/><path d="M5 20L19 4" stroke="#F5F3EE66" stroke-width="1.2"/></svg></span>
+        <span class="tile at-1080-480"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+        <span class="tile-label at-1156-142">commit, push</span>
+        <span class="tile-label hot-text at-1156-262">acme-web is waiting</span>
+        <span class="tile-label go-text at-1156-382">+128 −34</span>
+        <span class="tile-label at-1156-502">src/app.ts:42</span>
+
+        <div class="halo"></div>
+        <div class="toast">
+          <span class="app"><svg width="18" height="18" viewBox="0 0 30 30" fill="none"><path d="M9 11l5 4-5 4" stroke="#FF6B1A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="#F5F3EE" stroke-width="2.6" stroke-linecap="round"/></svg></span>
+          <div><b>acme-web is waiting for you <small>now</small></b><span>acme-web · tap to answer</span></div>
         </div>
-        <div class="device fan-center">
-          <img src="/assets/sessions.webp" width="390" height="844" loading="lazy" alt="Sessions list on your computer: acme-web waiting with Run the test suite? and Answer, the worktree fix-cache-headers, billing-api working, and docs-site.">
+        <div class="phone">
+          <span class="notch"></span>
+          <div class="ph-head"><b>Sessions</b><span class="badge">1</span></div>
+          <div class="ask">
+            <div class="row-top"><span><i class="dot hot"></i>acme-web</span><small class="hot-text">WAITING</small></div>
+            <p>Run the test suite?</p>
+            <div class="ask-btns"><span>Yes</span><span>No</span></div>
+          </div>
+          <p class="ph-sub">ALSO RUNNING</p>
+          <div class="ph-row row-top"><span><i class="dot go"></i>dev</span><small class="go-text">WORKING</small></div>
+          <div class="ph-row row-top"><span><i class="dot"></i>billing-api</span><small>DONE</small></div>
+          <div class="keys"><span>esc</span><span>^C</span><span>tab</span><span>↵</span></div>
         </div>
-        <div class="device fan-right">
-          <img src="/assets/preview.webp" width="390" height="844" loading="lazy" alt="The dev server from localhost:4321 open on the phone: the Acme docs page, with a bar below that says the session docs-site is working and a Tell agent button.">
+        <p class="hub-label bottom at-470-540"><b>03</b><span>Answer it here <em>· your tailnet only</em></span></p>
+        <div class="hub-chips">
+          <div><span class="caps">Your computers</span><span>mac</span><span>linux</span><span>vps</span><span>windows</span></div>
+          <div><span class="caps">Your agents</span><span class="c-hot">claude · waiting</span><span>codex</span><span>herdr</span><span>zsh</span></div>
         </div>
-      </div>
-      <div class="wrap captions">
-        <div><h3>Notifications.</h3><p>A notification when an agent needs you or finishes. Never the terminal text itself.</p></div>
-        <div><h3>Every session, one glance.</h3><p>Waiting, working or your turn. The folder it is in, and how long it has been.</p></div>
-        <div><h3>See what it built.</h3><p>Open the dev server running in that session, right on your phone, still private.</p></div>
       </div>
     </section>
+
+    <ul class="works" aria-label="Works with">
+      <li class="caps">Works with</li>
+      <li>Claude Code</li><li>Codex</li><li>herdr</li><li>Tailscale</li><li>GitHub</li><li>macOS · Linux · Windows</li>
+    </ul>
 
     <section class="wrap features" id="features">
-      <h2>Everything it does.</h2>
-      <div class="columns">
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="4" y="10" width="40" height="30" rx="5" stroke="currentColor" stroke-width="2"/><rect x="9" y="15" width="40" height="30" rx="5" stroke="currentColor" stroke-width="2" fill="var(--ground)"/><path d="M16 26l5 4-5 4M25 35h8" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3>Sessions that stay</h3>
-          <p>Your terminals live on your computer. Lock the phone, lose signal, come back tomorrow. It is all still there.</p>
-          <span class="hand amber-text">reconnects in seconds</span>
+      <div class="section-head reveal">
+        <div>
+          <p class="caps hot">Features</p>
+          <h2 class="h2">Everything it does.</h2>
+        </div>
+        <p class="lead">Your terminals live on your computer. Lock the phone, lose signal, come back tomorrow. It is all still there.</p>
+      </div>
+
+      <div class="bento row-1">
+        <article class="card big reveal">
+          <div class="big-copy">
+            <p class="caps hot">One-tap answers</p>
+            <div class="card-text">
+              <h3>Claude Code or Codex asks, you tap.</h3>
+              <p>Termivoa checks the question is still on screen before it presses a key. Needs you puts every waiting agent in one list, with Next to go from one to the next.</p>
+              <span class="note">never a stale answer</span>
+            </div>
+          </div>
+          <div class="queue" aria-hidden="true">
+            <div class="q-stack">
+              <div class="q"><div class="row-top"><span>acme-web</span><small>CLAUDE · 12s</small></div><p>Run the test suite?</p><div class="ask-btns"><span>Yes</span><span>No, tell the agent what to do</span></div></div>
+              <div class="q"><div class="row-top"><span>billing-api</span><small>CODEX · 2m</small></div><p>Allow this edit?</p><div class="ask-btns"><span>Yes</span><span>Show the diff</span></div></div>
+              <div class="q"><div class="row-top"><span>fix-cache-headers</span><small>CLAUDE · 5m</small></div><p>Allow this edit?</p><div class="ask-btns"><span>Yes</span><span>No</span></div></div>
+            </div>
+            <div class="q-row">billing-api<small>CODEX · waiting</small></div>
+            <div class="q-row faded">fix-cache-headers<small>CLAUDE · waiting</small></div>
+            <span class="next">Next →</span>
+          </div>
         </article>
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><path d="M6 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v18a5 5 0 0 1-5 5H22l-9 8v-8h-2a5 5 0 0 1-5-5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 21l5 5 10-10" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3>One-tap answers</h3>
-          <p>Claude Code or Codex asks, you tap. Termivoa checks the question is still on screen before it presses a key.</p>
-          <span class="hand amber-text">never a stale answer</span>
+        <article class="card reveal">
+          <p class="caps">Sessions</p>
+          <div class="wall" aria-hidden="true">
+            <span class="w-hot">acme-web
+? Run tests</span><span class="w-go">dev
+▍ working</span><span>billing-api
+your turn</span><span class="w-go">docs-site
+✓ 42 passed</span><span>vps
+$ _</span><span>fix-cache…
+worktree</span>
+          </div>
+          <div class="card-text">
+            <h3>Every session, one glance.</h3>
+            <p>Waiting, working or your turn. The folder it is in, and how long it has been.</p>
+          </div>
         </article>
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><path d="M12 5h20l10 10v32H12z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M32 5v10h10" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M19 26h8M23 22v8" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/><path d="M19 38h8" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/></svg>
-          <h3>Branch it. Review it. Ship it.</h3>
-          <p>Put a GitHub repository on any of your computers with one tap. Start each task in its own worktree, on a fresh branch from main. See every file the agent touched, tick the ones you want, commit, push.</p>
-          <span class="hand amber-text">one branch per task</span>
+      </div>
+
+      <div class="bento row-2">
+        <article class="card reveal">
+          <p class="caps">Changes</p>
+          <div class="diff" aria-hidden="true"><small>src/app.ts</small><span class="del">- const retries = 1</span><span class="add">+ const retries = 3</span><span class="add">+ await backoff(attempt)</span></div>
+          <div class="card-text">
+            <h3>Branch it. Review it. Ship it.</h3>
+            <p>See every file the agent touched, tick the ones you want, commit, push.</p>
+          </div>
         </article>
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><circle cx="26" cy="26" r="19" stroke="currentColor" stroke-width="2"/><path d="M26 15v11l7 5" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3>While you were away</h3>
-          <p>Open a session and see at once how long the agent worked, what it changed, and whether it waits for you.</p>
-          <span class="hand amber-text">two seconds to catch up</span>
+        <article class="card reveal">
+          <p class="caps">Worktrees</p>
+          <svg class="branches" viewBox="0 0 300 90" fill="none" aria-hidden="true"><path d="M10 20H290" stroke="#F5F3EE55" stroke-width="2"/><path d="M60 20C100 20 100 66 140 66H290" stroke="#FF6B1A" stroke-width="2"/><path d="M120 20C150 20 150 44 180 44H290" stroke="#4ADE80" stroke-width="2"/><circle cx="10" cy="20" r="5" fill="#F5F3EE"/><circle cx="290" cy="66" r="5" fill="#FF6B1A"/><circle cx="290" cy="44" r="5" fill="#4ADE80"/><circle cx="290" cy="20" r="5" fill="#F5F3EE"/></svg>
+          <div class="card-text">
+            <h3>One branch per task.</h3>
+            <p>Put a GitHub repository on any of your computers with one tap. Start each task in its own worktree, on a fresh branch from main.</p>
+          </div>
         </article>
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="4" y="12" width="32" height="26" rx="5" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="25" r="6" stroke="currentColor" stroke-width="2"/><rect x="38" y="8" width="10" height="18" rx="5" stroke="var(--amber)" stroke-width="2"/><path d="M36 26a7 7 0 0 0 14 0M43 33v6" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/></svg>
-          <h3>Photo and voice</h3>
-          <p>Send the agent a photo of the bug, or say the prompt out loud. Photos lose their location data first.</p>
-          <span class="hand amber-text">thumbs optional</span>
+        <article class="card light reveal">
+          <p class="caps">Phone-first keys</p>
+          <div class="keychips" aria-hidden="true"><span>Esc</span><span>Ctrl+C</span><span>Shift+Tab</span><span class="k-hot">y</span><span>Enter</span></div>
+          <div class="card-text">
+            <h3>Agent keys, a composer for long text, snippets.</h3>
+            <p>Hold and slide for arrow keys, swipe to switch session, pinch for text size.</p>
+          </div>
         </article>
-        <article>
-          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="5" y="8" width="42" height="28" rx="4" stroke="currentColor" stroke-width="2"/><path d="M18 44h16M26 36v8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 18h6M15 24h14" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/></svg>
-          <h3>Mac, Linux, Windows</h3>
-          <p>One small Go program on your computer. It starts at login and needs no Node, no Docker, no cloud. All your computers in one app.</p>
-          <span class="hand amber-text">one binary, that's it</span>
+      </div>
+
+      <div class="bento row-3">
+        <article class="card small reveal">
+          <svg width="40" height="40" viewBox="0 0 52 52" fill="none" aria-hidden="true"><circle cx="26" cy="26" r="19" stroke="currentColor" stroke-width="2"/><path d="M26 15v11l7 5" stroke="#FF6B1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="card-text"><h3>While you were away</h3><p>Open a session and see at once how long the agent worked, what it changed, and whether it waits for you.</p><span class="note">two seconds to catch up</span></div>
         </article>
+        <article class="card small reveal">
+          <svg width="40" height="40" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="5" y="8" width="42" height="28" rx="4" stroke="currentColor" stroke-width="2"/><path d="M14 18l6 4-6 4M24 28h10" stroke="#FF6B1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 44h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="card-text"><h3>See what it built.</h3><p>Open the dev server running in that session, right on your phone, still private.</p></div>
+        </article>
+        <article class="card small reveal">
+          <svg width="40" height="40" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="4" y="12" width="32" height="26" rx="5" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="25" r="6" stroke="currentColor" stroke-width="2"/><rect x="38" y="8" width="10" height="18" rx="5" stroke="#FF6B1A" stroke-width="2"/><path d="M36 26a7 7 0 0 0 14 0M43 33v6" stroke="#FF6B1A" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="card-text"><h3>Photo and voice</h3><p>Send the agent a photo of the bug, or say the prompt out loud. Photos lose their location data first.</p><span class="note">thumbs optional</span></div>
+        </article>
+        <article class="card small reveal">
+          <svg width="40" height="40" viewBox="0 0 52 52" fill="none" aria-hidden="true"><rect x="5" y="8" width="42" height="28" rx="4" stroke="currentColor" stroke-width="2"/><path d="M18 44h16M26 36v8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 18h6M15 24h14" stroke="#FF6B1A" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="card-text"><h3>Mac, Linux, Windows</h3><p>One small Go program on your computer. It starts at login and needs no Node, no Docker, no cloud. All your computers in one app.</p><span class="note">one binary, that's it</span></div>
+        </article>
+      </div>
+
+      <a class="card provider reveal" id="providers" href="/docs/guides/herdr/">
+        <img src="/assets/herdr.png" width="64" height="64" loading="lazy" alt="herdr logo: a ram with a terminal prompt for an eye">
+        <div class="card-text">
+          <p class="caps hot">Providers</p>
+          <h3>Your agent workspace on your phone.</h3>
+          <p>Termivoa finds the workspace tool on your computer and shows every project, worktree and agent state on your phone. herdr works today. More tools can follow.</p>
+        </div>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+    </section>
+
+    <section class="how" id="how">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div>
+            <p class="caps hot">How it works</p>
+            <h2 class="h2">Your phone talks only to your computer.</h2>
+          </div>
+          <p class="lead">Termivoa runs on your Mac or Linux box and is reached only through your own Tailscale network. There is no Termivoa server, no account and no open port.</p>
+        </div>
+        <div class="flow reveal" role="img" aria-label="Your phone connects over your tailnet with HTTPS to Tailscale Serve, which reaches pterm on 127.0.0.1 on your computer, which runs your sessions.">
+          <div class="node"><span class="caps hot">Your phone</span><b>Termivoa app</b><small>claude · Waiting</small></div>
+          <div class="conn"><span>your tailnet · https</span><i></i><span>no cloud relay</span></div>
+          <div class="node dashed"><span class="caps hot">Your tailnet</span><b>tailscale serve</b><small>funnel ✗ off (never)</small></div>
+          <div class="conn"><span>127.0.0.1:8787</span><i></i><span>no open port</span></div>
+          <div class="node orange"><span class="caps">Your computer</span><b>pterm</b><small>broker ✓ 3 sessions</small></div>
+          <div class="conn"><span>runs as your user</span><i></i><span>no account with us</span></div>
+          <div class="node"><span class="caps go-text">Sessions</span><b>claude · codex</b><small>zsh · bash · herdr</small></div>
+        </div>
+        <div class="add-row reveal">
+          <div>
+            <h3>Add more computers.</h3>
+            <p>Set up a second computer and it shows up in the app on its own. Add it on the phone and confirm it on the computer.</p>
+          </div>
+          <div class="step"><em>1</em><b>Run <code>pterm setup</code> on the new computer</b></div>
+          <div class="step"><em>2</em><b>Answer 2: add it to the app you already use</b></div>
+          <div class="step"><em>3</em><b>Tap Add under Found on your network</b><div class="chips" aria-label="Approve only if your phone shows 742-172"><span>742</span><span class="k-hot">172</span></div></div>
+        </div>
       </div>
     </section>
 
     <section class="wrap setup" id="setup">
-      <div class="setup-copy">
-        <h2>Set up with <em>one command.</em></h2>
+      <div class="setup-copy reveal">
+        <p class="caps hot">Setup</p>
+        <h2 class="h2">Set up with one command.</h2>
         <p class="lead">Setup shows every change before it makes it and asks once. Then scan the QR code with your phone and confirm the pairing on both sides.</p>
-        <ol class="steps">
+        <ol class="setup-steps">
           <li><span>01</span>Install Tailscale on both devices</li>
           <li><span>02</span><p>Run <code>pterm setup</code> on your computer</p></li>
           <li><span>03</span>Scan the QR code with your phone</li>
         </ol>
-      </div>
-      <div class="setup-card">
-        <span class="tape" aria-hidden="true"></span>
-<pre>$ pterm setup
-Termivoa will:
-  · start at login          launchd
-  · share on your tailnet   tailscale serve
-  · never use Funnel
-Continue? [y/N] y
-
-✓ broker    running · 0 sessions
-✓ gateway   https://studio.tail4e2.ts.net</pre>
-        <div class="qr-row">
-          <svg class="qr" width="105" height="105" viewBox="0 0 105 105" aria-hidden="true"><path fill="currentColor" d="M0 0h5v5h-5zM0 5h5v5h-5zM0 10h5v5h-5zM0 15h5v5h-5zM0 20h5v5h-5zM0 25h5v5h-5zM0 30h5v5h-5zM0 40h5v5h-5zM0 45h5v5h-5zM0 55h5v5h-5zM0 70h5v5h-5zM0 75h5v5h-5zM0 80h5v5h-5zM0 85h5v5h-5zM0 90h5v5h-5zM0 95h5v5h-5zM0 100h5v5h-5zM5 0h5v5h-5zM5 30h5v5h-5zM5 40h5v5h-5zM5 45h5v5h-5zM5 55h5v5h-5zM5 60h5v5h-5zM5 70h5v5h-5zM5 100h5v5h-5zM10 0h5v5h-5zM10 10h5v5h-5zM10 15h5v5h-5zM10 20h5v5h-5zM10 30h5v5h-5zM10 40h5v5h-5zM10 45h5v5h-5zM10 50h5v5h-5zM10 60h5v5h-5zM10 70h5v5h-5zM10 80h5v5h-5zM10 85h5v5h-5zM10 90h5v5h-5zM10 100h5v5h-5zM15 0h5v5h-5zM15 10h5v5h-5zM15 15h5v5h-5zM15 20h5v5h-5zM15 30h5v5h-5zM15 40h5v5h-5zM15 60h5v5h-5zM15 70h5v5h-5zM15 80h5v5h-5zM15 85h5v5h-5zM15 90h5v5h-5zM15 100h5v5h-5zM20 0h5v5h-5zM20 10h5v5h-5zM20 15h5v5h-5zM20 20h5v5h-5zM20 30h5v5h-5zM20 45h5v5h-5zM20 55h5v5h-5zM20 60h5v5h-5zM20 70h5v5h-5zM20 80h5v5h-5zM20 85h5v5h-5zM20 90h5v5h-5zM20 100h5v5h-5zM25 0h5v5h-5zM25 30h5v5h-5zM25 40h5v5h-5zM25 45h5v5h-5zM25 55h5v5h-5zM25 70h5v5h-5zM25 100h5v5h-5zM30 0h5v5h-5zM30 5h5v5h-5zM30 10h5v5h-5zM30 15h5v5h-5zM30 20h5v5h-5zM30 25h5v5h-5zM30 30h5v5h-5zM30 45h5v5h-5zM30 55h5v5h-5zM30 60h5v5h-5zM30 70h5v5h-5zM30 75h5v5h-5zM30 80h5v5h-5zM30 85h5v5h-5zM30 90h5v5h-5zM30 95h5v5h-5zM30 100h5v5h-5zM35 40h5v5h-5zM35 50h5v5h-5zM35 55h5v5h-5zM40 0h5v5h-5zM40 5h5v5h-5zM40 20h5v5h-5zM40 45h5v5h-5zM40 55h5v5h-5zM40 60h5v5h-5zM40 70h5v5h-5zM40 75h5v5h-5zM40 80h5v5h-5zM45 0h5v5h-5zM45 20h5v5h-5zM45 35h5v5h-5zM45 45h5v5h-5zM45 70h5v5h-5zM45 75h5v5h-5zM45 85h5v5h-5zM45 90h5v5h-5zM45 95h5v5h-5zM45 100h5v5h-5zM50 0h5v5h-5zM50 10h5v5h-5zM50 15h5v5h-5zM50 20h5v5h-5zM50 30h5v5h-5zM50 35h5v5h-5zM50 60h5v5h-5zM50 65h5v5h-5zM50 70h5v5h-5zM50 85h5v5h-5zM50 90h5v5h-5zM50 95h5v5h-5zM50 100h5v5h-5zM55 0h5v5h-5zM55 10h5v5h-5zM55 15h5v5h-5zM55 20h5v5h-5zM55 25h5v5h-5zM55 60h5v5h-5zM55 85h5v5h-5zM55 90h5v5h-5zM55 95h5v5h-5zM60 0h5v5h-5zM60 5h5v5h-5zM60 10h5v5h-5zM60 15h5v5h-5zM60 20h5v5h-5zM60 25h5v5h-5zM60 30h5v5h-5zM60 35h5v5h-5zM60 40h5v5h-5zM60 45h5v5h-5zM60 50h5v5h-5zM60 65h5v5h-5zM60 70h5v5h-5zM60 75h5v5h-5zM60 80h5v5h-5zM60 85h5v5h-5zM60 100h5v5h-5zM65 40h5v5h-5zM65 45h5v5h-5zM65 50h5v5h-5zM65 55h5v5h-5zM65 60h5v5h-5zM65 70h5v5h-5zM65 75h5v5h-5zM65 90h5v5h-5zM65 100h5v5h-5zM70 0h5v5h-5zM70 5h5v5h-5zM70 10h5v5h-5zM70 15h5v5h-5zM70 20h5v5h-5zM70 25h5v5h-5zM70 30h5v5h-5zM70 60h5v5h-5zM70 65h5v5h-5zM70 70h5v5h-5zM70 90h5v5h-5zM70 95h5v5h-5zM75 0h5v5h-5zM75 30h5v5h-5zM75 65h5v5h-5zM75 75h5v5h-5zM75 80h5v5h-5zM75 85h5v5h-5zM75 90h5v5h-5zM75 95h5v5h-5zM80 0h5v5h-5zM80 10h5v5h-5zM80 15h5v5h-5zM80 20h5v5h-5zM80 30h5v5h-5zM80 45h5v5h-5zM80 65h5v5h-5zM80 70h5v5h-5zM80 75h5v5h-5zM80 80h5v5h-5zM80 85h5v5h-5zM85 0h5v5h-5zM85 10h5v5h-5zM85 15h5v5h-5zM85 20h5v5h-5zM85 30h5v5h-5zM85 40h5v5h-5zM85 55h5v5h-5zM85 80h5v5h-5zM85 85h5v5h-5zM85 95h5v5h-5zM90 0h5v5h-5zM90 10h5v5h-5zM90 15h5v5h-5zM90 20h5v5h-5zM90 30h5v5h-5zM90 45h5v5h-5zM90 50h5v5h-5zM90 65h5v5h-5zM90 70h5v5h-5zM90 75h5v5h-5zM90 90h5v5h-5zM95 0h5v5h-5zM95 30h5v5h-5zM95 45h5v5h-5zM95 55h5v5h-5zM95 60h5v5h-5zM95 85h5v5h-5zM95 100h5v5h-5zM100 0h5v5h-5zM100 5h5v5h-5zM100 10h5v5h-5zM100 15h5v5h-5zM100 20h5v5h-5zM100 25h5v5h-5zM100 30h5v5h-5zM100 40h5v5h-5zM100 45h5v5h-5zM100 50h5v5h-5zM100 60h5v5h-5zM100 65h5v5h-5zM100 70h5v5h-5zM100 80h5v5h-5zM100 85h5v5h-5zM100 100h5v5h-5z"/></svg>
-          <div class="qr-text"><span>scan with your phone</span><span class="cyan-text">waiting for pairing…</span></div>
-        </div>
-        <span class="hand amber-text card-note">asks before it changes anything.</span>
-      </div>
-    </section>
-
-    <section class="wrap setup" id="add-computer">
-      <div class="setup-copy">
-        <h2>Add more computers.</h2>
-        <p class="lead">Set up a second computer and it shows up in the app on its own. Add it on the phone and confirm it on the computer.</p>
-        <ol class="steps">
-          <li><span>01</span><p>Run <code>pterm setup</code> on the new computer</p></li>
-          <li><span>02</span>Answer 2: add it to the app you already use</li>
-          <li><span>03</span>Tap Add under Found on your network</li>
-        </ol>
-      </div>
-      <div class="setup-card add-card">
-        <span class="tape" aria-hidden="true"></span>
-<pre>vps $ pterm pair --via mac
-Sent to mac.
-Waiting for your phone…
-Approve only if your phone shows 742-172 [y/N] y
-Done. vps is in your Termivoa app on mac.</pre>
-        <div class="found" aria-hidden="true">
-          <p class="caps found-head">Found on your network</p>
-          <div class="found-row">
-            <div><b>vps</b><span>vps.tailx.ts.net</span></div>
-            <span class="found-add">Add</span>
-          </div>
+        <div class="hero-cta cta-left">
+          <a class="btn" href="/docs/quick-start/">Install free</a>
+          <a class="link" href="/docs/">Read the docs →</a>
         </div>
       </div>
-    </section>
-
-    <section class="wrap providers" id="providers">
-      <div class="setup">
-        <div class="setup-copy">
-          <p class="caps">Providers</p>
-          <h2>Your agent workspace on your phone.</h2>
-          <p class="lead">Termivoa finds the workspace tool on your computer and shows every project, worktree and agent state on your phone. herdr works today. More tools can follow.</p>
-          <ol class="steps">
-            <li><span>01</span>See which agent is blocked, working or done</li>
-            <li><span>02</span>Tap one to open its real terminal and answer</li>
-            <li><span>03</span>Tap + for a new worktree with an agent in it</li>
-          </ol>
-        </div>
-        <div class="setup-card provider-card">
-          <span class="tape" aria-hidden="true"></span>
-          <div class="provider-list" aria-hidden="true">
-            <p class="caps provider-status">1 blocked · 1 done · 2 working</p>
-            <div class="provider-project"><b>shop</b><span class="provider-plus">+</span></div>
-            <div class="provider-row"><div><b>shop</b><span>claude · 2 tabs</span></div><span class="caps">working</span></div>
-            <div class="provider-row"><div><b>silver-meadow</b><span>claude · tab 1</span></div><span class="caps amber-text">blocked</span></div>
-            <div class="provider-row"><div><b>lucky-valley</b><span>codex · tab 1</span></div><span class="caps provider-done">done</span></div>
-            <div class="provider-push"><p class="caps">herdr · shop · silver-meadow</p><p>claude needs you. Tap to answer.</p></div>
-          </div>
-          <span class="hand amber-text card-note">herdr today. more to come.</span>
-        </div>
-      </div>
-      <p class="caps provider-tiles-head">Tap a provider to read its guide</p>
-      <ul class="provider-tiles">
-        <li>
-          <a class="provider-tile" href="/docs/guides/herdr/">
-            <img src="/assets/herdr.png" width="64" height="64" loading="lazy" alt="herdr logo: a ram with a terminal prompt for an eye">
-            <span><b>herdr</b><span>Projects, worktrees and agents</span></span>
-            <span class="provider-arrow" aria-hidden="true">→</span>
-          </a>
-        </li>
-        <li class="provider-tile later">
-          <span class="provider-slot" aria-hidden="true">+</span>
-          <span><b>More later</b><span>Other workspace tools can be added</span></span>
-        </li>
-      </ul>
-    </section>
-
-    <section class="wrap closing" id="beta">
-      <p class="hand">free and open source, in beta now.</p>
-      <svg class="closing-line" width="260" height="14" viewBox="0 0 260 14" fill="none" aria-hidden="true"><path d="M4 8c50-5 120-6 180-3 26 1 50 2 72 0" stroke="var(--signal)" stroke-width="3" stroke-linecap="round"/></svg>
-      <div class="closing-actions">
-        <a class="button" href="/docs/quick-start/">Install free</a>
-        <a class="button ghost" href="/docs/">Read the docs</a>
-        <a class="button ghost star" href="https://github.com/intojhanurag/Termivoa" aria-label="Termivoa on GitHub"><svg class="gh-icon" width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <div class="term reveal">
+        <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>~ — zsh</span></div>
+<pre><span>$ pterm setup</span><span class="t-dim">Termivoa will:</span><span class="t-dim">  · start at login          launchd</span><span class="t-dim">  · share on your tailnet   tailscale serve</span><span class="t-dim">  · never use Funnel</span><span>Continue? [y/N] <b class="t-hot">y</b></span><span> </span><span class="t-go">✓ broker    running · 0 sessions</span><span class="t-go">✓ gateway   https://studio.tail4e2.ts.net</span><span class="t-hot">scan with your phone · waiting for pairing… <i class="caret">▍</i></span></pre>
       </div>
     </section>
   </main>
 
-  <footer class="wrap footer">
-    <svg class="footer-line" viewBox="0 0 1120 12" preserveAspectRatio="none" fill="none" aria-hidden="true"><path d="M2 6c120-3 260 2 420-1s330 3 480-1 170 1 216 0" stroke="var(--line-strong)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
-    <div class="footer-row">
-      <p class="footer-mark">
-        <svg width="22" height="22" viewBox="0 0 30 30" fill="none" aria-hidden="true"><rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="currentColor" stroke-width="2"/><path d="M9 11l5 4-5 4" stroke="var(--signal)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-        © 2026 Termivoa · Made by Anurag
-      </p>
-      <nav aria-label="Footer">
-        <a href="#how">How it works</a>
-        <a href="#features">Features</a>
-        <a href="#setup">Setup</a>
-        <a href="/docs/">Docs</a>
-        <a href="https://github.com/intojhanurag/Termivoa">GitHub</a>
-        <a href="/llms.txt">For AI tools</a>
-        <a href="mailto:aojharaj2004@gmail.com?subject=Termivoa">Contact</a>
-      </nav>
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-top">
+        <div class="footer-intro">
+          <h2>Free and open source, in beta now.</h2>
+          <p>Apache-2.0. No Termivoa server, no account and no telemetry. Built on Tailscale, Charm and xterm.js.</p>
+          <div class="footer-btns">
+            <a class="btn" href="/docs/quick-start/">Install free</a>
+            <a class="btn ghost" href="/docs/">Read the docs</a>
+            <a class="btn ghost" href="https://github.com/intojhanurag/Termivoa">GitHub</a>
+          </div>
+        </div>
+        <div class="footer-cols">
+          <nav aria-label="Product"><p class="caps">Product</p><a href="#how">How it works</a><a href="#features">Features</a><a href="#setup">Setup</a><a href="#providers">Providers</a></nav>
+          <nav aria-label="Docs"><p class="caps">Docs</p><a href="/docs/quick-start/">Quick start</a><a href="/docs/reference/security/">Security</a><a href="/docs/reference/release-notes/">Release notes</a><a href="/llms.txt">For AI tools</a></nav>
+          <nav aria-label="Project"><p class="caps">Project</p><a href="https://github.com/intojhanurag/Termivoa">GitHub</a><a href="mailto:aojharaj2004@gmail.com?subject=Termivoa">Contact</a></nav>
+        </div>
+      </div>
+      <p class="bigmark" aria-hidden="true"><span>termivoa</span><i></i></p>
+      <div class="copyright"><span>© 2026 Termivoa · Made by Anurag</span><span>your terminal, on your phone</span></div>
     </div>
   </footer>
 </body>
